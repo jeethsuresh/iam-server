@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Login</title>
+    <script src="https://unpkg.com/htmx.org@2.0.2" integrity="sha384-Y7hw+L/jvKeWIRRkqWYfPcvVxHzVzn5REgzbawhxAuQGwX1XWe70vji+VSeHOThJ" crossorigin="anonymous"></script>
+    <script>
+        function handleLogin(event) {
+            event.preventDefault();
+            const formData = new FormData(event.target);
+
+            fetch('/login', {
+                method: 'POST',
+                body: formData,
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.redirect) {
+                    window.location.href = data.redirect;
+                }
+                if (data.token) {
+                    localStorage.setItem('Authorization', data.token);
+                    console.log("*******" + localStorage.getItem("Authorization"));
+                    
+                    // Load the profile page after login
+                    loadProfile();
+                } else {
+                    alert('Login failed: ' + data.message);
+                }
+            })
+            .catch(error => console.error('Error:', error));
+        }
+
+        function loadProfile() {
+            const token = localStorage.getItem('Authorization');
+            if (token) {
+                htmx.ajax('GET', '/profile', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    },
+                    target: '#profile-container',
+                    swap: 'innerHTML'
+                });
+                document.getElementById('login-container').style.display = 'none';
+                document.getElementById('profile-container').style.display = 'block';
+            }
+        }
+
+        function checkIfLoggedIn() {
+            const token = localStorage.getItem('Authorization');
+            if (token) {
+                loadProfile();
+            } else {
+                document.getElementById('login-container').style.display = 'block';
+                document.getElementById('profile-container').style.display = 'none';
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', checkIfLoggedIn);
+    </script>
+</head>
+<body>
+    <div id="login-container">
+        <h1>Login</h1>
+        <form onsubmit="handleLogin(event)">
+            <label for="username">Username:</label>
+            <input type="text" id="username" name="username" required value={{ .username }}><br><br>
+
+            <label for="password">Password:</label>
+            <input type="password" id="password" name="password" required><br><br>
+
+            <input type="hidden" name="sessionID" value={{ .sessionID }}>
+
+            <button type="submit">Login</button>
+        </form>
+        <p>Don't have an account? <a href="/register">Register here</a></p>
+    </div>
+
+    <div id="profile-container" style="display:none;">
+        <!-- Profile content will be loaded here -->
+    </div>
+</body>
+</html>

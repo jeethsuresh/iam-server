@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Profile</title>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const token = localStorage.getItem('Authorization');
+            if (!token) {
+                window.location.href = '/';
+                return;
+            }
+            console.log("*******" + token);
+        });
+    </script>
+</head>
+<body id="profile-container">
+    <h1>Welcome, {{.Username}}!</h1>
+    <a href="#" onclick="logout(event)">Logout</a> <!-- Prevent default behavior with event parameter -->
+
+    <script>
+        function logout(event) {
+            event.preventDefault(); // Prevent the default anchor behavior
+            localStorage.removeItem('Authorization'); // Clear the token
+
+            // Redirect to root URL
+            window.location.href = '/';
+        }
+    </script>
+</body>
+</html>
