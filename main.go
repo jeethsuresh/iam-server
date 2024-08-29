@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"html/template"
 	"net/http"
 
@@ -59,7 +58,6 @@ func main() {
 		sessionID := c.QueryParam("sessionID")
 		username := c.QueryParam("username")
 
-		fmt.Printf("******* sessionID: %s, username: %s\n", sessionID, username)
 		return renderTemplate(c, "login.html", map[string]string{
 			"username":  username,
 			"sessionID": sessionID,
@@ -86,9 +84,7 @@ func main() {
 		password := c.FormValue("password")
 		sessionID := c.FormValue("sessionID")
 
-		fmt.Printf("***** %+v\n", sessionID)
 		if sessionID != "" {
-			fmt.Printf("**** SESSION ID: %s\n", sessionID)
 			return auth.HandleSession(c, username, sessionID)
 		}
 
@@ -101,7 +97,6 @@ func main() {
 		if err != nil {
 			return c.JSON(http.StatusInternalServerError, "Could not generate token.")
 		}
-		fmt.Printf("***** Generated token: %+v\n", token)
 
 		return c.JSON(http.StatusOK, map[string]string{"token": token})
 	})

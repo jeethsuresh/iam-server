@@ -8,7 +8,6 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/url"
 	"time"
@@ -16,6 +15,7 @@ import (
 	"github.com/golang-jwt/jwt"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
+	"github.com/pkg/errors"
 )
 
 // var users = make(map[string]User)
@@ -52,7 +52,7 @@ func GenerateToken(username string) (string, error) {
 func generatePrivateKey() (*ecdsa.PrivateKey, error) {
 	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
-		return nil, fmt.Errorf("error generating private key: %v", err)
+		return nil, errors.Errorf("error generating private key: %v", err)
 	}
 	return privateKey, nil
 }
@@ -96,7 +96,7 @@ func HandleSession(c echo.Context, username string, sessionID string) error {
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, "Could not marshal request.")
 	}
-	fmt.Printf("***** %+v\n", string(jsonBody))
+
 	req, err := http.NewRequest("POST", currSession.TokenURL, bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, "Could not create request.")
@@ -138,7 +138,6 @@ func HandleBackend(c echo.Context) error {
 
 	user := SessionMapValue{}
 	if err := c.Bind(&user); err != nil {
-		fmt.Printf("***** err: %+v\n", err)
 		return c.JSON(http.StatusBadRequest, err.Error())
 	}
 	sessionID := uuid.New().String()
