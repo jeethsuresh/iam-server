@@ -7,12 +7,12 @@ TL;DR: Federated auth server with no advance notice required (no client ID/secre
 1. User creates an account on the server
 2. User wishes to log into an application via a platform-agnostic client (opaque network boundary)
 3. User enters username in the application client; the application server sends a backend to the IAM server.
-    i. Application server retrieves domain found in the [email-formatted] username
-    ii. Application server routes to `<domain>/backend/register`
-    iii. In the request body, application server contains:
-        a. username - full username of user
-        b. tokenURL - majority of the application server's backend client logic; handles token verification, and sets the backend session variables required during the login process
-        c. redirectURL - final URL which sets the token (localstorage, cookie, etc.) on the client
+    - Application server retrieves domain found in the [email-formatted] username
+    - Application server routes to `<domain>/backend/register`
+    - In the request body, application server contains:
+        - username - full username of user
+        - tokenURL - majority of the application server's backend client logic; handles token verification, and sets the backend session variables required during the login process
+        - redirectURL - final URL which sets the token (localstorage, cookie, etc.) on the client
 4. IAM server returns a public key in response to the application server's initial query, encoded in base64. 
 5. Application server redirects to the IAM server's root endpoint, with `sessionID` and `username` parameters in the URL
 6. On successful login, the IAM server sends the token to the application server backend using the tokenURL endpoint
