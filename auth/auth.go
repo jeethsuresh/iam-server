@@ -58,11 +58,6 @@ func generatePrivateKey() (*ecdsa.PrivateKey, error) {
 }
 
 func generateTokenWithPrivateKey(username string, privateKey *ecdsa.PrivateKey, sessionID string) (string, error) {
-	// privateKeyBytes, err := x509.MarshalECPrivateKey(privateKey)
-	// if err != nil {
-	// 	return "", ecdsa.PublicKey{}, fmt.Errorf("error marshalling private key: %v", err)
-	// }
-
 	claims := &Claims{
 		Username:  username,
 		SessionID: sessionID,

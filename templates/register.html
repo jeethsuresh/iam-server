@@ -1,19 +1,109 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Register</title>
-    <script src="https://unpkg.com/htmx.org@2.0.2" integrity="sha384-Y7hw+L/jvKeWIRRkqWYfPcvVxHzVzn5REgzbawhxAuQGwX1XWe70vji+VSeHOThJ" crossorigin="anonymous"></script></head>
+    <script src="https://unpkg.com/htmx.org@2.0.2" integrity="sha384-Y7hw+L/jvKeWIRRkqWYfPcvVxHzVzn5REgzbawhxAuQGwX1XWe70vji+VSeHOThJ" crossorigin="anonymous"></script>
+    <style>
+        /* Reset some default browser styles */
+        body, h1, label, input, button {
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f0f4f8; /* Light pastel background color */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            text-align: center;
+        }
+
+        #register-container {
+            background: #ffffff; /* Bright white background for the form section */
+            padding: 2rem;
+            border-radius: 12px;
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15); /* Enhanced shadow for more depth */
+            max-width: 400px;
+            width: 100%;
+            box-sizing: border-box; /* Ensure padding is included in the width */
+        }
+
+        h1 {
+            margin-bottom: 1rem;
+            font-size: 2rem;
+            color: #6a5acd; /* Pastel blue color */
+        }
+
+        form {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem; /* Space between form elements */
+        }
+
+        label {
+            font-size: 1rem;
+            color: #333; /* Dark color for labels */
+            text-align: left;
+        }
+
+        input[type="text"], input[type="password"] {
+            padding: 0.5rem;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 1rem;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        button {
+            background-color: #6a5acd; /* Pastel blue background */
+            color: #fff; /* White text */
+            border: none;
+            padding: 0.75rem;
+            border-radius: 8px;
+            font-size: 1rem;
+            cursor: pointer;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        button:hover {
+            background-color: #5a4db2; /* Slightly darker blue for hover effect */
+        }
+
+        p {
+            margin-top: 1rem;
+        }
+
+        a {
+            color: #ffadad; /* Pastel pink color for links */
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        a:hover {
+            color: #ff6b6b; /* Slightly darker pink for hover effect */
+        }
+    </style>
+</head>
 <body>
-    <h1>Register</h1>
-    <form action="/register" method="POST" hx-target="body">
-        <label for="username">Username:</label>
-        <input type="text" id="username" name="username" required><br><br>
+    <div id="register-container">
+        <h1>Register</h1>
+        <form action="/register" method="POST" hx-target="body">
+            <label for="username">Username:</label>
+            <input type="text" id="username" name="username" required>
 
-        <label for="password">Password:</label>
-        <input type="password" id="password" name="password" required><br><br>
+            <label for="password">Password:</label>
+            <input type="password" id="password" name="password" required>
 
-        <button type="submit">Register</button>
-    </form>
-    <p>Already have an account? <a href="/">Login here</a></p>
+            <button type="submit">Register</button>
+        </form>
+        <p>Already have an account? <a href="/">Login here</a></p>
+    </div>
 </body>
 </html>
