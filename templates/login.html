@@ -24,7 +24,17 @@
                     // Load the profile page after login
                     loadProfile();
                 } else {
-                    alert('Login failed: ' + data.message);
+                    const url = new URL(window.location.href);
+            
+                    // Create URLSearchParams object
+                    const params = new URLSearchParams(url.search);
+                    
+                    // Check if the parameter exists
+                    if (!params.has("sessionID")) {          
+                    
+                    document.getElementById('message-return').textContent = ('Login failed: ' + data.message);
+                
+                    }
                 }
             })
             .catch(error => console.error('Error:', error));
@@ -40,7 +50,7 @@
                     target: '#profile-container',
                     swap: 'innerHTML'
                 });
-                document.getElementById('login-container').style.display = 'none';
+                document.getElementById('login-form').style.display = 'none';
                 document.getElementById('profile-container').style.display = 'block';
             }
         }
@@ -57,24 +67,113 @@
 
         document.addEventListener('DOMContentLoaded', checkIfLoggedIn);
     </script>
+<style>
+    /* Reset some default browser styles */
+    body, h1, form {
+        margin: 0;
+        padding: 0;
+    }
+
+    body {
+        font-family: Arial, sans-serif;
+        background-color: #f0f4f8; /* Light pastel background color */
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+    }
+
+    .container {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100%;
+    }
+
+    .login-form {
+        background: #ffffff; /* Bright white background for the form */
+        padding: 2rem;
+        border-radius: 12px;
+        box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15); /* Enhanced shadow for more depth */
+        max-width: 400px;
+        width: 100%;
+        margin: 1rem;
+        box-sizing: border-box; /* Ensure padding is included in the width */
+    }
+
+    .login-form h1 {
+        margin-bottom: 1rem;
+        font-size: 2rem;
+        color: #6a5acd; /* Pastel blue color */
+        text-align: center;
+    }
+
+    .login-form label {
+        display: block;
+        margin-bottom: 0.5rem;
+        color: #333;
+    }
+
+    .login-form input {
+        width: calc(100% - 2rem); /* Make inputs the same width as the container, accounting for padding */
+        padding: 0.75rem;
+        margin-bottom: 1rem;
+        border: 1px solid #ddd;
+        border-radius: 6px; /* Slightly larger border-radius for a softer look */
+        box-sizing: border-box;
+        font-size: 1rem;
+        display: block;
+        margin-left: auto;
+        margin-right: auto;
+    }
+
+    .login-form button {
+        width: calc(100% - 2rem); /* Same width as inputs */
+        padding: 0.75rem;
+        background-color: #ffadad; /* Pastel pink color */
+        border: none;
+        border-radius: 6px; /* Consistent border-radius with input fields */
+        color: #fff;
+        font-size: 1rem;
+        cursor: pointer;
+        transition: background-color 0.3s ease;
+        display: block;
+        margin-left: auto;
+        margin-right: auto;
+    }
+
+    .login-form button:hover {
+        background-color: #ff6b6b; /* Slightly darker pink */
+    }
+
+    .login-form button:focus {
+        outline: none;
+        box-shadow: 0 0 0 2px rgba(255, 173, 173, 0.5);
+    }
+</style>
+
+
 </head>
 <body>
+
+    <div class="login-form" id="login-form">
     <div id="login-container">
         <h1>Login</h1>
-        <form onsubmit="handleLogin(event)">
+        <h3 id="message-return"></h3>
+        <form action onsubmit="handleLogin(event)">
             <label for="username">Username:</label>
-            <input type="text" id="username" name="username" required value={{ .username }}><br><br>
+            <input type="text" id="username" name="username" required {{ if .username }}value={{ .username }} {{else}}{{ end }}>
 
             <label for="password">Password:</label>
             <input type="password" id="password" name="password" required><br><br>
 
-            <input type="hidden" name="sessionID" value={{ .sessionID }}>
+            <input type="hidden" name="sessionID"  {{ if .sessionID }}value={{ .sessionID }} {{else}}{{ end }}>
 
             <button type="submit">Login</button>
         </form>
         <p>Don't have an account? <a href="/register">Register here</a></p>
     </div>
-
+</div>
     <div id="profile-container" style="display:none;">
         <!-- Profile content will be loaded here -->
     </div>

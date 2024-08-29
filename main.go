@@ -88,6 +88,7 @@ func main() {
 
 		fmt.Printf("***** %+v\n", sessionID)
 		if sessionID != "" {
+			fmt.Printf("**** SESSION ID: %s\n", sessionID)
 			return auth.HandleSession(c, username, sessionID)
 		}
 

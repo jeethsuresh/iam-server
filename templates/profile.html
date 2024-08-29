@@ -1,7 +1,10 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Profile</title>
+
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             const token = localStorage.getItem('Authorization');
@@ -13,9 +16,110 @@
         });
     </script>
 </head>
-<body id="profile-container">
+<body id="profile-container" class="profile-container">
+    <style>
+        /* Reset some default browser styles */
+        body, h1 {
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f0f4f8; /* Light pastel background color */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            text-align: center;
+        }
+
+        #profile-container {
+            background: #ffffff; /* Bright white background for the profile section */
+            padding: 2rem;
+            border-radius: 12px;
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15); /* Enhanced shadow for more depth */
+            max-width: 400px;
+            width: 100%;
+            box-sizing: border-box; /* Ensure padding is included in the width */
+        }
+
+        h1 {
+            margin-bottom: 1rem;
+            font-size: 2rem;
+            color: #6a5acd; /* Pastel blue color */
+        }
+
+        .profile-container.logout {
+            color: #ffadad; /* Pastel pink color for links */
+            text-decoration: none;
+            font-size: 1rem;
+            font-weight: bold;
+        }
+
+        .profile-container.logout:hover {
+            color: #ff6b6b; /* Slightly darker pink for hover effect */
+        }
+        <style>
+        /* Reset some default browser styles */
+        body, h1 {
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f0f4f8; /* Light pastel background color */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            text-align: center;
+        }
+/* 
+        #profile-container {
+            background: #ffffff; /* Bright white background for the profile section */
+            padding: 2rem;
+            border-radius: 12px;
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15); /* Enhanced shadow for more depth */
+            max-width: 400px;
+            width: 100%;
+            box-sizing: border-box; /* Ensure padding is included in the width */
+        } */
+
+        h1 {
+            margin: 0; /* Remove default margin */
+            font-size: 2rem;
+            color: #6a5acd; /* Pastel blue color */
+            white-space: nowrap; /* Prevent the text from wrapping */
+            overflow: hidden; /* Hide overflowed text */
+            text-overflow: ellipsis; /* Show ellipsis (...) for overflowing text */
+            display: inline-block; /* Ensure text stays on one line */
+            max-width: 100%; /* Ensure it fits within the container */
+        }
+
+        a {
+            color: #ffadad; /* Pastel pink color for links */
+            text-decoration: none;
+            font-size: 1rem;
+            font-weight: bold;
+        }
+
+        a:hover {
+            color: #ff6b6b; /* Slightly darker pink for hover effect */
+        }
+
+        /* Ensure <a> styles are applied correctly */
+        #profile-container a {
+            display: inline-block; /* Ensure it respects padding and margin */
+            margin-top: 1rem; /* Add spacing above the link */
+        }
+    </style>
+    </style>
     <h1>Welcome, {{.Username}}!</h1>
-    <a href="#" onclick="logout(event)">Logout</a> <!-- Prevent default behavior with event parameter -->
+    <a href="#" class="logout" onclick="logout(event)">Logout</a> <!-- Prevent default behavior with event parameter -->
 
     <script>
         function logout(event) {
