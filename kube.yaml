@@ -14,7 +14,6 @@ metadata:
   namespace: iam
 spec:
   instances: 1
-
   storage:
     size: 128Mi
 ---
@@ -48,6 +47,10 @@ spec:
       labels:
         app: iam
     spec:
+      initContainers:
+      - name: wait-for-db
+        image: busybox
+        command: ['sh', '-c', 'until nc -zv iam-cluster-rw 5432; do echo waiting for db; sleep 2; done;']
       containers:
       - name: iam
         image: iam-server:latest
