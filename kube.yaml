@@ -1,0 +1,71 @@
+# new namespace
+# new postgresql cluster
+# new iam deployment
+# new iam service
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: iam
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: iam-cluster
+  namespace: iam
+spec:
+  instances: 1
+
+  storage:
+    size: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: iam
+  namespace: iam
+spec:
+  selector:
+    app: iam
+  ports:
+  - protocol: "TCP"
+    port: 8088
+    targetPort: 8080
+  type: LoadBalancer
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: iam
+  namespace: iam
+spec:
+  selector:
+    matchLabels:
+      app: iam
+  replicas: 3
+  template:
+    metadata:
+      labels:
+        app: iam
+    spec:
+      containers:
+      - name: iam
+        image: iam-server:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 8080
+        env:
+        - name: USE_POSTGRES
+          value: "true"
+        - name: POSTGRES_URL
+          value: "iam-cluster-rw"
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: iam-cluster-app
+              key: password
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: iam-cluster-app
+              key: username

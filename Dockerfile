@@ -21,6 +21,7 @@ FROM scratch
 
 # Copy the Pre-built binary file from the previous stage
 COPY --from=builder /app/main /main
+COPY --from=builder /app/templates/ /templates/
 
 # Command to run the executable
 ENTRYPOINT ["/main"]

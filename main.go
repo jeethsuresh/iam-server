@@ -1,8 +1,10 @@
 package main
 
 import (
+	"fmt"
 	"html/template"
 	"net/http"
+	"os"
 
 	"github.com/dgrijalva/jwt-go"
 	"github.com/jeethsuresh/iam/auth"
@@ -40,6 +42,28 @@ func authMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 }
 
 func main() {
+
+	var dbProvider db.DB
+	var err error
+	// Check for database connection string
+	if os.Getenv("USE_POSTGRES") != "" {
+		pguser := os.Getenv("POSTGRES_USER")
+		pgpass := os.Getenv("POSTGRES_PASSWORD")
+		pgurl := os.Getenv("POSTGRES_URL")
+		fmt.Printf("Connecting to Postgres at %s\n", pgurl)
+		dbProvider, err = db.NewPostgresDB(pguser, pgpass, pgurl)
+		if err != nil {
+			panic(err)
+		}
+	} else if os.Getenv("USE_SQLITE") != "" {
+		dbProvider, err = db.NewSQLiteDB()
+		if err != nil {
+			panic(err)
+		}
+	} else {
+		panic("No database connection string provided")
+	}
+
 	e := echo.New()
 
 	e.Use(middleware.Logger())
@@ -48,8 +72,6 @@ func main() {
 		AllowOrigins: []string{"*"},
 		AllowMethods: []string{echo.GET, echo.HEAD, echo.PUT, echo.PATCH, echo.POST, echo.DELETE},
 	}))
-
-	db := db.NewDB()
 
 	e.GET("/", func(c echo.Context) error {
 		if c.Request().Header.Get("Authorization") != "" {
@@ -72,7 +94,7 @@ func main() {
 		username := c.FormValue("username")
 		password := c.FormValue("password")
 
-		if err := db.CreateUser(username, password); err != nil {
+		if err := dbProvider.CreateUser(username, password); err != nil {
 			return c.JSON(http.StatusBadRequest, err.Error())
 		}
 
@@ -88,7 +110,7 @@ func main() {
 			return auth.HandleSession(c, username, sessionID)
 		}
 
-		exists := db.GetUser(username, password)
+		exists := dbProvider.GetUser(username, password)
 		if !exists {
 			return c.JSON(http.StatusUnauthorized, "Invalid credentials.")
 		}
