@@ -30,6 +30,11 @@ type Claims struct {
 
 var sessions = map[string]SessionMapValue{}
 
+// ResetSessions clears in-memory federated login state (for tests).
+func ResetSessions() {
+	sessions = map[string]SessionMapValue{}
+}
+
 type SessionMapValue struct {
 	Username    string            `json:"username"`
 	RedirectURL string            `json:"redirectURL"`
@@ -79,6 +84,13 @@ func HandleSession(c echo.Context, username string, sessionID string) error {
 	}
 	if currSession.Username != username {
 		return c.JSON(http.StatusUnauthorized, "Invalid session ID.")
+	}
+
+	if err := ValidateCallbackURL(currSession.TokenURL, "tokenURL"); err != nil {
+		return c.JSON(http.StatusBadRequest, err.Error())
+	}
+	if err := ValidateCallbackURL(currSession.RedirectURL, "redirectURL"); err != nil {
+		return c.JSON(http.StatusBadRequest, err.Error())
 	}
 
 	type BackendRequest struct {
@@ -132,7 +144,7 @@ func HandleBackend(c echo.Context) error {
 
 	pubBytes, err := x509.MarshalPKIXPublicKey(&privateKey.PublicKey)
 	if err != nil {
-		return err
+		return c.JSON(http.StatusInternalServerError, "Could not encode public key: "+err.Error())
 	}
 	publicKeyBase64 := base64.StdEncoding.EncodeToString(pubBytes)
 
@@ -143,6 +155,18 @@ func HandleBackend(c echo.Context) error {
 	sessionID := uuid.New().String()
 	if user.Username == "" {
 		return c.JSON(http.StatusBadRequest, "Invalid username")
+	}
+	if user.TokenURL == "" {
+		return c.JSON(http.StatusBadRequest, "tokenURL is required")
+	}
+	if user.RedirectURL == "" {
+		return c.JSON(http.StatusBadRequest, "redirectURL is required")
+	}
+	if err := ValidateCallbackURL(user.TokenURL, "tokenURL"); err != nil {
+		return c.JSON(http.StatusBadRequest, err.Error())
+	}
+	if err := ValidateCallbackURL(user.RedirectURL, "redirectURL"); err != nil {
+		return c.JSON(http.StatusBadRequest, err.Error())
 	}
 	user.PrivateKey = privateKey
 	sessions[sessionID] = user

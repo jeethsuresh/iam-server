@@ -19,8 +19,6 @@
                 }
                 if (data.token) {
                     localStorage.setItem('Authorization', data.token);
-                    console.log("*******" + localStorage.getItem("Authorization"));
-                    
                     // Load the profile page after login
                     loadProfile();
                 } else {
@@ -162,12 +160,12 @@
         <h3 id="message-return"></h3>
         <form action onsubmit="handleLogin(event)">
             <label for="username">Username:</label>
-            <input type="text" id="username" name="username" required {{ if .username }}value={{ .username }} {{else}}{{ end }}>
+            <input type="text" id="username" name="username" required{{if .username}} value="{{.username}}"{{end}}>
 
             <label for="password">Password:</label>
             <input type="password" id="password" name="password" required><br><br>
 
-            <input type="hidden" name="sessionID"  {{ if .sessionID }}value={{ .sessionID }} {{else}}{{ end }}>
+            <input type="hidden" name="sessionID"{{if .sessionID}} value="{{.sessionID}}"{{end}}>
 
             <button type="submit">Login</button>
         </form>

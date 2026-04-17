@@ -114,12 +114,20 @@ func seedPostgresDB(db *sql.DB) {
 		log.Printf("Error creating table: %v", err)
 	}
 
-	// Insert sample data
-	username := "user@localhost:8080"
-	password := "password"
-
-	insertUserSQL := `INSERT INTO users (username, password) VALUES ($1, $2)`
-	_, err = db.Exec(insertUserSQL, username, password)
+	demoUser := "user@localhost:8080"
+	demoPass := "password"
+	salt, err := generateSalt(16)
+	if err != nil {
+		log.Printf("Error generating salt for seed user: %v", err)
+		return
+	}
+	hashed, err := hashPassword(demoPass, salt, PEPPER)
+	if err != nil {
+		log.Printf("Error hashing seed password: %v", err)
+		return
+	}
+	insertUserSQL := `INSERT INTO users (username, password, salt) VALUES ($1, $2, $3)`
+	_, err = db.Exec(insertUserSQL, demoUser, hashed, salt)
 	if err != nil {
 		log.Printf("Error inserting data: %v", err)
 	}
