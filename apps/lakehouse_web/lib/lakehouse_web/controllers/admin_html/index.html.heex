@@ -1,0 +1,21 @@
+<h1>Pending accounts</h1>
+
+<%= if @pending_users == [] do %>
+  <p>No accounts waiting for approval.</p>
+<% else %>
+  <ul style="list-style: none; padding: 0;">
+    <%= for u <- @pending_users do %>
+      <li style="margin: 0.75rem 0; padding: 0.75rem; border: 1px solid #e5e7eb; border-radius: 6px;">
+        <strong><%= u.username %></strong>
+        <span style="color: #6b7280; font-size: 0.875rem;"> — since <%= u.inserted_at %></span>
+        <form action={~p"/web/admin/approve"} method="post" style="margin-top: 0.5rem;">
+          <input type="hidden" name="_csrf_token" value={get_csrf_token()} />
+          <input type="hidden" name="username" value={u.username} />
+          <button type="submit">Approve</button>
+        </form>
+      </li>
+    <% end %>
+  </ul>
+<% end %>
+
+<p><a href={~p"/profile"}>Back to profile</a></p>

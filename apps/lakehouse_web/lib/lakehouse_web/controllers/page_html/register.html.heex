@@ -1,0 +1,22 @@
+<h1>Create account</h1>
+
+<%= if @error do %>
+  <div class="flash flash--error" role="alert"><%= @error %></div>
+<% end %>
+
+<%= if @info do %>
+  <div class="flash flash--info" role="alert"><%= @info %></div>
+<% end %>
+
+<form action={~p"/web/register"} method="post">
+  <input type="hidden" name="_csrf_token" value={get_csrf_token()} />
+  <label for="username">Username</label>
+  <input id="username" name="username" type="text" autocomplete="username" required maxlength="20" pattern="[a-zA-Z0-9]+" title="Letters and numbers only" />
+
+  <label for="password">Password</label>
+  <input id="password" name="password" type="password" autocomplete="new-password" required />
+
+  <button type="submit">Register</button>
+</form>
+
+<p>Already have an account? <a href={~p"/"}>Sign in</a></p>

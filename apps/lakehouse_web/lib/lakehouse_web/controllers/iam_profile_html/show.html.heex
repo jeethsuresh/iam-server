@@ -1,0 +1,10 @@
+<h1>Profile</h1>
+<p>Signed in as <strong><%= @username %></strong></p>
+
+<p><a href={~p"/profile/password"}>Change password</a></p>
+
+<%= if @current_user_is_admin do %>
+  <p><a href={~p"/admin"}>Approve pending users</a></p>
+<% end %>
+
+<p><a href={~p"/logout"}>Sign out</a></p>

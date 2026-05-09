@@ -1,0 +1,27 @@
+<h1>Sign in</h1>
+
+<%= if @info && @info != "" do %>
+  <div class="flash flash--info" role="alert"><%= @info %></div>
+<% end %>
+
+<%= if @error && @error != "" do %>
+  <div class="flash flash--error" role="alert"><%= @error %></div>
+<% end %>
+
+<form action={~p"/web/login"} method="post">
+  <input type="hidden" name="_csrf_token" value={get_csrf_token()} />
+  <label for="username">Username</label>
+  <input id="username" name="username" type="text" autocomplete="username" required value={@username} />
+
+  <label for="password">Password</label>
+  <input id="password" name="password" type="password" autocomplete="current-password" required />
+
+  <%= if @session_id != "" do %>
+    <input type="hidden" name="sessionID" value={@session_id} />
+    <p class="flash flash--info">Completing federated sign-in. Enter your password.</p>
+  <% end %>
+
+  <button type="submit">Sign in</button>
+</form>
+
+<p>No account? <a href={~p"/register"}>Register</a></p>

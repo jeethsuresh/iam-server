@@ -1,0 +1,36 @@
+import Config
+
+pg_host = System.get_env("POSTGRES_HOST", "localhost")
+
+pg_user = System.get_env("POSTGRES_USER", "postgres")
+pg_pass = System.get_env("POSTGRES_PASSWORD", "postgres")
+pg_db = System.get_env("POSTGRES_DB", "lakehouse_dev")
+
+config :lakehouse_iam, LakehouseIam.Repo,
+  username: pg_user,
+  password: pg_pass,
+  hostname: pg_host,
+  database: pg_db,
+  stacktrace: true,
+  show_sensitive_data_on_connection_error: true,
+  pool_size: 10
+
+phx_ip =
+  case System.get_env("PHX_LISTEN_ADDRESS", "127.0.0.1") do
+    "0.0.0.0" -> {0, 0, 0, 0}
+    _ -> {127, 0, 0, 1}
+  end
+
+phx_port = String.to_integer(System.get_env("PORT") || "4000")
+
+config :lakehouse_web, LakehouseWeb.Endpoint,
+  http: [ip: phx_ip, port: phx_port],
+  check_origin: false,
+  code_reloader: true,
+  debug_errors: true,
+  secret_key_base:
+    System.get_env("SECRET_KEY_BASE") ||
+      "dEVONLYdEVONLYdEVONLYdEVONLYdEVONLYdEVONLYdEVONLYdEVONLYdEVONLYdEVONLY",
+  watchers: []
+
+config :logger, level: :debug

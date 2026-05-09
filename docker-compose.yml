@@ -1,0 +1,43 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: lakehouse_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - lakehouse_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d lakehouse_dev"]
+      interval: 3s
+      timeout: 5s
+      retries: 15
+      start_period: 5s
+
+  lakehouse:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "4000:4000"
+    environment:
+      MIX_ENV: dev
+      POSTGRES_HOST: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: lakehouse_dev
+      PORT: "4000"
+      PHX_LISTEN_ADDRESS: "0.0.0.0"
+      JWT_SECRET: ${JWT_SECRET:-docker-dev-jwt-secret-change-me-in-production}
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE:-dEVDOCKERdEVDOCKERdEVDOCKERdEVDOCKERdEVDOCKERdEVDOCKERdEVDOCKERdEVDOCKERdEVDOCKERdEVDOCKER}
+      IAM_ADMIN_USERNAME: ${IAM_ADMIN_USERNAME:-admin}
+      IAM_ADMIN_PASSWORD: ${IAM_ADMIN_PASSWORD:-changeme}
+      IAM_RELAXED_CALLBACK_URLS: ${IAM_RELAXED_CALLBACK_URLS:-1}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  lakehouse_pgdata:
