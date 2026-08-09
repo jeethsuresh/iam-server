@@ -13,7 +13,7 @@ defmodule LakehouseWeb.ProfilePasswordController do
     apply_change(conn, params, fn conn, msg ->
       conn
       |> put_flash(:info, msg)
-      |> redirect(to: ~p"/profile")
+      |> redirect(to: ~p"/settings")
     end)
   end
 
@@ -55,7 +55,7 @@ defmodule LakehouseWeb.ProfilePasswordController do
       "html" ->
         conn
         |> put_flash(:error, msg)
-        |> redirect(to: ~p"/profile/password")
+        |> redirect(to: ~p"/settings")
 
       _ ->
         st = status_to_int(status)

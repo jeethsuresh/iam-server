@@ -12,6 +12,15 @@ defmodule LakehouseWeb.Endpoint do
     websocket: true,
     longpoll: false
 
+  socket "/live", Phoenix.LiveView.Socket,
+    websocket: [connect_info: [session: @session_options]]
+
+  plug Plug.Static,
+    at: "/",
+    from: :lakehouse_web,
+    gzip: false,
+    only: LakehouseWeb.static_paths()
+
   plug Plug.RequestId
 
   plug Plug.Telemetry,

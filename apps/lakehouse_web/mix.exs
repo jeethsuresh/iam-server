@@ -13,7 +13,9 @@ defmodule LakehouseWeb.MixProject do
       elixirc_paths: elixirc_paths(Mix.env()),
       compilers: Mix.compilers(),
       start_permanent: Mix.env() == :prod,
-      deps: deps()
+      deps: deps(),
+      test_pattern: "*_test.exs",
+      warn_test_pattern_mismatch: false
     ]
   end
 
@@ -40,7 +42,9 @@ defmodule LakehouseWeb.MixProject do
       {:bandit, "~> 1.2"},
       {:req, "~> 0.5"},
       {:lakehouse_iam, in_umbrella: true},
-      {:lakehouse_matrix, in_umbrella: true}
+      {:lakehouse_matrix, in_umbrella: true},
+      {:cucumber, "~> 1.0", only: :test},
+      {:wallaby, "~> 0.30", runtime: false, only: :test}
     ]
   end
 end

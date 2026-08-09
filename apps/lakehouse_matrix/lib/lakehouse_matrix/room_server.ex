@@ -1,6 +1,6 @@
 defmodule LakehouseMatrix.RoomServer do
   @moduledoc """
-  Long-lived room actor: tracks participants and fans out PubSub messages.
+  Long-lived room actor: tracks participants and fans out persisted Matrix events.
   """
   use GenServer
 
@@ -12,8 +12,8 @@ defmodule LakehouseMatrix.RoomServer do
 
   defp via(room_id), do: {:via, Registry, {LakehouseMatrix.RoomRegistry, room_id}}
 
-  def broadcast(room_id, message) do
-    GenServer.cast(via(room_id), {:broadcast, message})
+  def broadcast_event(room_id, event_map) when is_map(event_map) do
+    GenServer.cast(via(room_id), {:broadcast, event_map})
   end
 
   def join(room_id, principal_id, pid) do
@@ -39,11 +39,11 @@ defmodule LakehouseMatrix.RoomServer do
     {:noreply, %{state | members: Map.delete(state.members, pid)}}
   end
 
-  def handle_cast({:broadcast, msg}, state) do
+  def handle_cast({:broadcast, event_map}, state) do
     pubsub = Application.fetch_env!(:lakehouse_matrix, :pubsub)
     topic = "room:#{state.room_id}"
 
-    Phoenix.PubSub.broadcast(pubsub, topic, {:room_event, state.room_id, msg})
+    Phoenix.PubSub.broadcast(pubsub, topic, {:room_event, state.room_id, event_map})
 
     {:noreply, state}
   end

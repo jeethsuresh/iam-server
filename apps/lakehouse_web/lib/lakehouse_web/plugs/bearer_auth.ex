@@ -13,9 +13,15 @@ defmodule LakehouseWeb.Plugs.BearerAuth do
           {:ok, claims} ->
             username = claims["username"]
 
-            conn
-            |> assign(:jwt_claims, claims)
-            |> assign(:username, username)
+            conn =
+              conn
+              |> assign(:jwt_claims, claims)
+              |> assign(:username, username)
+
+            case LakehouseIam.Accounts.fetch_user(username) do
+              {:ok, principal} -> assign(conn, :principal_id, principal.id)
+              :error -> conn
+            end
 
           :error ->
             conn

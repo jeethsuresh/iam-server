@@ -4,10 +4,7 @@ defmodule LakehouseWeb.IamProfileController do
   def show(conn, _params) do
     case get_format(conn) do
       "html" ->
-        render(conn, :show,
-          username: conn.assigns.username,
-          current_user_is_admin: Map.get(conn.assigns, :current_user_is_admin, false)
-        )
+        redirect(conn, to: ~p"/settings")
 
       _ ->
         json(conn, %{username: conn.assigns.username})

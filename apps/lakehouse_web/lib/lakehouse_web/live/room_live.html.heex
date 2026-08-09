@@ -1,0 +1,110 @@
+<div class="chat-shell">
+  <%= if msg = Phoenix.Flash.get(@flash, :error) do %>
+    <div class="flash flash--error chat-flash" role="alert"><%= msg %></div>
+  <% end %>
+  <%= if msg = Phoenix.Flash.get(@flash, :info) do %>
+    <div class="flash flash--info chat-flash" role="status"><%= msg %></div>
+  <% end %>
+
+  <aside class="chat-master">
+    <div class="chat-master__header">
+      <h1 class="chat-master__title">Rooms</h1>
+      <.link navigate={~p"/settings"} class="chat-master__settings">Settings</.link>
+    </div>
+
+    <form phx-submit="create_room" class="chat-master__create">
+      <input
+        type="text"
+        name="name"
+        placeholder="New room name"
+        autocomplete="off"
+        class="chat-master__input"
+      />
+      <button type="submit" class="chat-master__create-btn">Create</button>
+    </form>
+
+    <ul class="chat-room-list">
+      <%= for room <- @rooms do %>
+        <li class={["chat-room-list__item", @room && @room.id == room.id && "chat-room-list__item--active"]}>
+          <.link patch={~p"/rooms/#{room.id}"} class="chat-room-list__link">
+            <span class="chat-room-list__name"><%= room.name %></span>
+            <%= if room.topic && room.topic != "" do %>
+              <span class="chat-room-list__topic"><%= room.topic %></span>
+            <% end %>
+          </.link>
+        </li>
+      <% end %>
+    </ul>
+
+    <%= if @rooms == [] do %>
+      <p class="chat-master__empty">No rooms yet. Create one above.</p>
+    <% end %>
+  </aside>
+
+  <section class="chat-detail">
+    <%= if @room do %>
+      <header class="chat-detail__header">
+        <div class="chat-detail__heading">
+          <h2 class="chat-detail__title"><%= @room.name %></h2>
+          <%= if @room.topic && @room.topic != "" do %>
+            <p class="chat-detail__topic"><%= @room.topic %></p>
+          <% end %>
+        </div>
+
+        <div class="chat-detail__members">
+          <h3 class="chat-detail__members-title">Members</h3>
+          <ul class="chat-detail__member-list">
+            <%= for member <- @members do %>
+              <li class="chat-detail__member"><%= member.username %></li>
+            <% end %>
+          </ul>
+
+          <form phx-submit="add_member" class="chat-detail__add-member">
+            <input
+              type="text"
+              name="username"
+              placeholder="Add user by username"
+              autocomplete="off"
+              class="chat-detail__add-member-input"
+            />
+            <button type="submit" class="chat-detail__add-member-btn">Add</button>
+          </form>
+        </div>
+
+        <button type="button" phx-click="leave_room" class="chat-detail__leave">Leave room</button>
+      </header>
+
+      <div class="chat-detail__messages" id="chat-messages" phx-hook="ScrollMessages">
+        <%= for msg <- @messages do %>
+          <article class={["chat-message", sender_label(msg) == @username && "chat-message--own"]}>
+            <header class="chat-message__meta">
+              <span class="chat-message__sender"><%= sender_label(msg) %></span>
+              <%= if msg["origin_server_ts"] do %>
+                <time class="chat-message__time"><%= format_ts(msg["origin_server_ts"]) %></time>
+              <% end %>
+            </header>
+            <p class="chat-message__body"><%= message_body(msg) %></p>
+          </article>
+        <% end %>
+      </div>
+
+      <form phx-submit="send_message" class="chat-detail__composer">
+        <input
+          type="text"
+          name="body"
+          id="message-composer"
+          value={@composer}
+          phx-change="update_composer"
+          placeholder="Message…"
+          autocomplete="off"
+          class="chat-detail__input"
+        />
+        <button type="submit" class="chat-detail__send">Send</button>
+      </form>
+    <% else %>
+      <div class="chat-detail__placeholder">
+        <p>Select a room from the list, or create a new one.</p>
+      </div>
+    <% end %>
+  </section>
+</div>

@@ -20,45 +20,50 @@ defmodule LakehouseIam.Authorization do
       end
 
     if rid == :missing do
+      # Resource ARN not registered yet; still allow principals with a global grant.
+      can_with_resource_id?(principal_id, action, nil)
+    else
+      can_with_resource_id?(principal_id, action, rid)
+    end
+  end
+
+  defp can_with_resource_id?(principal_id, action, rid) do
+    permission_ids =
+      from(p in Permission,
+        where: p.name == ^action,
+        select: p.id
+      )
+      |> Repo.all()
+
+    if permission_ids == [] do
       false
     else
-      permission_ids =
-        from(p in Permission,
-          where: p.name == ^action,
-          select: p.id
+      roles_with_perm =
+        from(rp in RolePermission,
+          where: rp.permission_id in ^permission_ids,
+          select: rp.role_id
+        )
+        |> Repo.all()
+        |> MapSet.new()
+
+      grants =
+        from(g in Grant,
+          where: g.principal_id == ^principal_id,
+          select: {g.role_id, g.resource_id}
         )
         |> Repo.all()
 
-      if permission_ids == [] do
-        false
-      else
-        roles_with_perm =
-          from(rp in RolePermission,
-            where: rp.permission_id in ^permission_ids,
-            select: rp.role_id
-          )
-          |> Repo.all()
-          |> MapSet.new()
-
-        grants =
-          from(g in Grant,
-            where: g.principal_id == ^principal_id,
-            select: {g.role_id, g.resource_id}
-          )
-          |> Repo.all()
-
-        Enum.any?(grants, fn {role_id, res_id} ->
-          if MapSet.member?(roles_with_perm, role_id) do
-            cond do
-              res_id == nil -> true
-              rid != nil and res_id == rid -> true
-              true -> false
-            end
-          else
-            false
+      Enum.any?(grants, fn {role_id, res_id} ->
+        if MapSet.member?(roles_with_perm, role_id) do
+          cond do
+            res_id == nil -> true
+            rid != nil and res_id == rid -> true
+            true -> false
           end
-        end)
-      end
+        else
+          false
+        end
+      end)
     end
   end
 

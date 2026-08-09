@@ -6,7 +6,7 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: lakehouse_dev
     ports:
-      - "5432:5432"
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
     volumes:
       - lakehouse_pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -21,7 +21,7 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "4000:4000"
+      - "${HOST_PORT:-4000}:4000"
     environment:
       MIX_ENV: dev
       POSTGRES_HOST: postgres
@@ -41,3 +41,4 @@ services:
 
 volumes:
   lakehouse_pgdata:
+    name: ${COMPOSE_PROJECT_NAME:-lakehouse}_pgdata

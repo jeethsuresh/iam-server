@@ -16,17 +16,17 @@ defmodule LakehouseWeb.AdminController do
       {:ok, _} ->
         conn
         |> put_flash(:info, "Approved #{Accounts.normalize_username(target)}.")
-        |> redirect(to: ~p"/admin")
+        |> redirect(to: ~p"/settings")
 
       {:error, :not_found} ->
         conn
         |> put_flash(:error, "User not found.")
-        |> redirect(to: ~p"/admin")
+        |> redirect(to: ~p"/settings")
 
       {:error, :already_active} ->
         conn
         |> put_flash(:error, "That account is already active.")
-        |> redirect(to: ~p"/admin")
+        |> redirect(to: ~p"/settings")
 
       {:error, :forbidden} ->
         conn

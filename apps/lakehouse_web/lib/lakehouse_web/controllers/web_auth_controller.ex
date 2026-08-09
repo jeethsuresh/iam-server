@@ -20,7 +20,7 @@ defmodule LakehouseWeb.WebAuthController do
         conn
         |> put_session(:user_jwt, token)
         |> put_flash(:info, "Signed in.")
-        |> redirect(to: ~p"/profile")
+        |> redirect(to: ~p"/rooms")
 
       {:ok, %{redirect: url}} ->
         redirect(conn, external: url)

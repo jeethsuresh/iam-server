@@ -29,8 +29,33 @@ defmodule LakehouseIam.Bootstrap do
         id ->
           _ = Accounts.set_password(id, password)
           _ = Accounts.set_active(id, true)
+          _ = LakehouseIam.IAM.assign_role(id, "member")
           :ok
       end
     end
+
+    ensure_member_roles()
+  end
+
+  @doc """
+  Grants the global `member` role to active users who lack any role grant.
+  Covers accounts approved before role assignment was wired up.
+  """
+  @spec ensure_member_roles() :: :ok
+  def ensure_member_roles do
+    active_ids =
+      Repo.all(
+        from p in Principal,
+          where: p.type == :user and p.active == true,
+          select: p.id
+      )
+
+    for principal_id <- active_ids do
+      if LakehouseIam.IAM.roles_for(principal_id) == [] do
+        _ = LakehouseIam.IAM.assign_role(principal_id, "member")
+      end
+    end
+
+    :ok
   end
 end

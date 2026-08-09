@@ -3,27 +3,17 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Lakehouse IAM</title>
-    <style>
-      :root { font-family: system-ui, sans-serif; line-height: 1.5; color: #1a1a2e; }
-      body { max-width: 28rem; margin: 2rem auto; padding: 0 1rem; }
-      a { color: #2563eb; }
-      .flash { padding: 0.75rem 1rem; border-radius: 6px; margin-bottom: 1rem; }
-      .flash--error { background: #fef2f2; color: #991b1b; }
-      .flash--info { background: #eff6ff; color: #1e40af; }
-      label { display: block; font-weight: 600; margin-top: 0.75rem; }
-      input { width: 100%; padding: 0.5rem; margin-top: 0.25rem; box-sizing: border-box; }
-      button { margin-top: 1rem; padding: 0.5rem 1rem; cursor: pointer; }
-      nav { margin-bottom: 1.5rem; display: flex; gap: 1rem; flex-wrap: wrap; }
-    </style>
+    <meta name="csrf-token" content={get_csrf_token()} />
+    <title>Lakehouse</title>
+    <link rel="stylesheet" href={~p"/lakehouse.css"} />
+    <script defer src={~p"/phoenix.min.js"}>
+    </script>
+    <script defer src={~p"/phoenix_live_view.min.js"}>
+    </script>
+    <script defer src={~p"/lakehouse.js"}>
+    </script>
   </head>
   <body>
-    <nav>
-      <a href={~p"/"}>Sign in</a>
-      <a href={~p"/register"}>Register</a>
-      <a href={~p"/profile"}>Profile</a>
-      <a href={~p"/logout"}>Sign out</a>
-    </nav>
     <%= @inner_content %>
   </body>
 </html>

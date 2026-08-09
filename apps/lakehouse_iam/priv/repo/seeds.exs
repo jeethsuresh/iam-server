@@ -29,7 +29,7 @@ end
 
 member = Repo.get_by!(Role, name: "member")
 
-for perm_name <- ["matrix.room.join", "matrix.room.send"] do
+for perm_name <- ["matrix.room.join", "matrix.room.send", "matrix.room.create"] do
   perm = Repo.get_by!(Permission, name: perm_name)
 
   unless Repo.exists?(

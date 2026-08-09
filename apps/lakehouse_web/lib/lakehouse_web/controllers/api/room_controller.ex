@@ -4,7 +4,15 @@ defmodule LakehouseWeb.Api.RoomController do
   alias LakehouseMatrix.Rooms
 
   def index(conn, _params) do
-    rooms = Rooms.list_rooms()
+    principal_id = conn.assigns[:principal_id]
+
+    rooms =
+      if principal_id do
+        Rooms.list_rooms_for(principal_id)
+      else
+        Rooms.list_rooms()
+      end
+
     json(conn, Enum.map(rooms, &room_json/1))
   end
 

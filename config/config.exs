@@ -39,4 +39,6 @@ config :phoenix, :json_library, Jason
 
 config :lakehouse_matrix, :pubsub, LakehouseWeb.PubSub
 
+config :lakehouse_matrix, :homeserver_domain, "localhost"
+
 import_config "#{config_env()}.exs"

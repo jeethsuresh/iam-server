@@ -22,7 +22,7 @@ defmodule LakehouseWeb do
     quote do
       use Phoenix.Controller,
         formats: [:html, :json],
-        layouts: [html: LakehouseWeb.Layouts]
+        layouts: [html: {LakehouseWeb.Layouts, :auth}]
 
       import Plug.Conn
 
@@ -43,8 +43,29 @@ defmodule LakehouseWeb do
     end
   end
 
+  def live_view do
+    quote do
+      use Phoenix.LiveView,
+        layout: {LakehouseWeb.Layouts, :chat}
+
+      unquote(html_helpers())
+    end
+  end
+
+  def live_component do
+    quote do
+      use Phoenix.LiveComponent
+
+      unquote(html_helpers())
+    end
+  end
+
   defp html_helpers do
     quote do
+      import Phoenix.Component
+      import Phoenix.HTML
+      import Phoenix.LiveView
+
       unquote(verified_routes())
     end
   end

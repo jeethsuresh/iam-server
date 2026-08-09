@@ -5,23 +5,33 @@ defmodule LakehouseMatrix.Rooms do
   import Ecto.Query
 
   alias LakehouseIam.Repo
-  alias LakehouseMatrix.RoomServer
+  alias LakehouseMatrix.{Memberships, RoomServer, RoomSupervisor}
   alias LakehouseMatrix.Schema.Room
-  alias LakehouseMatrix.RoomSupervisor
 
   @spec list_rooms() :: [Room.t()]
   def list_rooms do
     Repo.all(from r in Room, order_by: [desc: r.inserted_at])
   end
 
+  @spec list_rooms_for(Ecto.UUID.t()) :: [Room.t()]
+  def list_rooms_for(principal_id) do
+    Memberships.list_joined_rooms(principal_id)
+  end
+
   @spec get_room(Ecto.UUID.t()) :: Room.t() | nil
   def get_room(id), do: Repo.get(Room, id)
 
+  @spec get_room_by_alias(String.t()) :: {:ok, Room.t()} | {:error, :room_not_found}
+  def get_room_by_alias(alias_name) do
+    case Repo.one(from r in Room, where: r.alias == ^alias_name) do
+      nil -> {:error, :room_not_found}
+      room -> {:ok, room}
+    end
+  end
+
   @spec create_room(map()) :: {:ok, Room.t()} | {:error, Ecto.Changeset.t()}
   def create_room(attrs) do
-    cs = Room.changeset(%Room{}, attrs)
-
-    case Repo.insert(cs) do
+    case create_room_record(attrs) do
       {:ok, room} ->
         _ = ensure_started(room.id)
         {:ok, room}
@@ -29,6 +39,11 @@ defmodule LakehouseMatrix.Rooms do
       err ->
         err
     end
+  end
+
+  @spec create_room_record(map()) :: {:ok, Room.t()} | {:error, Ecto.Changeset.t()}
+  def create_room_record(attrs) do
+    Repo.insert(Room.changeset(%Room{}, attrs))
   end
 
   @doc """
@@ -42,5 +57,5 @@ defmodule LakehouseMatrix.Rooms do
     end
   end
 
-  defdelegate broadcast(room_id, msg), to: RoomServer
+  defdelegate broadcast(room_id, msg), to: RoomServer, as: :broadcast_event
 end

@@ -80,8 +80,12 @@ defmodule LakehouseIam.Accounts do
         |> Ecto.Multi.insert(:credential, fn %{principal: p} -> cred_cs.(p.id) end)
         |> Repo.transaction()
         |> case do
-          {:ok, %{principal: p}} -> {:ok, p}
-          {:error, _step, cs, _} -> {:error, cs}
+          {:ok, %{principal: p}} ->
+            if active, do: _ = LakehouseIam.IAM.assign_role(p.id, "member")
+            {:ok, p}
+
+          {:error, _step, cs, _} ->
+            {:error, cs}
         end
       end
     end
@@ -127,13 +131,18 @@ defmodule LakehouseIam.Accounts do
         :error ->
           {:error, :not_found}
 
-        {:ok, %Principal{active: true}} ->
-          {:error, :already_active}
+        {:ok, %Principal{active: true, id: id} = p} ->
+          _ = LakehouseIam.IAM.assign_role(id, "member")
+          {:ok, p}
 
         {:ok, %Principal{id: id}} ->
           case set_active(id, true) do
-            {:ok, p} -> {:ok, p}
-            {:error, _} -> {:error, :not_found}
+            {:ok, p} ->
+              _ = LakehouseIam.IAM.assign_role(id, "member")
+              {:ok, p}
+
+            {:error, _} ->
+              {:error, :not_found}
           end
       end
     else
