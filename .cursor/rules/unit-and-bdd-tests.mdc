@@ -1,0 +1,26 @@
+---
+description: Require unit and BDD tests for every new feature in iam-matrix
+alwaysApply: true
+---
+
+# Unit + BDD tests for new features
+
+When building or changing features in this repo, **always** add or update tests in the same change. Do not ship feature code without a matching test gate.
+
+## Required coverage
+
+1. **Unit / domain ExUnit** in the owning app (`lakehouse_iam`, `lakehouse_matrix`, and/or focused web unit tests).
+2. **BDD** via Cucumber under `apps/lakehouse_web/test/features/`:
+   - **API** (`@api`) with ConnTest helpers in `test/support/api/` for HTTP/IAM/Matrix surfaces.
+   - **Browser** (`@browser`) with Wallaby when the change affects HTML/LiveView UX.
+
+## Conventions
+
+- Reuse existing step defs and API clients; extend them instead of duplicating ad-hoc test HTTP.
+- Tag scenarios (`@api`, `@browser`, `@negative`, `@concurrency`) so `./test.sh --unit|--api|--browser|--exclude-browser` stays useful.
+- Prefer TDD: failing test first for new behavior, then implementation.
+- Finish with a green `./test.sh` (or an explicit scoped flag if the user asked for a slice). Never leave new feature work without runnable tests.
+
+## Out of scope only when
+
+- Pure docs/config/chore with no behavior change — still run the existing suite if scripts or test infra changed.
