@@ -67,13 +67,50 @@ defmodule LakehouseMatrix.Matrix do
   def join_room(principal_id, room_id_or_alias) do
     with {:ok, room} <- resolve_room(room_id_or_alias),
          {:ok, principal} <- fetch_principal(principal_id) do
-      if can_join?(principal_id, room.id) do
+      invited = Memberships.invited?(room.id, principal_id)
+      allowed = invited or can_join?(principal_id, room.id)
+
+      if allowed do
         with :ok <- ensure_room_started(room),
              {:ok, _} <- emit_member_event(room.id, principal, "join", principal) do
           {:ok, %{"room_id" => Identity.room_id(room.id)}}
         end
       else
         {:error, :forbidden}
+      end
+    end
+  end
+
+  @doc """
+  Invite a user to a room (`m.room.member` with membership `invite`).
+  """
+  @spec invite(Ecto.UUID.t(), Ecto.UUID.t() | String.t(), String.t()) ::
+          {:ok, map()} | {:error, term()}
+  def invite(actor_principal_id, room_id_or_alias, username) when is_binary(username) do
+    canonical = Accounts.normalize_username(username)
+
+    with {:ok, room} <- resolve_room(room_id_or_alias),
+         {:ok, actor} <- fetch_principal(actor_principal_id),
+         {:ok, target} <- fetch_active_user(canonical) do
+      cond do
+        not Memberships.joined?(room.id, actor_principal_id) ->
+          {:error, :forbidden}
+
+        target.id == actor.id ->
+          {:error, :cannot_invite_self}
+
+        Memberships.joined?(room.id, target.id) ->
+          {:error, :already_member}
+
+        Memberships.invited?(room.id, target.id) ->
+          {:error, :already_invited}
+
+        true ->
+          with :ok <- ensure_member_role(target.id),
+               :ok <- ensure_room_started(room),
+               {:ok, _} <- emit_member_event(room.id, actor, "invite", target) do
+            {:ok, %{"room_id" => Identity.room_id(room.id)}}
+          end
       end
     end
   end
@@ -98,6 +135,29 @@ defmodule LakehouseMatrix.Matrix do
           {:error, _} = err -> err
           true -> {:error, :already_member}
         end
+    end
+  end
+
+  @spec set_topic(Ecto.UUID.t(), Ecto.UUID.t() | String.t(), String.t()) ::
+          {:ok, map()} | {:error, term()}
+  def set_topic(principal_id, room_id_or_alias, topic) when is_binary(topic) do
+    with {:ok, room} <- resolve_room(room_id_or_alias),
+         {:ok, principal} <- fetch_principal(principal_id) do
+      if Memberships.joined?(room.id, principal_id) do
+        ctx =
+          build_context(
+            room.id,
+            principal,
+            "m.room.topic",
+            %{"topic" => topic},
+            "",
+            "topic-#{System.unique_integer([:positive])}"
+          )
+
+        Processor.process(ctx)
+      else
+        {:error, :not_member}
+      end
     end
   end
 

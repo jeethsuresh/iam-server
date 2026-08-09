@@ -28,6 +28,32 @@ defmodule LakehouseWeb.Bdd.MatrixSteps do
     {:ok, Map.merge(context, %{last_conn: conn, room_id: room_id, room_name: name})}
   end
 
+  step "I invite {string} to the room via API", %{args: [user_id]} = context do
+    token = Map.fetch!(context, :matrix_token)
+    room_id = Map.fetch!(context, :room_id)
+    conn = MatrixClient.invite(token, room_id, user_id)
+    assert conn.status == 200
+    {:ok, Map.put(context, :last_conn, conn)}
+  end
+
+  step "{string} sync invite section should include the room", %{args: [username]} = context do
+    token = matrix_token!(context, username)
+    room_id = Map.fetch!(context, :room_id)
+    conn = MatrixClient.sync(token)
+    assert %{"rooms" => %{"invite" => invite}} = json_response(conn, 200)
+    assert Map.has_key?(invite, room_id)
+    :ok
+  end
+
+  step "{string} sync invite section should not include the room", %{args: [username]} = context do
+    token = matrix_token!(context, username)
+    room_id = Map.fetch!(context, :room_id)
+    conn = MatrixClient.sync(token)
+    assert %{"rooms" => %{"invite" => invite}} = json_response(conn, 200)
+    refute Map.has_key?(invite, room_id)
+    :ok
+  end
+
   step "{string} joins the room via API", %{args: [username]} = context do
     password = get_in(context, [:users, username]) || "password123"
     ensure_user(username, password)

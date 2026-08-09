@@ -33,15 +33,53 @@ defmodule LakehouseWeb.Matrix.ClientController do
   def sync(conn, params) do
     since = Map.get(params, "since")
     full_state = Map.get(params, "full_state", "false") in ["true", true]
+    timeout = params |> Map.get("timeout", "0") |> parse_int(0)
 
     body =
       Matrix.sync(
         conn.assigns.principal_id,
         since,
-        full_state: full_state
+        full_state: full_state,
+        timeout: timeout
       )
 
     json(conn, body)
+  end
+
+  def invite(conn, %{"roomId" => room_ref} = params) do
+    user =
+      Map.get(params, "user_id") ||
+        get_in(params, ["user"]) ||
+        ""
+
+    username =
+      case Identity.parse_user_id(user) do
+        {:ok, name} -> name
+        :error -> String.trim_leading(to_string(user), "@") |> String.split(":", parts: 2) |> hd()
+      end
+
+    case Matrix.invite(conn.assigns.principal_id, room_ref, username) do
+      {:ok, body} ->
+        json(conn, body)
+
+      {:error, :room_not_found} ->
+        matrix_error(conn, 404, "M_NOT_FOUND", "Room not found")
+
+      {:error, :user_not_found} ->
+        matrix_error(conn, 404, "M_NOT_FOUND", "User not found")
+
+      {:error, :already_member} ->
+        matrix_error(conn, 403, "M_FORBIDDEN", "User is already in the room")
+
+      {:error, :already_invited} ->
+        matrix_error(conn, 403, "M_FORBIDDEN", "User is already invited")
+
+      {:error, :forbidden} ->
+        matrix_error(conn, 403, "M_FORBIDDEN", "You cannot invite to this room")
+
+      {:error, _} ->
+        matrix_error(conn, 400, "M_UNKNOWN", "Could not invite user")
+    end
   end
 
   def create_room(conn, params) do

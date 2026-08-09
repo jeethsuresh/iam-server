@@ -4,14 +4,22 @@ defmodule LakehouseMatrix.Events.Processor do
   implementing `LakehouseMatrix.Events.Handler` and registering here.
   """
   alias LakehouseMatrix.Events.Context
-  alias LakehouseMatrix.Events.Handlers.{RoomCreate, RoomMember, RoomMessage, RoomName}
+  alias LakehouseMatrix.Events.Handlers.{
+    RoomCreate,
+    RoomMember,
+    RoomMessage,
+    RoomName,
+    RoomTopic
+  }
+
   alias LakehouseMatrix.{Events, RoomServer}
 
   @handlers %{
     "m.room.create" => RoomCreate,
     "m.room.member" => RoomMember,
     "m.room.message" => RoomMessage,
-    "m.room.name" => RoomName
+    "m.room.name" => RoomName,
+    "m.room.topic" => RoomTopic
   }
 
   @spec supported_types() :: [String.t()]

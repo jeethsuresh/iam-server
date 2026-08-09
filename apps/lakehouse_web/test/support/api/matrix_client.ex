@@ -39,6 +39,26 @@ defmodule LakehouseWeb.Test.Api.MatrixClient do
     |> post("/_matrix/client/v3/rooms/#{room_id}/leave", %{})
   end
 
+  def invite(token, room_id, user_id) do
+    token
+    |> with_token()
+    |> post("/_matrix/client/v3/rooms/#{room_id}/invite", %{"user_id" => user_id})
+  end
+
+  def sync(token, opts \\ []) do
+    qs =
+      []
+      |> then(fn q -> if opts[:since], do: [{"since", opts[:since]} | q], else: q end)
+      |> then(fn q -> if opts[:timeout], do: [{"timeout", to_string(opts[:timeout])} | q], else: q end)
+      |> URI.encode_query()
+
+    path = if qs == "", do: "/_matrix/client/v3/sync", else: "/_matrix/client/v3/sync?#{qs}"
+
+    token
+    |> with_token()
+    |> get(path)
+  end
+
   def send_message(token, room_id, body, txn_id \\ "t1") do
     token
     |> with_token()
@@ -52,12 +72,6 @@ defmodule LakehouseWeb.Test.Api.MatrixClient do
     token
     |> with_token()
     |> get("/_matrix/client/v3/rooms/#{room_id}/messages")
-  end
-
-  def sync(token) do
-    token
-    |> with_token()
-    |> get("/_matrix/client/v3/sync")
   end
 
   def sync_unauthenticated do

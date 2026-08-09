@@ -1,8 +1,7 @@
 defmodule LakehouseWeb.RoomChannel do
   use LakehouseWeb, :channel
 
-  alias LakehouseMatrix.{Matrix, Memberships, Rooms}
-  alias LakehouseWeb.Presence
+  alias LakehouseMatrix.{Matrix, Memberships, RoomServer, Rooms}
 
   @impl true
   def join("room:" <> room_id, _payload, socket) do
@@ -18,8 +17,7 @@ defmodule LakehouseWeb.RoomChannel do
 
           Phoenix.PubSub.subscribe(LakehouseWeb.PubSub, "room:#{room.id}")
 
-          _ =
-            LakehouseMatrix.RoomServer.join(room.id, principal_id, self())
+          _ = RoomServer.join(room.id, principal_id, self())
 
           socket = assign(socket, :room_db_id, room.id)
 
@@ -38,19 +36,25 @@ defmodule LakehouseWeb.RoomChannel do
     {:noreply, socket}
   end
 
-  @impl true
-  def handle_info(:after_join, socket) do
-    case Presence.track(socket, socket.assigns.principal_id, %{
-           username: socket.assigns.username,
-           online_at: System.system_time(:second)
-         }) do
-      {:ok, _} ->
-        push(socket, "presence_state", Presence.list(socket))
-        {:noreply, socket}
+  def handle_info({:room_ephemeral, _room_id, msg}, socket) do
+    push(socket, "ephemeral", msg)
+    {:noreply, socket}
+  end
 
-      {:error, _} ->
-        {:noreply, socket}
-    end
+  def handle_info({:room_presence, _room_id, presence}, socket) do
+    push(socket, "presence_state", presence)
+    {:noreply, socket}
+  end
+
+  def handle_info(:after_join, socket) do
+    meta = %{
+      username: socket.assigns.username,
+      online_at: System.system_time(:second)
+    }
+
+    _ = RoomServer.track_presence(socket.assigns.room_db_id, socket.assigns.principal_id, meta)
+    push(socket, "presence_state", RoomServer.presence_list(socket.assigns.room_db_id))
+    {:noreply, socket}
   end
 
   @impl true
@@ -58,7 +62,18 @@ defmodule LakehouseWeb.RoomChannel do
     {:reply, {:ok, payload}, socket}
   end
 
-  @impl true
+  def handle_in("typing", %{"typing" => typing?}, socket) do
+    _ =
+      RoomServer.set_typing(
+        socket.assigns.room_db_id,
+        socket.assigns.principal_id,
+        socket.assigns.username,
+        typing? in [true, "true", 1, "1"]
+      )
+
+    {:noreply, socket}
+  end
+
   def handle_in("event", %{"type" => "m.room.message"} = payload, socket) do
     txn = "ch-#{System.unique_integer([:positive])}"
     body = Map.get(payload, "body") || get_in(payload, ["content", "body"]) || ""
@@ -80,7 +95,13 @@ defmodule LakehouseWeb.RoomChannel do
 
   @impl true
   def terminate(_reason, socket) do
-    _ = LakehouseMatrix.RoomServer.leave(socket.assigns.room_db_id, self())
+    room_id = socket.assigns[:room_db_id]
+
+    if room_id do
+      _ = RoomServer.untrack_presence(room_id, socket.assigns.principal_id)
+      _ = RoomServer.leave(room_id, self())
+    end
+
     :ok
   end
 end

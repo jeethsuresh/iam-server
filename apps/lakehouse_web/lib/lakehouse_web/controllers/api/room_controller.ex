@@ -1,7 +1,7 @@
 defmodule LakehouseWeb.Api.RoomController do
   use LakehouseWeb, :controller
 
-  alias LakehouseMatrix.Rooms
+  alias LakehouseMatrix.{Identity, Matrix, Rooms}
 
   def index(conn, _params) do
     principal_id = conn.assigns[:principal_id]
@@ -17,18 +17,31 @@ defmodule LakehouseWeb.Api.RoomController do
   end
 
   def create(conn, params) do
-    case Rooms.create_room(%{
-           name: params["name"] || "Room",
-           topic: params["topic"],
-           alias: params["alias"]
-         }) do
-      {:ok, room} ->
+    principal_id = conn.assigns.principal_id
+
+    matrix_params = %{
+      "name" => params["name"] || "Room",
+      "topic" => params["topic"],
+      "room_alias_name" => params["alias"]
+    }
+
+    case Matrix.create_room(principal_id, matrix_params) do
+      {:ok, %{"room_id" => matrix_room_id}} ->
+        {:ok, room_uuid} = Identity.parse_room_id(matrix_room_id)
+        room = Rooms.get_room(room_uuid)
+
         conn
         |> put_status(:created)
         |> json(room_json(room))
 
-      {:error, cs} ->
+      {:error, :forbidden} ->
+        conn |> put_status(:forbidden) |> json(%{error: "forbidden"})
+
+      {:error, cs} when is_struct(cs, Ecto.Changeset) ->
         conn |> put_status(:bad_request) |> json(%{errors: translate_errors(cs)})
+
+      {:error, _} ->
+        conn |> put_status(:bad_request) |> json(%{error: "could_not_create_room"})
     end
   end
 
@@ -49,7 +62,8 @@ defmodule LakehouseWeb.Api.RoomController do
       name: room.name,
       topic: room.topic,
       alias: room.alias,
-      inserted_at: room.inserted_at
+      inserted_at: room.inserted_at,
+      matrix_room_id: Identity.room_id(room.id)
     }
   end
 

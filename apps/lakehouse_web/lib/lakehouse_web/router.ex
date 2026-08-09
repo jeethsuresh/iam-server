@@ -109,6 +109,7 @@ defmodule LakehouseWeb.Router do
     get "/v3/sync", ClientController, :sync
     post "/v3/createRoom", ClientController, :create_room
     post "/v3/join/:roomIdOrAlias", ClientController, :join_room
+    post "/v3/rooms/:roomId/invite", ClientController, :invite
     post "/v3/rooms/:roomId/leave", ClientController, :leave_room
     put "/v3/rooms/:roomId/send/:eventType/:txnId", ClientController, :send_event
     get "/v3/rooms/:roomId/messages", ClientController, :messages
