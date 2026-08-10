@@ -182,6 +182,98 @@ defmodule LakehouseWeb.Bdd.MatrixSteps do
     :ok
   end
 
+  step "I upload media file {string} as image via API", %{args: [filename]} = context do
+    token = Map.fetch!(context, :matrix_token)
+    body = sample_png()
+    conn = MatrixClient.upload_media(token, body, filename, "image/png")
+    assert %{"content_uri" => uri, "info" => info} = json_response(conn, 200)
+
+    {:ok,
+     Map.merge(context, %{
+       last_conn: conn,
+       last_media_uri: uri,
+       last_media_info: info,
+       last_media_body: body,
+       last_upload_name: filename
+     })}
+  end
+
+  step "I send the uploaded media as an image message", context do
+    token = Map.fetch!(context, :matrix_token)
+    room_id = Map.fetch!(context, :room_id)
+    uri = Map.fetch!(context, :last_media_uri)
+    info = Map.get(context, :last_media_info, %{})
+    name = Map.fetch!(context, :last_upload_name)
+
+    content = %{
+      "msgtype" => "m.image",
+      "body" => name,
+      "url" => uri,
+      "info" => info
+    }
+
+    conn =
+      MatrixClient.send_file_message(
+        token,
+        room_id,
+        content,
+        "img-#{System.unique_integer([:positive])}"
+      )
+
+    assert conn.status == 200
+    {:ok, Map.put(context, :last_conn, conn)}
+  end
+
+  step "I can download the uploaded media via API", context do
+    token = Map.fetch!(context, :matrix_token)
+    uri = Map.fetch!(context, :last_media_uri)
+    assert "mxc://" <> rest = uri
+    [server, media_id] = String.split(rest, "/", parts: 2)
+    conn = MatrixClient.download_media(token, server, media_id)
+    assert conn.status == 200
+    assert byte_size(conn.resp_body) > 0
+    :ok
+  end
+
+  step "I set the room name via API to {string}", %{args: [name]} = context do
+    token = Map.fetch!(context, :matrix_token)
+    room_id = Map.fetch!(context, :room_id)
+    conn = MatrixClient.set_room_name(token, room_id, name)
+    {:ok, Map.put(context, :last_conn, conn)}
+  end
+
+  step "I set the room avatar to the uploaded media via API", context do
+    token = Map.fetch!(context, :matrix_token)
+    room_id = Map.fetch!(context, :room_id)
+    uri = Map.fetch!(context, :last_media_uri)
+    info = Map.get(context, :last_media_info, %{})
+    conn = MatrixClient.set_room_avatar(token, room_id, uri, info)
+    {:ok, Map.put(context, :last_conn, conn)}
+  end
+
+  step "I kick {string} from the room via API", %{args: [username]} = context do
+    token = Map.fetch!(context, :matrix_token)
+    room_id = Map.fetch!(context, :room_id)
+    conn = MatrixClient.kick(token, room_id, "@#{username}:localhost")
+    {:ok, Map.put(context, :last_conn, conn)}
+  end
+
+  step "{string} attempts to kick {string} from the room via API",
+       %{args: [actor, target]} = context do
+    token = matrix_token!(context, actor)
+    room_id = Map.fetch!(context, :room_id)
+    conn = MatrixClient.kick(token, room_id, "@#{target}:localhost")
+    {:ok, Map.put(context, :last_conn, conn)}
+  end
+
+  defp sample_png do
+    path = Path.join(System.tmp_dir!(), "bdd-png-#{System.unique_integer([:positive])}.png")
+    {_, 0} = System.cmd("magick", ["-size", "120x80", "plasma:fractal", path], stderr_to_stdout: true)
+    data = File.read!(path)
+    File.rm(path)
+    data
+  end
+
   defp ensure_user(username, password) do
     MatrixFixtures.ensure_rbac!()
 

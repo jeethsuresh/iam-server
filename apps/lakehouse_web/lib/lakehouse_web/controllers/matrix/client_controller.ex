@@ -155,6 +155,79 @@ defmodule LakehouseWeb.Matrix.ClientController do
     matrix_error(conn, 400, "M_UNKNOWN", "Unsupported event type: #{event_type}")
   end
 
+  def put_state(conn, %{"roomId" => room_ref, "eventType" => "m.room.name"} = params) do
+    name =
+      params
+      |> Map.get("content", params)
+      |> Map.get("name", "")
+      |> to_string()
+
+    case Matrix.set_name(conn.assigns.principal_id, room_ref, name) do
+      {:ok, event} ->
+        json(conn, %{"event_id" => event["event_id"]})
+
+      {:error, :not_member} ->
+        matrix_error(conn, 403, "M_FORBIDDEN", "Not a room member")
+
+      {:error, :invalid_name} ->
+        matrix_error(conn, 400, "M_INVALID_PARAM", "Name is required")
+
+      {:error, _} ->
+        matrix_error(conn, 400, "M_UNKNOWN", "Could not set room name")
+    end
+  end
+
+  def put_state(conn, %{"roomId" => room_ref, "eventType" => "m.room.avatar"} = params) do
+    content = Map.get(params, "content", params)
+    url = Map.get(content, "url", "") |> to_string()
+    info = Map.get(content, "info", %{})
+
+    case Matrix.set_avatar(conn.assigns.principal_id, room_ref, url, info) do
+      {:ok, event} ->
+        json(conn, %{"event_id" => event["event_id"]})
+
+      {:error, :not_member} ->
+        matrix_error(conn, 403, "M_FORBIDDEN", "Not a room member")
+
+      {:error, _} ->
+        matrix_error(conn, 400, "M_UNKNOWN", "Could not set room avatar")
+    end
+  end
+
+  def put_state(conn, %{"eventType" => event_type}) do
+    matrix_error(conn, 400, "M_UNKNOWN", "Unsupported state event: #{event_type}")
+  end
+
+  def kick(conn, %{"roomId" => room_ref} = params) do
+    user = Map.get(params, "user_id") || ""
+
+    username =
+      case Identity.parse_user_id(user) do
+        {:ok, name} -> name
+        :error -> user |> to_string() |> String.trim_leading("@") |> String.split(":", parts: 2) |> hd()
+      end
+
+    case Matrix.remove_member(conn.assigns.principal_id, room_ref, username) do
+      {:ok, event} ->
+        json(conn, %{"event_id" => event["event_id"]})
+
+      {:error, :forbidden} ->
+        matrix_error(conn, 403, "M_FORBIDDEN", "Only the room creator can remove members")
+
+      {:error, :cannot_remove_self} ->
+        matrix_error(conn, 400, "M_BAD_STATE", "Use leave to leave the room")
+
+      {:error, :not_member} ->
+        matrix_error(conn, 404, "M_NOT_FOUND", "User is not in the room")
+
+      {:error, :user_not_found} ->
+        matrix_error(conn, 404, "M_NOT_FOUND", "User not found")
+
+      {:error, _} ->
+        matrix_error(conn, 400, "M_UNKNOWN", "Could not remove member")
+    end
+  end
+
   def messages(conn, %{"roomId" => room_ref} = params) do
     limit = params |> Map.get("limit", "50") |> parse_int(50)
 
@@ -181,10 +254,15 @@ defmodule LakehouseWeb.Matrix.ClientController do
   end
 
   defp event_content(content, params) when is_map(content) do
-    if Map.has_key?(params, "body") and not Map.has_key?(content, "body") do
-      Map.take(params, ["body", "msgtype"])
-    else
-      content
+    cond do
+      map_size(content) > 0 ->
+        content
+
+      Map.has_key?(params, "body") ->
+        Map.take(params, ["body", "msgtype", "url", "info", "filename"])
+
+      true ->
+        content
     end
   end
 
