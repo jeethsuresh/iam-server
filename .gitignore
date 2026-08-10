@@ -14,3 +14,4 @@ erl_crash.dump
 /tmp/
 /apps/*/priv/media/
 
+/apps/*/tmp/
