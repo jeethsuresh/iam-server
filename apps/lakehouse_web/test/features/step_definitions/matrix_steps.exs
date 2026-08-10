@@ -93,6 +93,31 @@ defmodule LakehouseWeb.Bdd.MatrixSteps do
     :ok
   end
 
+  step "{string} room messages should include {string}", %{args: [username, body]} = context do
+    token = matrix_token!(context, username)
+    room_id = Map.fetch!(context, :room_id)
+    conn = MatrixClient.messages(token, room_id)
+    assert %{"chunk" => chunk} = json_response(conn, 200)
+    assert Enum.any?(chunk, &(&1["content"]["body"] == body)),
+           "#{username} messages missing #{inspect(body)} in #{inspect(Enum.map(chunk, & &1["content"]["body"]))}"
+
+    :ok
+  end
+
+  step "{string} sync timeline should include {string}", %{args: [username, body]} = context do
+    token = matrix_token!(context, username)
+    room_id = Map.fetch!(context, :room_id)
+    conn = MatrixClient.sync(token)
+    assert %{"rooms" => %{"join" => join}} = json_response(conn, 200)
+    assert Map.has_key?(join, room_id)
+    events = get_in(join, [room_id, "timeline", "events"]) || []
+
+    assert Enum.any?(events, &(&1["content"]["body"] == body)),
+           "#{username} sync missing #{inspect(body)}"
+
+    :ok
+  end
+
   step "{string} sync should include the room", %{args: [username]} = context do
     token = matrix_token!(context, username)
     room_id = Map.fetch!(context, :room_id)
