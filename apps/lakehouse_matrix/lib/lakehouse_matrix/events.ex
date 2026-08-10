@@ -52,6 +52,24 @@ defmodule LakehouseMatrix.Events do
     |> Enum.map(&to_client_event/1)
   end
 
+  @doc """
+  Timeline messages that are file or image attachments (newest first).
+  """
+  @spec list_file_messages(Ecto.UUID.t(), keyword()) :: [map()]
+  def list_file_messages(room_id, opts \\ []) do
+    limit = Keyword.get(opts, :limit, 100)
+
+    from(e in RoomEvent,
+      where: e.room_id == ^room_id and e.type == "m.room.message",
+      where:
+        fragment("?->>'msgtype' IN ('m.file', 'm.image')", e.content),
+      order_by: [desc: e.origin_server_ts],
+      limit: ^limit
+    )
+    |> Repo.all()
+    |> Enum.map(&to_client_event/1)
+  end
+
   @spec list_since(integer() | nil, keyword()) :: [RoomEvent.t()]
   def list_since(since_ts, opts \\ []) do
     room_ids = Keyword.get(opts, :room_ids)

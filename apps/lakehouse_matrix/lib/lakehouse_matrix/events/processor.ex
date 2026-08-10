@@ -5,6 +5,7 @@ defmodule LakehouseMatrix.Events.Processor do
   """
   alias LakehouseMatrix.Events.Context
   alias LakehouseMatrix.Events.Handlers.{
+    RoomAvatar,
     RoomCreate,
     RoomMember,
     RoomMessage,
@@ -19,7 +20,8 @@ defmodule LakehouseMatrix.Events.Processor do
     "m.room.member" => RoomMember,
     "m.room.message" => RoomMessage,
     "m.room.name" => RoomName,
-    "m.room.topic" => RoomTopic
+    "m.room.topic" => RoomTopic,
+    "m.room.avatar" => RoomAvatar
   }
 
   @spec supported_types() :: [String.t()]

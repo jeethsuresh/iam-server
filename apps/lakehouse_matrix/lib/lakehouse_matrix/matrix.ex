@@ -12,6 +12,7 @@ defmodule LakehouseMatrix.Matrix do
     Identity,
     Memberships,
     Rooms,
+    State,
     Sync
   }
 
@@ -123,6 +124,9 @@ defmodule LakehouseMatrix.Matrix do
       not Memberships.joined?(room_id, actor_principal_id) ->
         {:error, :forbidden}
 
+      not creator?(room_id, actor_principal_id) ->
+        {:error, :forbidden}
+
       true ->
         with {:ok, actor} <- fetch_principal(actor_principal_id),
              {:ok, target} <- fetch_active_user(canonical),
@@ -135,6 +139,116 @@ defmodule LakehouseMatrix.Matrix do
           {:error, _} = err -> err
           true -> {:error, :already_member}
         end
+    end
+  end
+
+  @spec remove_member(Ecto.UUID.t(), Ecto.UUID.t() | String.t(), String.t()) ::
+          {:ok, map()} | {:error, term()}
+  def remove_member(actor_principal_id, room_id_or_alias, username) when is_binary(username) do
+    canonical = Accounts.normalize_username(username)
+
+    with {:ok, room} <- resolve_room(room_id_or_alias),
+         {:ok, actor} <- fetch_principal(actor_principal_id),
+         {:ok, target} <- fetch_active_user(canonical) do
+      cond do
+        not Memberships.joined?(room.id, actor_principal_id) ->
+          {:error, :forbidden}
+
+        not creator?(room.id, actor_principal_id) ->
+          {:error, :forbidden}
+
+        target.id == actor.id ->
+          {:error, :cannot_remove_self}
+
+        not Memberships.joined?(room.id, target.id) ->
+          {:error, :not_member}
+
+        true ->
+          emit_member_event(room.id, actor, "leave", target)
+      end
+    end
+  end
+
+  @spec set_name(Ecto.UUID.t(), Ecto.UUID.t() | String.t(), String.t()) ::
+          {:ok, map()} | {:error, term()}
+  def set_name(principal_id, room_id_or_alias, name) when is_binary(name) do
+    name = String.trim(name)
+
+    with {:ok, room} <- resolve_room(room_id_or_alias),
+         {:ok, principal} <- fetch_principal(principal_id) do
+      cond do
+        name == "" ->
+          {:error, :invalid_name}
+
+        not Memberships.joined?(room.id, principal_id) ->
+          {:error, :not_member}
+
+        true ->
+          ctx =
+            build_context(
+              room.id,
+              principal,
+              "m.room.name",
+              %{"name" => name},
+              "",
+              "name-#{System.unique_integer([:positive])}"
+            )
+
+          Processor.process(ctx)
+      end
+    end
+  end
+
+  @spec set_avatar(Ecto.UUID.t(), Ecto.UUID.t() | String.t(), String.t(), map()) ::
+          {:ok, map()} | {:error, term()}
+  def set_avatar(principal_id, room_id_or_alias, content_uri, info \\ %{})
+      when is_binary(content_uri) do
+    with {:ok, room} <- resolve_room(room_id_or_alias),
+         {:ok, principal} <- fetch_principal(principal_id) do
+      if Memberships.joined?(room.id, principal_id) do
+        content =
+          %{"url" => content_uri}
+          |> then(fn c -> if map_size(info) > 0, do: Map.put(c, "info", info), else: c end)
+
+        ctx =
+          build_context(
+            room.id,
+            principal,
+            "m.room.avatar",
+            content,
+            "",
+            "avatar-#{System.unique_integer([:positive])}"
+          )
+
+        Processor.process(ctx)
+      else
+        {:error, :not_member}
+      end
+    end
+  end
+
+  @spec list_room_files(Ecto.UUID.t(), Ecto.UUID.t() | String.t(), keyword()) :: [map()]
+  def list_room_files(principal_id, room_id_or_alias, opts \\ []) do
+    case resolve_room(room_id_or_alias) do
+      {:ok, room} ->
+        if Memberships.joined?(room.id, principal_id) do
+          Events.list_file_messages(room.id, opts)
+        else
+          []
+        end
+
+      _ ->
+        []
+    end
+  end
+
+  @spec creator?(Ecto.UUID.t(), Ecto.UUID.t()) :: boolean()
+  def creator?(room_id, principal_id) do
+    with {:ok, principal} <- fetch_principal(principal_id),
+         %{"content" => %{"creator" => creator}} <- State.get(room_id, "m.room.create", "") do
+      creator == Identity.user_id(principal.username)
+    else
+      _ -> false
     end
   end
 
