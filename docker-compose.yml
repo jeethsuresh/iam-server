@@ -35,6 +35,9 @@ services:
       IAM_ADMIN_USERNAME: ${IAM_ADMIN_USERNAME:-admin}
       IAM_ADMIN_PASSWORD: ${IAM_ADMIN_PASSWORD:-changeme}
       IAM_RELAXED_CALLBACK_URLS: ${IAM_RELAXED_CALLBACK_URLS:-1}
+      LAKEHOUSE_MEDIA_ROOT: ${LAKEHOUSE_MEDIA_ROOT:-/var/lib/lakehouse/media}
+    volumes:
+      - lakehouse_media:/var/lib/lakehouse/media
     depends_on:
       postgres:
         condition: service_healthy
@@ -42,3 +45,5 @@ services:
 volumes:
   lakehouse_pgdata:
     name: ${COMPOSE_PROJECT_NAME:-lakehouse}_pgdata
+  lakehouse_media:
+    name: ${COMPOSE_PROJECT_NAME:-lakehouse}_media

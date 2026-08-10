@@ -27,6 +27,23 @@ Feature: Browser chat and settings
     And I open room "Invite" in the browser
     And I add member "bob" in the browser
 
+  Scenario: Room info rename and membership
+    Given an approved user "bob" with password "password123"
+    When I sign in through the browser as "alice" with password "password123"
+    And I create a room named "PanelRoom" in the browser
+    And I open room "PanelRoom" in the browser
+    And I open room info in the browser
+    And I rename the room to "PanelRoom2" in the browser
+    And I add member "bob" in the browser
+    And I remove member "bob" in the browser
+
+  Scenario: Upload image appears in chat and room info files
+    When I sign in through the browser as "alice" with password "password123"
+    And I create a room named "FilesRoom" in the browser
+    And I open room "FilesRoom" in the browser
+    And I upload chat image "chatshot.png" in the browser
+    And room info uploaded files should include "chatshot.png"
+
   Scenario: Change password in settings
     When I sign in through the browser as "fran" with password "password123"
     And I open settings in the browser

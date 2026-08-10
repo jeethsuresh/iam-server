@@ -61,6 +61,7 @@ defmodule LakehouseWeb.Router do
 
     get "/settings", SettingsController, :index
     get "/profile", IamProfileController, :show
+    get "/media/:serverName/:mediaId", WebMediaController, :show
 
     post "/web/settings/password", ProfilePasswordController, :update_browser
     post "/web/admin/approve", AdminController, :approve
@@ -114,7 +115,6 @@ defmodule LakehouseWeb.Router do
     post "/v3/rooms/:roomId/kick", ClientController, :kick
     put "/v3/rooms/:roomId/send/:eventType/:txnId", ClientController, :send_event
     put "/v3/rooms/:roomId/state/:eventType", ClientController, :put_state
-    put "/v3/rooms/:roomId/state/:eventType/", ClientController, :put_state
     get "/v3/rooms/:roomId/messages", ClientController, :messages
   end
 

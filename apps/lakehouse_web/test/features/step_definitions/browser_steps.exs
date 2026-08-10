@@ -63,16 +63,109 @@ defmodule LakehouseWeb.Bdd.BrowserSteps do
     {:ok, Map.merge(context, %{session: session, last_message: body})}
   end
 
+  step "I open room info in the browser", context do
+    session =
+      context.session
+      |> click(Query.css("#room-info-open"))
+      |> assert_has(Query.css("#room-info-panel"))
+
+    {:ok, Map.put(context, :session, session)}
+  end
+
   step "I add member {string} in the browser", %{args: [username]} = context do
     ensure_approved_user(username, "password123")
 
     session =
       context.session
+      |> then(fn s ->
+        if has?(s, Query.css("#room-info-panel")) do
+          s
+        else
+          s
+          |> click(Query.css("#room-info-open"))
+          |> assert_has(Query.css("#room-info-panel"))
+        end
+      end)
       |> fill_in(Query.css(".chat-detail__add-member-input"), with: username)
-      |> click(Query.button("Add"))
+      |> click(Query.css("#room-info-panel button", text: "Add"))
 
-    assert_has(session, Query.css(".chat-detail__member", text: username))
+    assert_has(session, Query.css("#room-info-panel .chat-detail__member", text: username))
     {:ok, Map.put(context, :session, session)}
+  end
+
+  step "I rename the room to {string} in the browser", %{args: [name]} = context do
+    session =
+      context.session
+      |> then(fn s ->
+        if has?(s, Query.css("#room-info-panel")) do
+          s
+        else
+          click(s, Query.css("#room-info-open"))
+        end
+      end)
+      |> assert_has(Query.css("#room-info-panel"))
+      |> fill_in(Query.css("#room-name-input"), with: name)
+      |> click(Query.css("#room-name-form button", text: "Save"))
+
+    assert_has(session, Query.css(".chat-detail__title", text: name))
+    {:ok, Map.merge(context, %{session: session, room_name: name})}
+  end
+
+  step "I remove member {string} in the browser", %{args: [username]} = context do
+    session =
+      context.session
+      |> then(fn s ->
+        if has?(s, Query.css("#room-info-panel")) do
+          s
+        else
+          click(s, Query.css("#room-info-open"))
+        end
+      end)
+      |> assert_has(Query.css("#room-info-panel"))
+
+    session =
+      find(session, Query.css("#room-info-panel .room-info__member", text: username), fn el ->
+        click(el, Query.css(".room-info__remove"))
+      end)
+
+    refute_has(session, Query.css("#room-info-panel .chat-detail__member", text: username))
+    {:ok, Map.put(context, :session, session)}
+  end
+
+  step "I upload chat image {string} in the browser", %{args: [filename]} = context do
+    path = write_temp_png(filename)
+
+    session =
+      context.session
+      |> attach_file(Query.css("#chat-attach input[type=file]"), path: path)
+
+    # LiveView auto-upload + ImageMagick compress can take a moment.
+    Process.sleep(3000)
+    assert_has(session, Query.css(".chat-message__image", count: 1))
+
+    File.rm(path)
+    {:ok, Map.put(context, :session, session)}
+  end
+
+  step "room info uploaded files should include {string}", %{args: [filename]} = context do
+    session =
+      context.session
+      |> then(fn s ->
+        if has?(s, Query.css("#room-info-panel")) do
+          s
+        else
+          click(s, Query.css("#room-info-open"))
+        end
+      end)
+      |> assert_has(Query.css("#room-uploaded-files a", text: filename))
+
+    {:ok, Map.put(context, :session, session)}
+  end
+
+  defp write_temp_png(filename) do
+    path = Path.join(System.tmp_dir!(), "wallaby-#{filename}")
+    {_, 0} = System.cmd("magick", ["-size", "240x180", "plasma:fractal", path], stderr_to_stdout: true)
+    path
   end
 
   step "I open settings in the browser", context do

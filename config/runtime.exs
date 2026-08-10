@@ -37,3 +37,7 @@ if config_env() == :prod do
     admin_password: System.get_env("IAM_ADMIN_PASSWORD", ""),
     relaxed_callback_urls: System.get_env("IAM_RELAXED_CALLBACK_URLS") not in [nil, ""]
 end
+
+if media_root = System.get_env("LAKEHOUSE_MEDIA_ROOT") do
+  config :lakehouse_matrix, :media_root, media_root
+end

@@ -3,19 +3,39 @@ defmodule LakehouseWeb.RoomLive do
 
   require Logger
 
-  alias LakehouseMatrix.{Events, Identity, Matrix, Memberships, Rooms}
+  alias LakehouseMatrix.{Events, Identity, Matrix, Media, Memberships, Rooms}
 
   @impl true
   def mount(_params, _session, socket) do
     principal_id = socket.assigns.principal_id
 
-    {:ok,
-     socket
-     |> assign(:rooms, Rooms.list_rooms_for(principal_id))
-     |> assign(:room, nil)
-     |> assign(:members, [])
-     |> assign(:messages, [])
-     |> assign(:composer, "")}
+    socket =
+      socket
+      |> assign(:rooms, Rooms.list_rooms_for(principal_id))
+      |> assign(:room, nil)
+      |> assign(:members, [])
+      |> assign(:messages, [])
+      |> assign(:composer, "")
+      |> assign(:info_open?, false)
+      |> assign(:is_creator?, false)
+      |> assign(:room_files, [])
+      |> assign(:name_draft, "")
+      |> allow_upload(:chat_file,
+        accept: :any,
+        max_entries: 1,
+        max_file_size: 10_000_000,
+        auto_upload: true,
+        progress: &handle_chat_progress/3
+      )
+      |> allow_upload(:room_avatar,
+        accept: ~w(.jpg .jpeg .png .gif .webp),
+        max_entries: 1,
+        max_file_size: 10_000_000,
+        auto_upload: true,
+        progress: &handle_avatar_progress/3
+      )
+
+    {:ok, socket}
   end
 
   @impl true
@@ -41,6 +61,43 @@ defmodule LakehouseWeb.RoomLive do
     end
   end
 
+  def handle_event("toggle_info", _params, socket) do
+    {:noreply, assign(socket, :info_open?, !socket.assigns.info_open?)}
+  end
+
+  def handle_event("close_info", _params, socket) do
+    {:noreply, assign(socket, :info_open?, false)}
+  end
+
+  def handle_event("update_name_draft", %{"name" => name}, socket) do
+    {:noreply, assign(socket, :name_draft, name)}
+  end
+
+  def handle_event("save_room_name", %{"name" => name}, socket) do
+    name = String.trim(name)
+
+    socket =
+      if socket.assigns.room && name != "" do
+        case Matrix.set_name(socket.assigns.principal_id, socket.assigns.room.id, name) do
+          {:ok, _} ->
+            room = Rooms.get_room(socket.assigns.room.id)
+
+            socket
+            |> assign(:room, room)
+            |> assign(:name_draft, room.name)
+            |> assign(:rooms, Rooms.list_rooms_for(socket.assigns.principal_id))
+            |> put_flash(:info, "Room name updated.")
+
+          {:error, _} ->
+            put_flash(socket, :error, "Could not update room name.")
+        end
+      else
+        socket
+      end
+
+    {:noreply, socket}
+  end
+
   def handle_event("update_composer", %{"body" => body}, socket) do
     {:noreply, assign(socket, :composer, body)}
   end
@@ -55,10 +112,6 @@ defmodule LakehouseWeb.RoomLive do
     socket =
       if body != "" and socket.assigns.room do
         txn = "lv-#{System.unique_integer([:positive])}"
-
-        Logger.info(
-          "room_live.send_message user=#{socket.assigns.username} room=#{socket.assigns.room.id} txn=#{txn}"
-        )
 
         case Matrix.send_message(
                socket.assigns.principal_id,
@@ -85,12 +138,6 @@ defmodule LakehouseWeb.RoomLive do
             put_flash(socket, :error, "Could not send message.")
         end
       else
-        if body == "" do
-          Logger.debug(
-            "room_live.send_message skipped empty body user=#{socket.assigns.username}"
-          )
-        end
-
         socket
       end
 
@@ -117,8 +164,36 @@ defmodule LakehouseWeb.RoomLive do
           {:error, :inactive} ->
             put_flash(socket, :error, "#{username} is not an active user yet.")
 
+          {:error, :forbidden} ->
+            put_flash(socket, :error, "Only the room creator can add members.")
+
           {:error, _} ->
             put_flash(socket, :error, "Could not add #{username} to the room.")
+        end
+      else
+        socket
+      end
+
+    {:noreply, socket}
+  end
+
+  def handle_event("remove_member", %{"username" => username}, socket) do
+    socket =
+      if socket.assigns.room do
+        case Matrix.remove_member(socket.assigns.principal_id, socket.assigns.room.id, username) do
+          {:ok, _} ->
+            socket
+            |> assign(:members, Memberships.list_members(socket.assigns.room.id))
+            |> put_flash(:info, "Removed #{username} from the room.")
+
+          {:error, :forbidden} ->
+            put_flash(socket, :error, "Only the room creator can remove members.")
+
+          {:error, :cannot_remove_self} ->
+            put_flash(socket, :error, "Use Leave room to leave.")
+
+          {:error, _} ->
+            put_flash(socket, :error, "Could not remove #{username}.")
         end
       else
         socket
@@ -138,12 +213,22 @@ defmodule LakehouseWeb.RoomLive do
       {:noreply,
        socket
        |> assign(:rooms, Rooms.list_rooms_for(socket.assigns.principal_id))
-       |> assign(room: nil, members: [], messages: [])
+       |> assign(room: nil, members: [], messages: [], room_files: [], info_open?: false)
        |> push_patch(to: ~p"/rooms")}
     else
       {:noreply, socket}
     end
   end
+
+  def handle_event("cancel_upload", %{"ref" => ref, "upload" => "chat_file"}, socket) do
+    {:noreply, cancel_upload(socket, :chat_file, ref)}
+  end
+
+  def handle_event("cancel_upload", %{"ref" => ref, "upload" => "room_avatar"}, socket) do
+    {:noreply, cancel_upload(socket, :room_avatar, ref)}
+  end
+
+  def handle_event("noop", _params, socket), do: {:noreply, socket}
 
   @impl true
   def handle_info({:room_event, room_id, msg}, socket) do
@@ -151,14 +236,23 @@ defmodule LakehouseWeb.RoomLive do
       if socket.assigns.room && socket.assigns.room.id == room_id do
         case msg["type"] do
           "m.room.message" ->
-            append_message(socket, msg)
+            socket
+            |> append_message(msg)
+            |> maybe_refresh_files(msg)
 
           "m.room.member" ->
-            if Map.get(msg["content"], "membership") == "join" do
-              assign(socket, :members, Memberships.list_members(room_id))
-            else
-              assign(socket, :members, Memberships.list_members(room_id))
-            end
+            assign(socket, :members, Memberships.list_members(room_id))
+
+          "m.room.name" ->
+            room = Rooms.get_room(room_id)
+
+            socket
+            |> assign(:room, room)
+            |> assign(:name_draft, room && room.name)
+            |> assign(:rooms, Rooms.list_rooms_for(socket.assigns.principal_id))
+
+          "m.room.avatar" ->
+            assign(socket, :room, Rooms.get_room(room_id))
 
           _ ->
             socket
@@ -170,9 +264,126 @@ defmodule LakehouseWeb.RoomLive do
     {:noreply, socket}
   end
 
+  defp handle_chat_progress(:chat_file, entry, socket) do
+    if entry.done? do
+      {:noreply, consume_chat_entry(socket, entry)}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  defp handle_avatar_progress(:room_avatar, entry, socket) do
+    if entry.done? do
+      {:noreply, consume_avatar_entry(socket, entry)}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  defp consume_chat_entry(socket, entry) do
+    room = socket.assigns.room
+
+    if is_nil(room) do
+      socket
+    else
+      case consume_uploaded_entry(socket, entry, fn %{path: path} ->
+             body = File.read!(path)
+             filename = entry.client_name || "upload.bin"
+             content_type = entry.client_type || "application/octet-stream"
+
+             case Media.upload(socket.assigns.principal_id, body,
+                    filename: filename,
+                    content_type: content_type
+                  ) do
+               {:ok, upload} ->
+                 msgtype =
+                   if String.starts_with?(upload.info["mimetype"] || content_type, "image/"),
+                     do: "m.image",
+                     else: "m.file"
+
+                 content = %{
+                   "msgtype" => msgtype,
+                   "body" => filename,
+                   "url" => upload.content_uri,
+                   "info" => upload.info
+                 }
+
+                 txn = "lv-file-#{System.unique_integer([:positive])}"
+
+                 case Matrix.send_message(socket.assigns.principal_id, room.id, txn, content) do
+                   {:ok, event} -> {:ok, event}
+                   {:error, reason} -> {:postpone, reason}
+                 end
+
+               {:error, reason} ->
+                 {:postpone, reason}
+             end
+           end) do
+        {:ok, event} ->
+          socket
+          |> append_message(event)
+          |> assign(:room_files, Matrix.list_room_files(socket.assigns.principal_id, room.id))
+
+        {:postpone, :too_large} ->
+          put_flash(socket, :error, "File exceeds the 10MB limit.")
+
+        {:postpone, :no_send_permission} ->
+          put_flash(socket, :error, "Your account cannot send messages yet.")
+
+        {:postpone, _} ->
+          put_flash(socket, :error, "Could not upload file.")
+      end
+    end
+  end
+
+  defp consume_avatar_entry(socket, entry) do
+    room = socket.assigns.room
+
+    if is_nil(room) do
+      socket
+    else
+      case consume_uploaded_entry(socket, entry, fn %{path: path} ->
+             body = File.read!(path)
+             filename = entry.client_name || "avatar.png"
+             content_type = entry.client_type || "image/png"
+
+             case Media.upload(socket.assigns.principal_id, body,
+                    filename: filename,
+                    content_type: content_type
+                  ) do
+               {:ok, upload} ->
+                 case Matrix.set_avatar(
+                        socket.assigns.principal_id,
+                        room.id,
+                        upload.content_uri,
+                        upload.info
+                      ) do
+                   {:ok, _} -> {:ok, upload.content_uri}
+                   {:error, reason} -> {:postpone, reason}
+                 end
+
+               {:error, reason} ->
+                 {:postpone, reason}
+             end
+           end) do
+        {:ok, _} ->
+          socket
+          |> assign(:room, Rooms.get_room(room.id))
+          |> assign(:rooms, Rooms.list_rooms_for(socket.assigns.principal_id))
+          |> put_flash(:info, "Room photo updated.")
+
+        {:postpone, :too_large} ->
+          put_flash(socket, :error, "File exceeds the 10MB limit.")
+
+        {:postpone, _} ->
+          put_flash(socket, :error, "Could not update room photo.")
+      end
+    end
+  end
+
   defp apply_room_param(socket, nil) do
     unsubscribe_room(socket)
-    assign(socket, room: nil, members: [], messages: [])
+    assign(socket, room: nil, members: [], messages: [], room_files: [], info_open?: false)
   end
 
   defp apply_room_param(socket, room_id) do
@@ -182,7 +393,7 @@ defmodule LakehouseWeb.RoomLive do
       nil ->
         socket
         |> unsubscribe_room()
-        |> assign(room: nil, members: [], messages: [])
+        |> assign(room: nil, members: [], messages: [], room_files: [], info_open?: false)
         |> put_flash(:error, "Room not found.")
         |> push_patch(to: ~p"/rooms")
 
@@ -201,10 +412,14 @@ defmodule LakehouseWeb.RoomLive do
           |> assign(:room, room)
           |> assign(:members, Memberships.list_members(room.id))
           |> assign(:messages, Events.list_timeline(room.id, limit: 100))
+          |> assign(:room_files, Matrix.list_room_files(principal_id, room.id))
+          |> assign(:is_creator?, Matrix.creator?(room.id, principal_id))
+          |> assign(:name_draft, room.name || "")
+          |> assign(:info_open?, false)
         else
           socket
           |> unsubscribe_room()
-          |> assign(room: nil, members: [], messages: [])
+          |> assign(room: nil, members: [], messages: [], room_files: [], info_open?: false)
           |> put_flash(:error, "You are not a member of this room.")
           |> push_patch(to: ~p"/rooms")
         end
@@ -218,6 +433,17 @@ defmodule LakehouseWeb.RoomLive do
       update(socket, :messages, &(&1 ++ [msg]))
     end
   end
+
+  defp maybe_refresh_files(socket, %{"content" => %{"msgtype" => type}})
+       when type in ["m.file", "m.image"] do
+    assign(
+      socket,
+      :room_files,
+      Matrix.list_room_files(socket.assigns.principal_id, socket.assigns.room.id)
+    )
+  end
+
+  defp maybe_refresh_files(socket, _), do: socket
 
   defp message_seen?(messages, %{"event_id" => id}) do
     Enum.any?(messages, &(&1["event_id"] == id))
@@ -255,4 +481,30 @@ defmodule LakehouseWeb.RoomLive do
 
   def message_body(%{"content" => %{"body" => body}}), do: body
   def message_body(_), do: ""
+
+  def message_msgtype(%{"content" => %{"msgtype" => type}}), do: type
+  def message_msgtype(_), do: "m.text"
+
+  def media_path(nil), do: ~p"/images/room-default.svg"
+
+  def media_path("mxc://" <> rest) do
+    case String.split(rest, "/", parts: 2) do
+      [server, id] when id != "" -> ~p"/media/#{server}/#{id}"
+      _ -> ~p"/images/room-default.svg"
+    end
+  end
+
+  def media_path(_), do: ~p"/images/room-default.svg"
+
+  def room_avatar_src(%{avatar_url: url}) when is_binary(url) and url != "", do: media_path(url)
+  def room_avatar_src(_), do: ~p"/images/room-default.svg"
+
+  def thumbnail_src(%{"content" => %{"info" => %{"thumbnail_url" => url}}}) when is_binary(url),
+    do: media_path(url)
+
+  def thumbnail_src(%{"content" => %{"url" => url}}) when is_binary(url), do: media_path(url)
+  def thumbnail_src(_), do: nil
+
+  def file_url(%{"content" => %{"url" => url}}) when is_binary(url), do: media_path(url)
+  def file_url(_), do: nil
 end
