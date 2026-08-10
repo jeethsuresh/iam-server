@@ -1,6 +1,6 @@
 # Room Info + Media Uploads Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Ship Room Info slide-over (name, avatar, creator membership, uploaded files) and chat file uploads with compressed image previews, all backed by Matrix events and a pluggable local media store.
 
@@ -49,9 +49,9 @@
 **Interfaces:**
 - Produces: `Media.upload/3`, `Media.download/3`, `Media.content_uri/1`, `Store.put/get`
 
-- [ ] Write failing unit tests for Local put/get, size limit, image compress smaller preview, Remote `:not_implemented`
-- [ ] Implement migration + modules + ImageMagick compress + config
-- [ ] Run unit tests green; commit
+- [x] Write failing unit tests for Local put/get, size limit, image compress smaller preview, Remote `:not_implemented`
+- [x] Implement migration + modules + ImageMagick compress + config
+- [x] Run unit tests green; commit
 
 ### Task 2: Matrix events — name, avatar, remove_member, file messages
 
@@ -61,31 +61,31 @@
 - Consumes: Media content URIs
 - Produces: `set_name/3`, `set_avatar/3`, `remove_member/3`, creator-gated `add_member`, `list_room_files/2`
 
-- [ ] Failing tests for authz + event shapes + list_room_files
-- [ ] Implement handlers/facade; tighten add_member to creator
-- [ ] Green unit tests; commit
+- [x] Failing tests for authz + event shapes + list_room_files
+- [x] Implement handlers/facade; tighten add_member to creator
+- [x] Green unit tests; commit
 
 ### Task 3: HTTP media + API BDD
 
 **Files:** `media_controller.ex`, router, `matrix_client.ex` helpers, `features/matrix/media.feature` (+ membership scenarios)
 
-- [ ] Failing `@api` scenarios (upload, image message, name/avatar, remove member)
-- [ ] Implement controller + client steps
-- [ ] `./test.sh --api` green; commit
+- [x] Failing `@api` scenarios (upload, image message, name/avatar, remove member)
+- [x] Implement controller + client steps
+- [x] `./test.sh --api` green; commit
 
 ### Task 4: LiveView Room Info + composer uploads + browser BDD
 
 **Files:** `room_live.*`, CSS, default SVG, browser feature/steps
 
-- [ ] Failing `@browser` scenarios (drawer, rename, remove, image preview, uploaded files)
-- [ ] Implement UI + LiveView uploads
-- [ ] `./test.sh --browser` (or full) green; commit
+- [x] Failing `@browser` scenarios (drawer, rename, remove, image preview, uploaded files)
+- [x] Implement UI + LiveView uploads
+- [x] `./test.sh --browser` (or full) green; commit
 
 ### Task 5: Wire deploy volume + full gate
 
-- [ ] Compose volume for media root; document env
-- [ ] `./build.sh` && `./test.sh` green
-- [ ] Update `ai-project-iam-matrix` notes; commit
+- [x] Compose volume for media root; document env
+- [x] `./build.sh` && `./test.sh` green
+- [x] Update `ai-project-iam-matrix` notes; commit
 
 ---
 
