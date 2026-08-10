@@ -41,4 +41,8 @@ config :lakehouse_matrix, :pubsub, LakehouseWeb.PubSub
 
 config :lakehouse_matrix, :homeserver_domain, "localhost"
 
+config :lakehouse_matrix,
+  media_store: LakehouseMatrix.Media.Store.Local,
+  media_root: System.get_env("LAKEHOUSE_MEDIA_ROOT") || "tmp/media"
+
 import_config "#{config_env()}.exs"
