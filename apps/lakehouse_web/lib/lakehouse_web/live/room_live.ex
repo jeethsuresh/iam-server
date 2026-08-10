@@ -319,11 +319,6 @@ defmodule LakehouseWeb.RoomLive do
                  {:postpone, reason}
              end
            end) do
-        {:ok, event} ->
-          socket
-          |> append_message(event)
-          |> assign(:room_files, Matrix.list_room_files(socket.assigns.principal_id, room.id))
-
         {:postpone, :too_large} ->
           put_flash(socket, :error, "File exceeds the 10MB limit.")
 
@@ -332,6 +327,11 @@ defmodule LakehouseWeb.RoomLive do
 
         {:postpone, _} ->
           put_flash(socket, :error, "Could not upload file.")
+
+        event when is_map(event) ->
+          socket
+          |> append_message(event)
+          |> assign(:room_files, Matrix.list_room_files(socket.assigns.principal_id, room.id))
       end
     end
   end
@@ -366,17 +366,17 @@ defmodule LakehouseWeb.RoomLive do
                  {:postpone, reason}
              end
            end) do
-        {:ok, _} ->
-          socket
-          |> assign(:room, Rooms.get_room(room.id))
-          |> assign(:rooms, Rooms.list_rooms_for(socket.assigns.principal_id))
-          |> put_flash(:info, "Room photo updated.")
-
         {:postpone, :too_large} ->
           put_flash(socket, :error, "File exceeds the 10MB limit.")
 
         {:postpone, _} ->
           put_flash(socket, :error, "Could not update room photo.")
+
+        _uri ->
+          socket
+          |> assign(:room, Rooms.get_room(room.id))
+          |> assign(:rooms, Rooms.list_rooms_for(socket.assigns.principal_id))
+          |> put_flash(:info, "Room photo updated.")
       end
     end
   end
