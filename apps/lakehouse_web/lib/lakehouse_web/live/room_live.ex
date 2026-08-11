@@ -3,7 +3,10 @@ defmodule LakehouseWeb.RoomLive do
 
   require Logger
 
-  alias LakehouseMatrix.{Events, Identity, Matrix, Media, Memberships, Rooms}
+  alias LakehouseMatrix.{Events, Identity, Matrix, Media, Memberships, RoomServer, Rooms}
+  alias LakehouseWeb.TypingLabel
+
+  @typing_refresh_ms 2_000
 
   @impl true
   def mount(_params, _session, socket) do
@@ -20,6 +23,10 @@ defmodule LakehouseWeb.RoomLive do
       |> assign(:is_creator?, false)
       |> assign(:room_files, [])
       |> assign(:name_draft, "")
+      |> assign(:typing_users, [])
+      |> assign(:typing_label, nil)
+      |> assign(:typing_sent_at, 0)
+      |> assign(:i_am_typing?, false)
       |> allow_upload(:chat_file,
         accept: :any,
         max_entries: 1,
@@ -99,7 +106,7 @@ defmodule LakehouseWeb.RoomLive do
   end
 
   def handle_event("update_composer", %{"body" => body}, socket) do
-    {:noreply, assign(socket, :composer, body)}
+    {:noreply, socket |> assign(:composer, body) |> sync_typing_state(body)}
   end
 
   def handle_event("send_message", params, socket) do
@@ -121,6 +128,7 @@ defmodule LakehouseWeb.RoomLive do
              ) do
           {:ok, event} ->
             socket
+            |> clear_local_typing()
             |> append_message(event)
             |> assign(:composer, "")
 
@@ -204,6 +212,8 @@ defmodule LakehouseWeb.RoomLive do
 
   def handle_event("leave_room", _params, socket) do
     if socket.assigns.room do
+      socket = clear_local_typing(socket)
+
       _ =
         Matrix.leave_room(
           socket.assigns.principal_id,
@@ -213,7 +223,15 @@ defmodule LakehouseWeb.RoomLive do
       {:noreply,
        socket
        |> assign(:rooms, Rooms.list_rooms_for(socket.assigns.principal_id))
-       |> assign(room: nil, members: [], messages: [], room_files: [], info_open?: false)
+       |> assign(
+         room: nil,
+         members: [],
+         messages: [],
+         room_files: [],
+         info_open?: false,
+         typing_users: [],
+         typing_label: nil
+       )
        |> push_patch(to: ~p"/rooms")}
     else
       {:noreply, socket}
@@ -263,6 +281,29 @@ defmodule LakehouseWeb.RoomLive do
 
     {:noreply, socket}
   end
+
+  def handle_info({:room_ephemeral, room_id, %{"type" => "m.typing"} = event}, socket) do
+    socket =
+      if socket.assigns.room && socket.assigns.room.id == room_id do
+        users =
+          event
+          |> get_in(["content", "user_ids"])
+          |> List.wrap()
+          |> TypingLabel.usernames_from_mxids(socket.assigns.username)
+
+        socket
+        |> assign(:typing_users, users)
+        |> assign(:typing_label, TypingLabel.format(users))
+      else
+        socket
+      end
+
+    {:noreply, socket}
+  end
+
+  def handle_info({:room_ephemeral, _room_id, _event}, socket), do: {:noreply, socket}
+
+  def handle_info({:room_presence, _room_id, _presence}, socket), do: {:noreply, socket}
 
   defp handle_chat_progress(:chat_file, entry, socket) do
     if entry.done? do
@@ -382,8 +423,18 @@ defmodule LakehouseWeb.RoomLive do
   end
 
   defp apply_room_param(socket, nil) do
-    unsubscribe_room(socket)
-    assign(socket, room: nil, members: [], messages: [], room_files: [], info_open?: false)
+    socket
+    |> clear_local_typing()
+    |> unsubscribe_room()
+    |> assign(
+      room: nil,
+      members: [],
+      messages: [],
+      room_files: [],
+      info_open?: false,
+      typing_users: [],
+      typing_label: nil
+    )
   end
 
   defp apply_room_param(socket, room_id) do
@@ -392,13 +443,23 @@ defmodule LakehouseWeb.RoomLive do
     case Rooms.get_room(room_id) do
       nil ->
         socket
+        |> clear_local_typing()
         |> unsubscribe_room()
-        |> assign(room: nil, members: [], messages: [], room_files: [], info_open?: false)
+        |> assign(
+          room: nil,
+          members: [],
+          messages: [],
+          room_files: [],
+          info_open?: false,
+          typing_users: [],
+          typing_label: nil
+        )
         |> put_flash(:error, "Room not found.")
         |> push_patch(to: ~p"/rooms")
 
       room ->
         if Memberships.joined?(room.id, principal_id) do
+          socket = clear_local_typing(socket)
           unsubscribe_room(socket)
 
           if connected?(socket) do
@@ -416,14 +477,75 @@ defmodule LakehouseWeb.RoomLive do
           |> assign(:is_creator?, Matrix.creator?(room.id, principal_id))
           |> assign(:name_draft, room.name || "")
           |> assign(:info_open?, false)
+          |> assign(:typing_users, [])
+          |> assign(:typing_label, nil)
         else
           socket
+          |> clear_local_typing()
           |> unsubscribe_room()
-          |> assign(room: nil, members: [], messages: [], room_files: [], info_open?: false)
+          |> assign(
+            room: nil,
+            members: [],
+            messages: [],
+            room_files: [],
+            info_open?: false,
+            typing_users: [],
+            typing_label: nil
+          )
           |> put_flash(:error, "You are not a member of this room.")
           |> push_patch(to: ~p"/rooms")
         end
     end
+  end
+
+  defp sync_typing_state(socket, body) do
+    room = socket.assigns.room
+    trimmed = body |> to_string() |> String.trim()
+
+    cond do
+      is_nil(room) ->
+        socket
+
+      trimmed == "" ->
+        clear_local_typing(socket)
+
+      true ->
+        now = System.system_time(:millisecond)
+        last = socket.assigns.typing_sent_at || 0
+        should_refresh = not socket.assigns.i_am_typing? or now - last >= @typing_refresh_ms
+
+        if should_refresh do
+          :ok =
+            RoomServer.set_typing(
+              room.id,
+              socket.assigns.principal_id,
+              socket.assigns.username,
+              true
+            )
+
+          socket
+          |> assign(:i_am_typing?, true)
+          |> assign(:typing_sent_at, now)
+        else
+          socket
+        end
+    end
+  end
+
+  defp clear_local_typing(socket) do
+    if socket.assigns[:i_am_typing?] and socket.assigns[:room] do
+      :ok =
+        RoomServer.set_typing(
+          socket.assigns.room.id,
+          socket.assigns.principal_id,
+          socket.assigns.username,
+          false
+        )
+    end
+
+    socket
+    |> assign(:i_am_typing?, false)
+    |> assign(:typing_sent_at, 0)
   end
 
   defp append_message(socket, msg) do

@@ -212,7 +212,9 @@ defmodule LakehouseMatrix.RoomServer do
     user_ids =
       state.typing
       |> Enum.filter(fn {_pid, meta} -> meta.expires_at > now end)
-      |> Enum.map(fn {_pid, meta} -> "@#{meta.username}:localhost" end)
+      |> Enum.map(fn {_pid, meta} ->
+        "@#{meta.username}:#{LakehouseMatrix.Identity.homeserver_domain()}"
+      end)
 
     event = %{
       "type" => "m.typing",

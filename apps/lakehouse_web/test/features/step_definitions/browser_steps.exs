@@ -72,6 +72,17 @@ defmodule LakehouseWeb.Bdd.BrowserSteps do
     {:ok, Map.put(context, :session, session)}
   end
 
+  step "I should not see leave room in the chat header", context do
+    refute_has(context.session, Query.css(".chat-detail__header #leave-room-btn"))
+    refute_has(context.session, Query.css(".chat-detail__header .chat-detail__leave"))
+    :ok
+  end
+
+  step "I should see leave room in the room info panel", context do
+    assert_has(context.session, Query.css("#room-info-panel #leave-room-btn", text: "Leave room"))
+    :ok
+  end
+
   step "I add member {string} in the browser", %{args: [username]} = context do
     ensure_approved_user(username, "password123")
 

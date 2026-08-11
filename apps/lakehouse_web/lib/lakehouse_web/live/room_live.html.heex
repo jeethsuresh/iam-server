@@ -69,8 +69,6 @@
             <span class="chat-detail__info-hint">Room info</span>
           </div>
         </button>
-
-        <button type="button" phx-click="leave_room" class="chat-detail__leave">Leave room</button>
       </header>
 
       <div class="chat-detail__messages" id="chat-messages" phx-hook="ScrollMessages">
@@ -100,6 +98,10 @@
           </article>
         <% end %>
       </div>
+
+      <%= if @typing_label do %>
+        <p class="chat-detail__typing" id="typing-indicator" role="status"><%= @typing_label %></p>
+      <% end %>
 
       <form
         phx-submit="send_message"
@@ -214,6 +216,12 @@
               </ul>
             <% end %>
           </section>
+
+          <div class="room-info__footer">
+            <button type="button" phx-click="leave_room" class="chat-detail__leave room-info__leave" id="leave-room-btn">
+              Leave room
+            </button>
+          </div>
         </aside>
       <% end %>
     <% else %>

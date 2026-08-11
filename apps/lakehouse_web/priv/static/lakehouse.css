@@ -295,6 +295,25 @@ button:hover {
   align-self: center;
 }
 
+.chat-detail__typing {
+  margin: 0;
+  padding: 0.35rem 1.25rem 0;
+  font-size: 0.8125rem;
+  color: var(--muted);
+  font-style: italic;
+  min-height: 1.25rem;
+}
+
+.room-info__footer {
+  margin-top: auto;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.room-info__leave {
+  width: 100%;
+}
+
 .chat-detail__attach {
   display: inline-flex;
   align-items: center;
