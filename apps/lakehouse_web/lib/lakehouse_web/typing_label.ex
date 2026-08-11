@@ -3,9 +3,9 @@ defmodule LakehouseWeb.TypingLabel do
 
   @spec format([String.t()]) :: String.t() | nil
   def format([]), do: nil
-  def format([name]), do: "#{name} is typing…"
-  def format([a, b]), do: "#{a} and #{b} are typing…"
-  def format(_names), do: "Several people are typing…"
+  def format([name]), do: "#{name} is typing"
+  def format([a, b]), do: "#{a} and #{b} are typing"
+  def format(_names), do: "Several people are typing"
 
   @spec usernames_from_mxids([String.t()], String.t()) :: [String.t()]
   def usernames_from_mxids(user_ids, exclude_username)

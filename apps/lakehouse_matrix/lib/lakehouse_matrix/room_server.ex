@@ -7,7 +7,8 @@ defmodule LakehouseMatrix.RoomServer do
   alias LakehouseMatrix.{Events, Memberships}
 
   @timeline_limit 100
-  @typing_ttl_ms 10_000
+  # Slightly above LiveView's 2s idle clear so a missed "typing false" still expires soon.
+  @typing_ttl_ms 4_000
 
   defstruct [
     :room_id,

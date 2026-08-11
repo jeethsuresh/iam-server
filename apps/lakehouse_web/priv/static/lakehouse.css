@@ -302,6 +302,36 @@ button:hover {
   color: var(--muted);
   font-style: italic;
   min-height: 1.25rem;
+  display: flex;
+  align-items: baseline;
+  gap: 0.05em;
+}
+
+.chat-detail__typing-dots span {
+  display: inline-block;
+  animation: chat-typing-bounce 1.2s infinite ease-in-out;
+  opacity: 0.35;
+}
+
+.chat-detail__typing-dots span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.chat-detail__typing-dots span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes chat-typing-bounce {
+  0%,
+  80%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.35;
+  }
+  40% {
+    transform: translateY(-0.2em);
+    opacity: 1;
+  }
 }
 
 .room-info__footer {

@@ -6,7 +6,11 @@ defmodule LakehouseWeb.RoomLive do
   alias LakehouseMatrix.{Events, Identity, Matrix, Media, Memberships, RoomServer, Rooms}
   alias LakehouseWeb.TypingLabel
 
-  @typing_refresh_ms 2_000
+  @typing_refresh_ms 1_500
+  @typing_idle_ms 2_000
+
+  @doc false
+  def typing_idle_ms, do: @typing_idle_ms
 
   @impl true
   def mount(_params, _session, socket) do
@@ -27,6 +31,7 @@ defmodule LakehouseWeb.RoomLive do
       |> assign(:typing_label, nil)
       |> assign(:typing_sent_at, 0)
       |> assign(:i_am_typing?, false)
+      |> assign(:typing_idle_token, 0)
       |> allow_upload(:chat_file,
         accept: :any,
         max_entries: 1,
@@ -305,6 +310,17 @@ defmodule LakehouseWeb.RoomLive do
 
   def handle_info({:room_presence, _room_id, _presence}, socket), do: {:noreply, socket}
 
+  def handle_info({:typing_idle, token}, socket) do
+    socket =
+      if socket.assigns.typing_idle_token == token and socket.assigns.i_am_typing? do
+        clear_local_typing(socket)
+      else
+        socket
+      end
+
+    {:noreply, socket}
+  end
+
   defp handle_chat_progress(:chat_file, entry, socket) do
     if entry.done? do
       {:noreply, consume_chat_entry(socket, entry)}
@@ -514,22 +530,31 @@ defmodule LakehouseWeb.RoomLive do
         last = socket.assigns.typing_sent_at || 0
         should_refresh = not socket.assigns.i_am_typing? or now - last >= @typing_refresh_ms
 
-        if should_refresh do
-          :ok =
-            RoomServer.set_typing(
-              room.id,
-              socket.assigns.principal_id,
-              socket.assigns.username,
-              true
-            )
+        socket =
+          if should_refresh do
+            :ok =
+              RoomServer.set_typing(
+                room.id,
+                socket.assigns.principal_id,
+                socket.assigns.username,
+                true
+              )
 
-          socket
-          |> assign(:i_am_typing?, true)
-          |> assign(:typing_sent_at, now)
-        else
-          socket
-        end
+            socket
+            |> assign(:i_am_typing?, true)
+            |> assign(:typing_sent_at, now)
+          else
+            assign(socket, :i_am_typing?, true)
+          end
+
+        schedule_typing_idle(socket)
     end
+  end
+
+  defp schedule_typing_idle(socket) do
+    token = System.unique_integer([:positive])
+    Process.send_after(self(), {:typing_idle, token}, @typing_idle_ms)
+    assign(socket, :typing_idle_token, token)
   end
 
   defp clear_local_typing(socket) do
@@ -546,6 +571,7 @@ defmodule LakehouseWeb.RoomLive do
     socket
     |> assign(:i_am_typing?, false)
     |> assign(:typing_sent_at, 0)
+    |> assign(:typing_idle_token, 0)
   end
 
   defp append_message(socket, msg) do

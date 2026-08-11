@@ -100,7 +100,12 @@
       </div>
 
       <%= if @typing_label do %>
-        <p class="chat-detail__typing" id="typing-indicator" role="status"><%= @typing_label %></p>
+        <p class="chat-detail__typing" id="typing-indicator" role="status">
+          <span class="chat-detail__typing-text"><%= @typing_label %></span>
+          <span class="chat-detail__typing-dots" aria-hidden="true">
+            <span>.</span><span>.</span><span>.</span>
+          </span>
+        </p>
       <% end %>
 
       <form

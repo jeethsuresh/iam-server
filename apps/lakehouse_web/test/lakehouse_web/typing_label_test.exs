@@ -8,15 +8,19 @@ defmodule LakehouseWeb.TypingLabelTest do
   end
 
   test "one name" do
-    assert TypingLabel.format(["alice"]) == "alice is typing…"
+    assert TypingLabel.format(["alice"]) == "alice is typing"
   end
 
   test "two names" do
-    assert TypingLabel.format(["alice", "bob"]) == "alice and bob are typing…"
+    assert TypingLabel.format(["alice", "bob"]) == "alice and bob are typing"
   end
 
   test "three or more" do
-    assert TypingLabel.format(["alice", "bob", "carol"]) == "Several people are typing…"
+    assert TypingLabel.format(["alice", "bob", "carol"]) == "Several people are typing"
+  end
+
+  test "idle timeout is two seconds" do
+    assert LakehouseWeb.RoomLive.typing_idle_ms() == 2_000
   end
 
   test "usernames_from_mxids excludes self and sorts" do
