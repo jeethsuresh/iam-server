@@ -8,6 +8,16 @@ defmodule LakehouseMatrix.Identity do
     Application.get_env(:lakehouse_matrix, :homeserver_domain, "localhost")
   end
 
+  @spec parse_user_id(String.t()) :: {:ok, String.t()} | :error
+  def parse_user_id("@" <> rest) do
+    case String.split(rest, ":", parts: 2) do
+      [user, _domain] when user != "" -> {:ok, String.downcase(user)}
+      _ -> :error
+    end
+  end
+
+  def parse_user_id(_), do: :error
+
   @spec user_id(String.t()) :: String.t()
   def user_id(username) when is_binary(username) do
     "@#{username}:#{homeserver_domain()}"

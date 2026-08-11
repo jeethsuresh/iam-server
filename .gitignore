@@ -11,4 +11,7 @@ erl_crash.dump
 .env.*
 /apps/*/assets/node_modules/
 .tools/
+/tmp/
+/apps/*/priv/media/
 
+/apps/*/tmp/

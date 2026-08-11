@@ -52,8 +52,30 @@ defmodule LakehouseMatrix.Rooms do
   @spec ensure_started(Ecto.UUID.t()) :: {:ok, pid()} | {:error, term()}
   def ensure_started(room_id) do
     case Registry.lookup(LakehouseMatrix.RoomRegistry, room_id) do
-      [{pid, _}] -> {:ok, pid}
-      [] -> RoomSupervisor.start_room(room_id)
+      [{pid, _}] ->
+        allow_sandbox(pid)
+        {:ok, pid}
+
+      [] ->
+        case RoomSupervisor.start_room(room_id) do
+          {:ok, pid} ->
+            allow_sandbox(pid)
+            RoomServer.load_caches(room_id)
+            {:ok, pid}
+
+          other ->
+            other
+        end
+    end
+  end
+
+  defp allow_sandbox(pid) do
+    try do
+      Ecto.Adapters.SQL.Sandbox.allow(LakehouseIam.Repo, self(), pid)
+    rescue
+      _ -> :ok
+    catch
+      :exit, _ -> :ok
     end
   end
 

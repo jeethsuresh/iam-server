@@ -38,6 +38,17 @@ defmodule LakehouseMatrix.State do
     :ok
   end
 
+  @spec get(Ecto.UUID.t(), String.t(), String.t()) :: map() | nil
+  def get(room_id, type, state_key \\ "") do
+    case Repo.one(
+           from s in RoomState,
+             where: s.room_id == ^room_id and s.type == ^type and s.state_key == ^state_key
+         ) do
+      nil -> nil
+      row -> to_client_event(row)
+    end
+  end
+
   @spec list_for_room(Ecto.UUID.t()) :: [map()]
   def list_for_room(room_id) do
     Repo.all(from s in RoomState, where: s.room_id == ^room_id, order_by: [asc: s.inserted_at])

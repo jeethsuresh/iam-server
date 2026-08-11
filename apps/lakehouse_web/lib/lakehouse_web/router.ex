@@ -61,6 +61,7 @@ defmodule LakehouseWeb.Router do
 
     get "/settings", SettingsController, :index
     get "/profile", IamProfileController, :show
+    get "/media/:serverName/:mediaId", WebMediaController, :show
 
     post "/web/settings/password", ProfilePasswordController, :update_browser
     post "/web/admin/approve", AdminController, :approve
@@ -109,8 +110,18 @@ defmodule LakehouseWeb.Router do
     get "/v3/sync", ClientController, :sync
     post "/v3/createRoom", ClientController, :create_room
     post "/v3/join/:roomIdOrAlias", ClientController, :join_room
+    post "/v3/rooms/:roomId/invite", ClientController, :invite
     post "/v3/rooms/:roomId/leave", ClientController, :leave_room
+    post "/v3/rooms/:roomId/kick", ClientController, :kick
     put "/v3/rooms/:roomId/send/:eventType/:txnId", ClientController, :send_event
+    put "/v3/rooms/:roomId/state/:eventType", ClientController, :put_state
     get "/v3/rooms/:roomId/messages", ClientController, :messages
+  end
+
+  scope "/_matrix/media", LakehouseWeb.Matrix, as: :matrix_media do
+    pipe_through [:api, LakehouseWeb.Plugs.MatrixAuth]
+
+    post "/v3/upload", MediaController, :upload
+    get "/v3/download/:serverName/:mediaId", MediaController, :download
   end
 end

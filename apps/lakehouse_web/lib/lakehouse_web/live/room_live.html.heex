@@ -27,10 +27,19 @@
       <%= for room <- @rooms do %>
         <li class={["chat-room-list__item", @room && @room.id == room.id && "chat-room-list__item--active"]}>
           <.link patch={~p"/rooms/#{room.id}"} class="chat-room-list__link">
-            <span class="chat-room-list__name"><%= room.name %></span>
-            <%= if room.topic && room.topic != "" do %>
-              <span class="chat-room-list__topic"><%= room.topic %></span>
-            <% end %>
+            <img
+              src={room_avatar_src(room)}
+              alt=""
+              class="chat-room-list__avatar"
+              width="28"
+              height="28"
+            />
+            <span class="chat-room-list__text">
+              <span class="chat-room-list__name"><%= room.name %></span>
+              <%= if room.topic && room.topic != "" do %>
+                <span class="chat-room-list__topic"><%= room.topic %></span>
+              <% end %>
+            </span>
           </.link>
         </li>
       <% end %>
@@ -44,34 +53,22 @@
   <section class="chat-detail">
     <%= if @room do %>
       <header class="chat-detail__header">
-        <div class="chat-detail__heading">
-          <h2 class="chat-detail__title"><%= @room.name %></h2>
-          <%= if @room.topic && @room.topic != "" do %>
-            <p class="chat-detail__topic"><%= @room.topic %></p>
-          <% end %>
-        </div>
-
-        <div class="chat-detail__members">
-          <h3 class="chat-detail__members-title">Members</h3>
-          <ul class="chat-detail__member-list">
-            <%= for member <- @members do %>
-              <li class="chat-detail__member"><%= member.username %></li>
+        <button type="button" class="chat-detail__info-btn" phx-click="toggle_info" id="room-info-open">
+          <img
+            src={room_avatar_src(@room)}
+            alt=""
+            class="chat-detail__avatar"
+            width="40"
+            height="40"
+          />
+          <div class="chat-detail__heading">
+            <h2 class="chat-detail__title"><%= @room.name %></h2>
+            <%= if @room.topic && @room.topic != "" do %>
+              <p class="chat-detail__topic"><%= @room.topic %></p>
             <% end %>
-          </ul>
-
-          <form phx-submit="add_member" class="chat-detail__add-member">
-            <input
-              type="text"
-              name="username"
-              placeholder="Add user by username"
-              autocomplete="off"
-              class="chat-detail__add-member-input"
-            />
-            <button type="submit" class="chat-detail__add-member-btn">Add</button>
-          </form>
-        </div>
-
-        <button type="button" phx-click="leave_room" class="chat-detail__leave">Leave room</button>
+            <span class="chat-detail__info-hint">Room info</span>
+          </div>
+        </button>
       </header>
 
       <div class="chat-detail__messages" id="chat-messages" phx-hook="ScrollMessages">
@@ -83,12 +80,44 @@
                 <time class="chat-message__time"><%= format_ts(msg["origin_server_ts"]) %></time>
               <% end %>
             </header>
-            <p class="chat-message__body"><%= message_body(msg) %></p>
+            <%= case message_msgtype(msg) do %>
+              <% "m.image" -> %>
+                <a href={file_url(msg)} class="chat-message__image-link" target="_blank" rel="noopener">
+                  <%= if src = thumbnail_src(msg) do %>
+                    <img src={src} alt={message_body(msg)} class="chat-message__image" />
+                  <% end %>
+                  <span class="chat-message__file-name"><%= message_body(msg) %></span>
+                </a>
+              <% "m.file" -> %>
+                <a href={file_url(msg)} class="chat-message__file" target="_blank" rel="noopener">
+                  <%= message_body(msg) %>
+                </a>
+              <% _ -> %>
+                <p class="chat-message__body"><%= message_body(msg) %></p>
+            <% end %>
           </article>
         <% end %>
       </div>
 
-      <form phx-submit="send_message" class="chat-detail__composer">
+      <%= if @typing_label do %>
+        <p class="chat-detail__typing" id="typing-indicator" role="status">
+          <span class="chat-detail__typing-text"><%= @typing_label %></span>
+          <span class="chat-detail__typing-dots" aria-hidden="true">
+            <span>.</span><span>.</span><span>.</span>
+          </span>
+        </p>
+      <% end %>
+
+      <form
+        phx-submit="send_message"
+        phx-change="noop"
+        class="chat-detail__composer"
+        id="composer-form"
+      >
+        <label class="chat-detail__attach" id="chat-attach">
+          <span class="chat-detail__attach-label">Attach</span>
+          <.live_file_input upload={@uploads.chat_file} />
+        </label>
         <input
           type="text"
           name="body"
@@ -101,6 +130,105 @@
         />
         <button type="submit" class="chat-detail__send">Send</button>
       </form>
+
+      <%= if @info_open? do %>
+        <div class="room-info-backdrop" phx-click="close_info" id="room-info-backdrop"></div>
+        <aside class="room-info" id="room-info-panel" phx-click-away="close_info">
+          <header class="room-info__header">
+            <h2 class="room-info__title">Room info</h2>
+            <button type="button" class="room-info__close" phx-click="close_info">Close</button>
+          </header>
+
+          <section class="room-info__section">
+            <h3 class="room-info__section-title">Photo</h3>
+            <img
+              src={room_avatar_src(@room)}
+              alt=""
+              class="room-info__avatar"
+              width="96"
+              height="96"
+            />
+            <form phx-change="noop" class="room-info__upload" id="room-avatar-form">
+              <span>Change photo</span>
+              <.live_file_input upload={@uploads.room_avatar} />
+            </form>
+          </section>
+
+          <section class="room-info__section">
+            <h3 class="room-info__section-title">Name</h3>
+            <form phx-submit="save_room_name" class="room-info__name-form" id="room-name-form">
+              <input
+                type="text"
+                name="name"
+                value={@name_draft}
+                phx-change="update_name_draft"
+                class="room-info__name-input"
+                id="room-name-input"
+                autocomplete="off"
+              />
+              <button type="submit" class="room-info__save-name">Save</button>
+            </form>
+          </section>
+
+          <section class="room-info__section">
+            <h3 class="room-info__section-title">Members</h3>
+            <ul class="room-info__member-list">
+              <%= for member <- @members do %>
+                <li class="room-info__member chat-detail__member">
+                  <span><%= member.username %></span>
+                  <%= if @is_creator? and member.username != @username do %>
+                    <button
+                      type="button"
+                      class="room-info__remove"
+                      phx-click="remove_member"
+                      phx-value-username={member.username}
+                    >
+                      Remove
+                    </button>
+                  <% end %>
+                </li>
+              <% end %>
+            </ul>
+
+            <%= if @is_creator? do %>
+              <form phx-submit="add_member" class="chat-detail__add-member room-info__add-member">
+                <input
+                  type="text"
+                  name="username"
+                  placeholder="Add user by username"
+                  autocomplete="off"
+                  class="chat-detail__add-member-input"
+                />
+                <button type="submit" class="chat-detail__add-member-btn">Add</button>
+              </form>
+            <% end %>
+          </section>
+
+          <section class="room-info__section">
+            <h3 class="room-info__section-title">Uploaded files</h3>
+            <%= if @room_files == [] do %>
+              <p class="room-info__empty">No uploaded files yet.</p>
+            <% else %>
+              <ul class="room-info__files" id="room-uploaded-files">
+                <%= for file <- @room_files do %>
+                  <li class="room-info__file">
+                    <a href={file_url(file)} target="_blank" rel="noopener">
+                      <%= message_body(file) %>
+                    </a>
+                    <span class="room-info__file-type"><%= message_msgtype(file) %></span>
+                  </li>
+                <% end %>
+              </ul>
+            <% end %>
+          </section>
+
+          <div class="room-info__footer">
+            <button type="button" phx-click="leave_room" class="chat-detail__leave room-info__leave" id="leave-room-btn">
+              Leave room
+            </button>
+          </div>
+        </aside>
+      <% end %>
     <% else %>
       <div class="chat-detail__placeholder">
         <p>Select a room from the list, or create a new one.</p>
