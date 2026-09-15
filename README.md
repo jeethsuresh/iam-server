@@ -101,7 +101,10 @@ Additional JSON (Bearer required):
 
 ## IAM routes (compatible with `iam-server`)
 
-- `POST /backend/register` JSON `{username, tokenURL, redirectURL}` → `{sessionID, username, publicKey}`
+- `POST /backend/register` JSON `{username, callerURL, redirectURL, codeChallenge, codeChallengeMethod, scope}` → `{sessionID, username}` (PKCE; no client secret / publicKey)
+- `GET /oauth/authorize?sessionID=` → login + consent → redirect with `code`
+- `POST /oauth/token` → opaque access/refresh tokens
+- `GET/POST /app/v1/*` → third-party profile, chats, events
 - `POST /login` JSON or urlencoded `username`, `password`, optional `sessionID` for federated completion
 - `POST /register` signup (pending activation unless registering as configured admin username)
 - `GET /logout` (with session + `Accept: application/json` for API-style response, or use browser for redirect)

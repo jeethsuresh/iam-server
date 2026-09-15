@@ -27,13 +27,18 @@ if ! parse_common_args "$@"; then
   usage
   exit 0
 fi
-set -- "${REMAINING_ARGS[@]:-}"
+if ((${#REMAINING_ARGS[@]})); then
+  set -- "${REMAINING_ARGS[@]}"
+else
+  set --
+fi
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --volumes) REMOVE_VOLUMES=1; shift ;;
     --no-remove-orphans) REMOVE_ORPHANS=0; shift ;;
     -h|--help) usage; exit 0 ;;
+    "") shift ;;
     *) echo "Unknown option: $1" >&2; usage; exit 1 ;;
   esac
 done

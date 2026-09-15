@@ -50,6 +50,12 @@ defmodule LakehouseWeb.Router do
   end
 
   scope "/", LakehouseWeb do
+    pipe_through :browser
+
+    get "/oauth/authorize", OAuthController, :authorize
+  end
+
+  scope "/", LakehouseWeb do
     pipe_through [:browser, :session_authenticated]
 
     live_session :require_user,
@@ -65,6 +71,10 @@ defmodule LakehouseWeb.Router do
 
     post "/web/settings/password", ProfilePasswordController, :update_browser
     post "/web/admin/approve", AdminController, :approve
+    post "/web/settings/apps/revoke", SettingsController, :revoke_app
+
+    get "/oauth/consent", OAuthController, :consent_form
+    post "/oauth/consent", OAuthController, :consent_submit
 
     get "/profile/password", SettingsController, :redirect_legacy
     get "/admin", SettingsController, :redirect_legacy
@@ -77,6 +87,16 @@ defmodule LakehouseWeb.Router do
     post "/backend/register", IamBackendController, :create
     post "/login", IamSessionController, :create
     post "/register", IamRegistrationController, :create
+    post "/oauth/token", OAuthController, :token
+  end
+
+  scope "/app/v1", LakehouseWeb.App, as: :app_v1 do
+    pipe_through [:api, LakehouseWeb.Plugs.AppTokenAuth]
+
+    get "/me", V1Controller, :me
+    get "/chats", V1Controller, :chats
+    get "/chats/:id/events", V1Controller, :list_events
+    post "/chats/:id/events", V1Controller, :create_event
   end
 
   scope "/", LakehouseWeb do

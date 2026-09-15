@@ -1,0 +1,48 @@
+<div class="oauth-consent">
+  <h1>Authorize application</h1>
+  <p>Signed in as <strong><%= @username %></strong></p>
+
+  <section class="oauth-consent__urls">
+    <p><strong>Caller URL:</strong> <code><%= @sess.caller_url %></code></p>
+    <p><strong>Callback URL:</strong> <code><%= @sess.redirect_url %></code></p>
+    <p><strong>App origin:</strong> <code><%= @sess.app_origin %></code></p>
+  </section>
+
+  <section>
+    <h2>Permissions requested</h2>
+    <ul>
+      <%= for scope <- @sess.scopes do %>
+        <li><code><%= scope %></code></li>
+      <% end %>
+    </ul>
+  </section>
+
+  <form action={~p"/oauth/consent"} method="post">
+    <input type="hidden" name="_csrf_token" value={get_csrf_token()} />
+    <input type="hidden" name="sessionID" value={@session_id} />
+
+    <%= if "chats.read" in @sess.scopes or "chats.write" in @sess.scopes do %>
+      <section>
+        <h2>Chat access</h2>
+        <label>
+          <input type="checkbox" name="all_rooms" value="true" />
+          All chats (now and future)
+        </label>
+        <p>Or select rooms:</p>
+        <ul>
+          <%= for room <- @rooms do %>
+            <li>
+              <label>
+                <input type="checkbox" name="room_ids[]" value={room.id} />
+                <%= room.name || room.id %>
+              </label>
+            </li>
+          <% end %>
+        </ul>
+      </section>
+    <% end %>
+
+    <button type="submit">Allow</button>
+    <a href={~p"/"}>Cancel</a>
+  </form>
+</div>

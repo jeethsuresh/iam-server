@@ -32,6 +32,28 @@
   </form>
 </section>
 
+<section class="settings-section">
+  <h2>Connected apps</h2>
+  <%= if @connected_apps == [] do %>
+    <p>No third-party apps have access.</p>
+  <% else %>
+    <ul class="settings-apps">
+      <%= for app <- @connected_apps do %>
+        <li>
+          <strong><%= app.app_origin %></strong>
+          <span><%= Enum.join(app.scopes, ", ") %></span>
+          <span>rooms: <%= if app.room_mode == :all, do: "all", else: Enum.join(app.room_ids, ", ") %></span>
+          <form action={~p"/web/settings/apps/revoke"} method="post">
+            <input type="hidden" name="_csrf_token" value={get_csrf_token()} />
+            <input type="hidden" name="origin" value={app.app_origin} />
+            <button type="submit">Revoke</button>
+          </form>
+        </li>
+      <% end %>
+    </ul>
+  <% end %>
+</section>
+
 <%= if @current_user_is_admin do %>
   <section class="settings-section">
     <h2>Pending accounts</h2>

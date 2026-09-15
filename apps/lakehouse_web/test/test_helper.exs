@@ -10,6 +10,7 @@ ExUnit.start(exclude: [:pending | exclude])
 Ecto.Adapters.SQL.Sandbox.mode(LakehouseIam.Repo, :manual)
 
 {:ok, _} = Application.ensure_all_started(:lakehouse_web)
+{:ok, _} = Application.ensure_all_started(:lakehouse_app_demo)
 
 unless browser_excluded? do
   chrome = System.get_env("CHROME_PATH")
