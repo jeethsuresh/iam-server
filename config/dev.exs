@@ -38,14 +38,17 @@ config :logger, level: :debug
 # Test-only style local demo: enable with LAKEHOUSE_DEMO=1 (not used by deploy.sh)
 if System.get_env("LAKEHOUSE_DEMO") not in [nil, ""] do
   demo_port = String.to_integer(System.get_env("DEMO_PORT") || "4100")
+  # Browser-facing origin (caller/redirect URLs). Inside Docker the IAM base may be
+  # 127.0.0.1:4000 on the same container while public URLs stay on the host port.
+  demo_public_host = System.get_env("DEMO_PUBLIC_HOST") || "127.0.0.1"
 
   config :lakehouse_app_demo,
     enabled: true,
     iam_base: System.get_env("LAKEHOUSE_IAM_BASE") || "http://127.0.0.1:#{phx_port}"
 
   config :lakehouse_app_demo, LakehouseAppDemo.Endpoint,
-    http: [ip: {127, 0, 0, 1}, port: demo_port],
-    url: [host: "127.0.0.1", port: demo_port, scheme: "http"],
+    http: [ip: phx_ip, port: demo_port],
+    url: [host: demo_public_host, port: demo_port, scheme: "http"],
     secret_key_base:
       "dEVONLYdEVONLYdEVONLYdEVONLYdEVONLYdEVONLYdEVONLYdEVONLYdEVONLYdEVONLY",
     server: true,
