@@ -45,4 +45,14 @@ config :lakehouse_matrix,
   media_store: LakehouseMatrix.Media.Store.Local,
   media_root: System.get_env("LAKEHOUSE_MEDIA_ROOT") || "tmp/media"
 
+config :lakehouse_app_demo,
+  enabled: false,
+  iam_base: System.get_env("LAKEHOUSE_IAM_BASE")
+
+config :lakehouse_app_demo, LakehouseAppDemo.Endpoint,
+  url: [host: "127.0.0.1"],
+  adapter: Bandit.PhoenixAdapter,
+  render_errors: [formats: [html: LakehouseAppDemo.ErrorHTML], layout: false],
+  pubsub_server: nil
+
 import_config "#{config_env()}.exs"

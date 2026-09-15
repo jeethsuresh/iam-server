@@ -22,6 +22,7 @@ services:
       dockerfile: Dockerfile
     ports:
       - "${HOST_PORT:-4000}:4000"
+      - "${DEMO_HOST_PORT:-4100}:4100"
     environment:
       MIX_ENV: dev
       POSTGRES_HOST: postgres
@@ -36,6 +37,10 @@ services:
       IAM_ADMIN_PASSWORD: ${IAM_ADMIN_PASSWORD:-changeme}
       IAM_RELAXED_CALLBACK_URLS: ${IAM_RELAXED_CALLBACK_URLS:-1}
       LAKEHOUSE_MEDIA_ROOT: ${LAKEHOUSE_MEDIA_ROOT:-/var/lib/lakehouse/media}
+      # Test-only demo app (not part of default product deploy UX): set LAKEHOUSE_DEMO=1
+      LAKEHOUSE_DEMO: ${LAKEHOUSE_DEMO:-}
+      DEMO_PORT: ${DEMO_PORT:-4100}
+      LAKEHOUSE_IAM_BASE: ${LAKEHOUSE_IAM_BASE:-http://127.0.0.1:4000}
     volumes:
       - lakehouse_media:/var/lib/lakehouse/media
     depends_on:

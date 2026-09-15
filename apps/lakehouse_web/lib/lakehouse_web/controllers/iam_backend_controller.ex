@@ -2,16 +2,11 @@ defmodule LakehouseWeb.IamBackendController do
   use LakehouseWeb, :controller
 
   def create(conn, params) do
-    username = params["username"]
-    token_url = params["tokenURL"]
-    redirect_url = params["redirectURL"]
-
-    case LakehouseIam.Federated.register(username, token_url, redirect_url) do
-      {:ok, session_id, canonical_username, public_key_b64} ->
+    case LakehouseIam.Federated.register(params) do
+      {:ok, session_id, canonical_username} ->
         json(conn, %{
           sessionID: session_id,
-          username: canonical_username,
-          publicKey: public_key_b64
+          username: canonical_username
         })
 
       {:error, msg} when is_binary(msg) ->

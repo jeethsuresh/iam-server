@@ -19,8 +19,15 @@ defmodule LakehouseWeb.IamSessionController do
       {:ok, token} when is_binary(token) ->
         json(conn, %{token: token})
 
-      {:ok, %{redirect: url}} ->
-        json(conn, %{redirect: url})
+      {:ok, %{redirect: url} = payload} ->
+        body =
+          if Map.has_key?(payload, :user_jwt) do
+            %{redirect: url, token: payload.user_jwt}
+          else
+            %{redirect: url}
+          end
+
+        json(conn, body)
 
       {:error, status, body} ->
         conn

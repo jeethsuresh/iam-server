@@ -3,7 +3,8 @@ defmodule LakehouseWeb.IamAuth do
   Shared login/register logic for JSON API and HTML form flows.
   """
   alias LakehouseIam.Accounts
-  alias LakehouseIam.Auth.{CallbackURL, FederatedSigner, Token}
+  alias LakehouseIam.Apps.{Grants, Scopes}
+  alias LakehouseIam.Auth.{OAuth, Token}
   alias LakehouseIam.Federated
 
   @type error :: {:error, Plug.Conn.status(), term()}
@@ -37,8 +38,12 @@ defmodule LakehouseWeb.IamAuth do
     end
   end
 
+  @doc """
+  Federated PKCE login: authenticate, then consent or issue authorization code redirect.
+  Returns `{:ok, %{redirect: url, user_jwt: jwt}}`.
+  """
   @spec federated_login(String.t(), String.t(), String.t()) ::
-          {:ok, %{redirect: String.t()}} | error()
+          {:ok, %{redirect: String.t(), user_jwt: String.t()}} | error()
   def federated_login(username, password, session_id)
       when is_binary(session_id) and session_id != "" do
     with :ok <- Accounts.validate_login_form(username, password) do
@@ -55,51 +60,60 @@ defmodule LakehouseWeb.IamAuth do
           {:error, :unauthorized, "Invalid credentials."}
 
         true ->
-          complete_federated(u, session_id)
+          case Accounts.fetch_user(u) do
+            {:ok, principal} -> continue_federated(principal, session_id)
+            :error -> {:error, :not_found, %{error: "user_not_found"}}
+          end
       end
     else
       {:error, msg} -> {:error, :bad_request, msg}
     end
   end
 
-  defp complete_federated(login_username, session_id) do
+  @doc "Continue federated flow for an already-authenticated principal."
+  def continue_federated(principal, session_id) do
     case Federated.fetch(session_id) do
       nil ->
         {:error, :internal_server_error, "Session ID does not exist."}
 
       sess ->
-        if sess.username != login_username do
+        if sess.username != principal.username do
           {:error, :unauthorized, "Invalid session ID."}
         else
-          with :ok <- CallbackURL.validate(sess.token_url, "tokenURL"),
-               :ok <- CallbackURL.validate(sess.redirect_url, "redirectURL") do
-            jwt = FederatedSigner.sign(sess.private_jwk, login_username, session_id)
-            body = %{sessionID: session_id, token: jwt}
+          user_jwt = Token.issue(principal.username)
+          grant = Grants.get(principal.id, sess.app_origin)
 
-            case Req.post(sess.token_url, json: body, receive_timeout: 10_000) do
-              {:ok, %Req.Response{status: 200}} ->
-                redirect_to = merge_session_query(sess.redirect_url, session_id)
-                _ = Federated.delete(session_id)
-                {:ok, %{redirect: redirect_to}}
-
-              {:ok, %Req.Response{status: status}} ->
-                {:error, :internal_server_error, "Could not validate session ID: #{status}"}
-
-              {:error, _} ->
-                {:error, :internal_server_error, "Could not send request."}
-            end
+          if skip_consent?(grant, sess.scopes) do
+            finish_with_code(sess, principal, session_id, grant.room_mode, grant.room_ids, user_jwt)
           else
-            {:error, msg} -> {:error, :bad_request, msg}
+            {:ok,
+             %{
+               redirect: "/oauth/consent?sessionID=#{URI.encode_www_form(session_id)}",
+               user_jwt: user_jwt
+             }}
           end
         end
     end
   end
 
-  defp merge_session_query(redirect_url, session_id) do
-    uri = URI.parse(redirect_url)
-    q = URI.decode_query(uri.query || "")
-    merged = Map.put(q, "sessionID", session_id)
-    %URI{uri | query: URI.encode_query(merged)} |> URI.to_string()
+  defp skip_consent?(nil, _), do: false
+
+  defp skip_consent?(grant, scopes) do
+    Scopes.covers?(grant.scopes, scopes) and
+      (not needs_rooms?(scopes) or grant.room_mode == :all)
+  end
+
+  defp needs_rooms?(scopes), do: "chats.read" in scopes or "chats.write" in scopes
+
+  defp finish_with_code(sess, principal, session_id, room_mode, room_ids, user_jwt) do
+    case OAuth.issue_code_redirect(sess, principal.id, room_mode, room_ids) do
+      {:ok, redirect} ->
+        _ = Federated.delete(session_id)
+        {:ok, %{redirect: redirect, user_jwt: user_jwt}}
+
+      {:error, _} ->
+        {:error, :internal_server_error, "Could not issue authorization code."}
+    end
   end
 
   @spec register(String.t(), String.t()) :: {:ok, LakehouseIam.Schema.Principal.t()} | error()
@@ -122,6 +136,6 @@ defmodule LakehouseWeb.IamAuth do
         String.replace(acc, "%{#{key}}", to_string(value))
       end)
     end)
-    |> inspect()
+    |> Enum.map_join("; ", fn {k, v} -> "#{k} #{Enum.join(v, ", ")}" end)
   end
 end

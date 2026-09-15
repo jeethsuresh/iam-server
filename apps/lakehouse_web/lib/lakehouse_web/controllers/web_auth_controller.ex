@@ -22,6 +22,16 @@ defmodule LakehouseWeb.WebAuthController do
         |> put_flash(:info, "Signed in.")
         |> redirect(to: ~p"/rooms")
 
+      {:ok, %{redirect: "/" <> _ = path, user_jwt: jwt}} ->
+        conn
+        |> put_session(:user_jwt, jwt)
+        |> redirect(to: path)
+
+      {:ok, %{redirect: url, user_jwt: jwt}} ->
+        conn
+        |> put_session(:user_jwt, jwt)
+        |> redirect(external: url)
+
       {:ok, %{redirect: url}} ->
         redirect(conn, external: url)
 

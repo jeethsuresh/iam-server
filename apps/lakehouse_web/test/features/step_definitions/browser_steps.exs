@@ -216,6 +216,68 @@ defmodule LakehouseWeb.Bdd.BrowserSteps do
     {:ok, Map.put(context, :session, session)}
   end
 
+  step "I open the demo app", context do
+    Application.put_env(:lakehouse_iam, :relaxed_callback_urls, true)
+    demo_port = Application.get_env(:lakehouse_app_demo, LakehouseAppDemo.Endpoint)[:url][:port] || 4102
+    session = context.session |> visit("http://127.0.0.1:#{demo_port}/")
+    assert_has(session, Query.css("h1", text: "Lakehouse App Demo"))
+    {:ok, Map.put(context, :session, session)}
+  end
+
+  step "I start demo login as {string}", %{args: [username_at]} = context do
+    session =
+      context.session
+      |> fill_in(Query.css("input[name=username]"), with: username_at)
+      |> click(Query.button("Continue"))
+
+    {:ok, Map.put(context, :session, session)}
+  end
+
+  step "I should see the Lakehouse consent page with caller and callback URLs", context do
+    # May land on login first
+    session = context.session
+
+    session =
+      if has?(session, Query.button("Sign in")) do
+        password =
+          Map.get(context, :users, %{})
+          |> Map.get("demouser", "password123")
+
+        session
+        |> fill_in(Query.text_field("Password"), with: password)
+        |> click(Query.button("Sign in"))
+      else
+        session
+      end
+
+    assert_has(session, Query.css("h1", text: "Authorize application"))
+    page = page_source(session)
+    assert page =~ "Caller URL"
+    assert page =~ "Callback URL"
+    {:ok, Map.put(context, :session, session)}
+  end
+
+  step "I allow all chats on the consent page", context do
+    session =
+      context.session
+      |> then(fn s ->
+        if has?(s, Query.css("input[name=all_rooms]")) do
+          click(s, Query.css("input[name=all_rooms]"))
+        else
+          s
+        end
+      end)
+      |> click(Query.button("Allow"))
+
+    {:ok, Map.put(context, :session, session)}
+  end
+
+  step "I should be signed in on the demo app as {string}", %{args: [name]} = context do
+    assert_has(context.session, Query.css("h1", text: "Signed in"))
+    assert_has(context.session, Query.css("strong", text: name))
+    :ok
+  end
+
   defp ensure_approved_user(username, password) do
     MatrixFixtures.ensure_rbac!()
     admin = Application.fetch_env!(:lakehouse_iam, :admin_username)
