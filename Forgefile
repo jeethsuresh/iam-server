@@ -1,0 +1,38 @@
+# Lakehouse / iam-server — Forge deploy contract
+# Patterns from docs/forgefile.template.yml (Forge docs); trimmed unused options.
+
+version: 1
+
+project:
+  name: iam-server
+  compose_slug: iam-server
+
+scripts:
+  build:
+    run: ./build.sh
+    description: Compile the Lakehouse umbrella (mix deps + compile)
+  test:
+    run: ./test.sh
+    description: Run ExUnit + Cucumber API/BDD + Wallaby browser tests
+  teardown:
+    run: ./teardown.sh
+    description: Stop the docker compose stack for this project
+
+deployments:
+  web:
+    description: Lakehouse IAM + Matrix web app (postgres + lakehouse)
+    auto_deploy: false
+    scripts:
+      build: build
+      test: test
+      deploy: ./deploy.sh
+      teardown: teardown
+    ports:
+      - name: http
+        port: 4000
+        public: true
+
+artifacts: {}
+
+agent:
+  packages: []
