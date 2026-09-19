@@ -12,7 +12,31 @@ HOST_PORT="${HOST_PORT:-4000}"
 
 export COMPOSE_PROJECT_NAME PROJECT_NAME HOST_PORT COMPOSE_FILE ROOT_DIR
 
+# Remove stale Compose default networks left by older compose/docker that lack
+# com.docker.compose.network=default (Compose v2 refuses to reuse them).
+ensure_compose_network() {
+  local net="${COMPOSE_PROJECT_NAME}_default"
+  local label=""
+  if ! label="$(docker network inspect -f '{{index .Labels "com.docker.compose.network"}}' "$net" 2>/dev/null)"; then
+    return 0
+  fi
+  if [[ "$label" == "default" ]]; then
+    return 0
+  fi
+  echo "common.sh: removing stale compose network $net (label='$label', expected 'default')" >&2
+  local containers=""
+  containers="$(docker network inspect -f '{{range .Containers}}{{.Name}}{{println}}{{end}}' "$net" 2>/dev/null || true)"
+  if [[ -n "$containers" ]]; then
+    while IFS= read -r c; do
+      [[ -z "$c" ]] && continue
+      docker rm -f "$c" >/dev/null 2>&1 || true
+    done <<<"$containers"
+  fi
+  docker network rm "$net" >/dev/null 2>&1 || true
+}
+
 compose_cmd() {
+  ensure_compose_network
   docker compose -f "$COMPOSE_FILE" -p "$COMPOSE_PROJECT_NAME" "$@"
 }
 

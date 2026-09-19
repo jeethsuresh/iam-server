@@ -62,6 +62,8 @@ export PORT="${PORT:-4002}"
 # Forge deploy hosts often lack host Elixir; run the suite inside compose instead.
 run_tests_via_compose() {
   require_docker
+  # Fast mocked check for stale-network recovery used by compose_cmd.
+  bash "$SCRIPT_DIR/scripts/lib/common_network_test.sh"
   echo "test.sh: mix not found; running tests via docker compose (project=$COMPOSE_PROJECT_NAME)"
 
   compose_cmd build lakehouse
