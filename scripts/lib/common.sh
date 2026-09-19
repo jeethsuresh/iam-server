@@ -16,6 +16,17 @@ compose_cmd() {
   docker compose -f "$COMPOSE_FILE" -p "$COMPOSE_PROJECT_NAME" "$@"
 }
 
+have_mix() {
+  command -v mix >/dev/null 2>&1
+}
+
+require_docker() {
+  if ! command -v docker >/dev/null 2>&1; then
+    echo "docker is required when mix is not installed on PATH" >&2
+    exit 127
+  fi
+}
+
 print_common_help() {
   cat <<EOF
 Common flags:

@@ -59,6 +59,50 @@ done
 export MIX_ENV=test
 export PORT="${PORT:-4002}"
 
+# Forge deploy hosts often lack host Elixir; run the suite inside compose instead.
+run_tests_via_compose() {
+  require_docker
+  echo "test.sh: mix not found; running tests via docker compose (project=$COMPOSE_PROJECT_NAME)"
+
+  compose_cmd build lakehouse
+  compose_cmd up -d postgres
+
+  local i
+  for i in $(seq 1 60); do
+    if compose_cmd exec -T postgres pg_isready -U postgres >/dev/null 2>&1; then
+      break
+    fi
+    if [[ "$i" -eq 60 ]]; then
+      echo "test.sh: Postgres did not become ready" >&2
+      exit 1
+    fi
+    sleep 1
+  done
+
+  local mix_cmd=(mix test --exclude browser)
+  if [[ "$RUN_UNIT" -eq 1 && "$RUN_API" -eq 0 && "$RUN_BROWSER" -eq 0 ]]; then
+    mix_cmd=(mix test apps/lakehouse_iam/test apps/lakehouse_matrix/test)
+  elif [[ "$RUN_API" -eq 1 && "$RUN_UNIT" -eq 0 && "$RUN_BROWSER" -eq 0 ]]; then
+    mix_cmd=(mix test --only api apps/lakehouse_web/test)
+  elif [[ "$RUN_BROWSER" -eq 1 && "$RUN_UNIT" -eq 0 && "$RUN_API" -eq 0 ]]; then
+    echo "test.sh: browser-only suite requires host mix + Chrome; use --exclude-browser on Forge" >&2
+    exit 1
+  fi
+
+  compose_cmd run --rm --entrypoint "" \
+    -e MIX_ENV=test \
+    -e POSTGRES_HOST=postgres \
+    -e POSTGRES_PORT=5432 \
+    -e POSTGRES_USER=postgres \
+    -e POSTGRES_PASSWORD=postgres \
+    -e WALLABY_SKIP=1 \
+    -e PORT=4002 \
+    lakehouse \
+    sh -c "mix ecto.create -r LakehouseIam.Repo --quiet || true; mix ecto.migrate -r LakehouseIam.Repo --quiet; $(printf '%q ' "${mix_cmd[@]}")"
+
+  echo "test.sh: OK"
+}
+
 cleanup() {
   if [[ "$STARTED_PG" -eq 1 ]]; then
     compose_cmd stop postgres >/dev/null 2>&1 || true
@@ -66,6 +110,11 @@ cleanup() {
   fi
 }
 trap cleanup EXIT
+
+if ! have_mix; then
+  run_tests_via_compose
+  exit 0
+fi
 
 port_open() {
   local port="$1"

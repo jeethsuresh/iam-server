@@ -10,10 +10,10 @@ project:
 scripts:
   build:
     run: ./build.sh
-    description: Compile the Lakehouse umbrella (mix deps + compile)
+    description: Compile via mix, or docker compose build when mix is unavailable
   test:
-    run: ./test.sh
-    description: Run ExUnit + Cucumber API/BDD + Wallaby browser tests
+    run: ./test.sh --exclude-browser
+    description: Run ExUnit + API BDD (browser skipped on Forge; uses compose when mix is missing)
   teardown:
     run: ./teardown.sh
     description: Stop the docker compose stack for this project
