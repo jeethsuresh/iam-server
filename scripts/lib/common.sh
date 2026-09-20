@@ -10,7 +10,17 @@ COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-lakehouse}"
 PROJECT_NAME="${PROJECT_NAME:-$COMPOSE_PROJECT_NAME}"
 HOST_PORT="${HOST_PORT:-4000}"
 
-export COMPOSE_PROJECT_NAME PROJECT_NAME HOST_PORT COMPOSE_FILE ROOT_DIR
+# Host publish of Postgres is only for local tooling; compose services use
+# postgres:5432 on the internal network. Avoid default 5432 so Forge hosts that
+# already bind system Postgres do not fail `compose up`.
+if [[ -n "${POSTGRES_HOST_PORT:-}" ]]; then
+  POSTGRES_HOST_PORT_EXPLICIT=1
+else
+  POSTGRES_HOST_PORT=$((HOST_PORT + 11432))
+  POSTGRES_HOST_PORT_EXPLICIT=0
+fi
+
+export COMPOSE_PROJECT_NAME PROJECT_NAME HOST_PORT POSTGRES_HOST_PORT POSTGRES_HOST_PORT_EXPLICIT COMPOSE_FILE ROOT_DIR
 
 # Remove stale Compose default networks left by older compose/docker that lack
 # com.docker.compose.network=default (Compose v2 refuses to reuse them).
@@ -101,7 +111,11 @@ parse_common_args() {
         ;;
       --host-port|--port)
         HOST_PORT="$2"
-        export HOST_PORT
+        # Refresh derived publish port when caller did not set POSTGRES_HOST_PORT.
+        if [[ -z "${POSTGRES_HOST_PORT_EXPLICIT:-}" ]]; then
+          POSTGRES_HOST_PORT=$((HOST_PORT + 11432))
+        fi
+        export HOST_PORT POSTGRES_HOST_PORT
         shift 2
         ;;
       --compose-file)
