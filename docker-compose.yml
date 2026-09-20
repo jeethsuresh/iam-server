@@ -49,6 +49,8 @@ services:
 
 volumes:
   lakehouse_pgdata:
-    name: ${COMPOSE_PROJECT_NAME:-lakehouse}_pgdata
+    # Bump suffix when init-user/role expectations change; legacy volumes may lack
+    # the configured POSTGRES_USER and break psql/ecto with "role does not exist".
+    name: ${COMPOSE_PROJECT_NAME:-lakehouse}_pgdata_v2
   lakehouse_media:
     name: ${COMPOSE_PROJECT_NAME:-lakehouse}_media
