@@ -71,16 +71,19 @@ run_tests_via_compose() {
   # Drop leftover test pgdata so each Forge run gets a clean POSTGRES_USER role.
   docker volume rm "${COMPOSE_PROJECT_NAME}_pgdata_v2" >/dev/null 2>&1 || true
 
+  echo "test.sh: starting postgres..."
   compose_cmd up -d postgres
 
   local i
   for i in $(seq 1 60); do
     if compose_cmd exec -T postgres pg_isready -U postgres -d postgres >/dev/null 2>&1 \
       && compose_cmd exec -T postgres psql -U postgres -d postgres -c 'SELECT 1' >/dev/null 2>&1; then
+      echo "test.sh: postgres ready (attempt $i)"
       break
     fi
     if [[ "$i" -eq 60 ]]; then
       echo "test.sh: Postgres did not become ready" >&2
+      compose_cmd logs postgres >&2 || true
       exit 1
     fi
     sleep 1
@@ -88,11 +91,13 @@ run_tests_via_compose() {
 
   # Create the test DB via psql. mix ecto.create under MIX_ENV=test can be OOM-killed
   # while compiling the test env inside constrained Forge agents.
-  compose_cmd exec -T postgres \
+  echo "test.sh: ensuring lakehouse_test database..."
+  if ! compose_cmd exec -T postgres \
     psql -U postgres -d postgres -v ON_ERROR_STOP=1 -tc "SELECT 1 FROM pg_database WHERE datname = 'lakehouse_test'" \
-    | grep -q 1 \
-    || compose_cmd exec -T postgres \
+    | grep -q 1; then
+    compose_cmd exec -T postgres \
       psql -U postgres -d postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE lakehouse_test;"
+  fi
 
   local mix_cmd=(mix test --exclude browser)
   if [[ "$RUN_UNIT" -eq 1 && "$RUN_API" -eq 0 && "$RUN_BROWSER" -eq 0 ]]; then
@@ -104,6 +109,7 @@ run_tests_via_compose() {
     exit 1
   fi
 
+  echo "test.sh: running ${mix_cmd[*]} via compose..."
   compose_cmd run --rm --no-deps --entrypoint "" \
     -e MIX_ENV=test \
     -e POSTGRES_HOST=postgres \

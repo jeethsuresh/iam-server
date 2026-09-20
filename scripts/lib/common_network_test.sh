@@ -149,19 +149,4 @@ fi
 rm -f "$STATE/networks/iam-server_default"
 ensure_compose_network
 
-# Legacy compose v1 container found only via name filter (empty Containers map).
-printf '' >"$STATE/networks/iam-server_default"
-rm -f "$STATE/network_containers/iam-server_default"
-touch "$STATE/containers/legacyctr"
-printf 'legacyctr\n' >"$STATE/name_filters/iam-server_"
-ensure_compose_network
-if [[ -f "$STATE/networks/iam-server_default" ]]; then
-  echo "FAIL: stale network with legacy name-filter container was not removed" >&2
-  exit 1
-fi
-if [[ -f "$STATE/containers/legacyctr" ]]; then
-  echo "FAIL: legacy project container was not removed" >&2
-  exit 1
-fi
-
 echo "common_network_test.sh: OK"

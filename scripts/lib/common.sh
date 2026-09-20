@@ -24,6 +24,9 @@ export COMPOSE_PROJECT_NAME PROJECT_NAME HOST_PORT POSTGRES_HOST_PORT POSTGRES_H
 
 # Remove stale Compose default networks left by older compose/docker that lack
 # com.docker.compose.network=default (Compose v2 refuses to reuse them).
+# Run at most once per process so we never tear down a healthy network mid-script.
+COMPOSE_NETWORK_ENSURED=0
+
 ensure_compose_network() {
   local net="${COMPOSE_PROJECT_NAME}_default"
   # Existence check must not rely on label templates (nil Labels can error).
@@ -37,15 +40,12 @@ ensure_compose_network() {
   fi
   echo "common.sh: removing stale compose network $net (label='$label', expected 'default')" >&2
 
-  # Prefer container IDs (map keys); Names alone can be empty on some engines.
-  # Also sweep legacy project containers (e.g. compose v1 name_service_N) that
-  # may still hold endpoints on the stale network.
+  # Prefer container IDs attached to this network only (never sweep by project name
+  # prefix — that can kill a healthy postgres mid-test when labels are misread).
   local ids=""
   ids="$(docker network inspect -f '{{range $id, $c := .Containers}}{{println $id}}{{end}}' "$net" 2>/dev/null || true)"
   ids+=$'\n'
   ids+="$(docker ps -aq --filter "network=$net" 2>/dev/null || true)"
-  ids+=$'\n'
-  ids+="$(docker ps -aq --filter "name=^${COMPOSE_PROJECT_NAME}_" 2>/dev/null || true)"
   if [[ -n "$ids" ]]; then
     while IFS= read -r id; do
       [[ -z "$id" ]] && continue
@@ -74,7 +74,10 @@ ensure_compose_network() {
 }
 
 compose_cmd() {
-  ensure_compose_network
+  if [[ "${COMPOSE_NETWORK_ENSURED}" -eq 0 ]]; then
+    ensure_compose_network
+    COMPOSE_NETWORK_ENSURED=1
+  fi
   docker compose -f "$COMPOSE_FILE" -p "$COMPOSE_PROJECT_NAME" "$@"
 }
 
