@@ -24,15 +24,35 @@ ensure_compose_network() {
     return 0
   fi
   echo "common.sh: removing stale compose network $net (label='$label', expected 'default')" >&2
-  local containers=""
-  containers="$(docker network inspect -f '{{range .Containers}}{{.Name}}{{println}}{{end}}' "$net" 2>/dev/null || true)"
-  if [[ -n "$containers" ]]; then
-    while IFS= read -r c; do
-      [[ -z "$c" ]] && continue
-      docker rm -f "$c" >/dev/null 2>&1 || true
-    done <<<"$containers"
+
+  # Prefer container IDs (map keys); Names alone can be empty on some engines.
+  local ids=""
+  ids="$(docker network inspect -f '{{range $id, $_ := .Containers}}{{println $id}}{{end}}' "$net" 2>/dev/null || true)"
+  ids+=$'\n'
+  ids+="$(docker ps -aq --filter "network=$net" 2>/dev/null || true)"
+  if [[ -n "$ids" ]]; then
+    while IFS= read -r id; do
+      [[ -z "$id" ]] && continue
+      docker network disconnect -f "$net" "$id" >/dev/null 2>&1 || true
+      docker rm -f "$id" >/dev/null 2>&1 || true
+    done <<<"$ids"
   fi
-  docker network rm "$net" >/dev/null 2>&1 || true
+
+  if ! docker network rm "$net" >/dev/null 2>&1; then
+    # Last resort: still attached endpoints
+    ids="$(docker network inspect -f '{{range $id, $_ := .Containers}}{{println $id}}{{end}}' "$net" 2>/dev/null || true)"
+    while IFS= read -r id; do
+      [[ -z "$id" ]] && continue
+      docker network disconnect -f "$net" "$id" >/dev/null 2>&1 || true
+      docker rm -f "$id" >/dev/null 2>&1 || true
+    done <<<"$ids"
+    docker network rm "$net" >/dev/null 2>&1 || true
+  fi
+
+  if docker network inspect "$net" >/dev/null 2>&1; then
+    echo "common.sh: failed to remove stale network $net; refuse to continue" >&2
+    return 1
+  fi
 }
 
 compose_cmd() {

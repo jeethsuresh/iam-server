@@ -11,7 +11,7 @@ mkdir -p "$MOCK_BIN"
 STATE="$TMP/state"
 mkdir -p "$STATE"
 
-# Mock docker: network with empty compose label (legacy v1), one attached container.
+# Mock docker: network with empty compose label (legacy), endpoint keyed by ID.
 cat >"$MOCK_BIN/docker" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -23,8 +23,6 @@ case "$cmd" in
     sub="${1:-}"; shift || true
     case "$sub" in
       inspect)
-        # support: docker network inspect NET
-        # support: docker network inspect -f TEMPLATE NET
         fmt=""
         while [[ $# -gt 0 ]]; do
           case "$1" in
@@ -37,30 +35,67 @@ case "$cmd" in
         if [[ -n "$fmt" ]]; then
           if [[ "$fmt" == *'Containers'* ]]; then
             if [[ -f "$STATE_DIR/network_containers/$net" ]]; then
+              # IDs one per line (map keys)
               cat "$STATE_DIR/network_containers/$net"
             fi
             exit 0
           fi
-          # {{index .Labels "com.docker.compose.network"}}
           printf '%s' "$label"
           exit 0
         fi
         echo "{}"
         ;;
+      disconnect)
+        # docker network disconnect -f NET ID
+        shift || true # -f
+        net="${1:-}"; id="${2:-}"
+        if [[ -f "$STATE_DIR/network_containers/$net" ]]; then
+          grep -vx "$id" "$STATE_DIR/network_containers/$net" >"$STATE_DIR/network_containers/$net.tmp" || true
+          mv "$STATE_DIR/network_containers/$net.tmp" "$STATE_DIR/network_containers/$net"
+        fi
+        ;;
       rm)
         net="$1"
+        if [[ -f "$STATE_DIR/network_containers/$net" ]] && [[ -s "$STATE_DIR/network_containers/$net" ]]; then
+          echo "network has active endpoints" >&2
+          exit 1
+        fi
         rm -f "$STATE_DIR/networks/$net"
         echo "removed $net"
         ;;
       *) exit 1 ;;
     esac
     ;;
+  ps)
+    # docker ps -aq --filter network=NET
+    net=""
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --filter) 
+          filt="$2"; shift 2
+          case "$filt" in
+            network=*) net="${filt#network=}" ;;
+          esac
+          ;;
+        -aq|-q|-a) shift ;;
+        *) shift ;;
+      esac
+    done
+    if [[ -n "$net" && -f "$STATE_DIR/network_containers/$net" ]]; then
+      cat "$STATE_DIR/network_containers/$net"
+    fi
+    ;;
   rm)
-    # docker rm -f NAME
+    # docker rm -f ID
     shift || true  # -f
-    name="${1:-}"
-    rm -f "$STATE_DIR/containers/$name"
-    echo "removed container $name"
+    id="${1:-}"
+    rm -f "$STATE_DIR/containers/$id"
+    for f in "$STATE_DIR"/network_containers/*; do
+      [[ -f "$f" ]] || continue
+      grep -vx "$id" "$f" >"$f.tmp" || true
+      mv "$f.tmp" "$f"
+    done
+    echo "removed container $id"
     ;;
   *) exit 1 ;;
 esac
@@ -72,10 +107,10 @@ export MOCK_DOCKER_STATE="$STATE"
 export COMPOSE_PROJECT_NAME="iam-server"
 
 mkdir -p "$STATE/networks" "$STATE/network_containers" "$STATE/containers"
-# Stale legacy network (empty label)
+# Stale legacy network (empty label); endpoint only has an ID (no usable name).
 printf '' >"$STATE/networks/iam-server_default"
-printf 'old_postgres\n' >"$STATE/network_containers/iam-server_default"
-touch "$STATE/containers/old_postgres"
+printf 'abc123def\n' >"$STATE/network_containers/iam-server_default"
+touch "$STATE/containers/abc123def"
 
 # shellcheck source=scripts/lib/common.sh
 source "$SCRIPT_DIR/common.sh"
@@ -86,7 +121,7 @@ if [[ -f "$STATE/networks/iam-server_default" ]]; then
   echo "FAIL: stale network was not removed" >&2
   exit 1
 fi
-if [[ -f "$STATE/containers/old_postgres" ]]; then
+if [[ -f "$STATE/containers/abc123def" ]]; then
   echo "FAIL: attached container was not removed" >&2
   exit 1
 fi
