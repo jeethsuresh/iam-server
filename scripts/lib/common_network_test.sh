@@ -67,14 +67,16 @@ case "$cmd" in
     esac
     ;;
   ps)
-    # docker ps -aq --filter network=NET
+    # docker ps -aq --filter network=NET | --filter name=PREFIX
     net=""
+    name_filt=""
     while [[ $# -gt 0 ]]; do
       case "$1" in
-        --filter) 
+        --filter)
           filt="$2"; shift 2
           case "$filt" in
             network=*) net="${filt#network=}" ;;
+            name=*) name_filt="${filt#name=}" ;;
           esac
           ;;
         -aq|-q|-a) shift ;;
@@ -83,6 +85,14 @@ case "$cmd" in
     done
     if [[ -n "$net" && -f "$STATE_DIR/network_containers/$net" ]]; then
       cat "$STATE_DIR/network_containers/$net"
+    fi
+    if [[ -n "$name_filt" ]]; then
+      # Strip leading ^ used by ensure_compose_network.
+      prefix="${name_filt#^}"
+      safe="$(printf '%s' "$prefix" | tr -c 'A-Za-z0-9._-' '_')"
+      if [[ -f "$STATE_DIR/name_filters/$safe" ]]; then
+        cat "$STATE_DIR/name_filters/$safe"
+      fi
     fi
     ;;
   rm)
@@ -106,7 +116,7 @@ export PATH="$MOCK_BIN:$PATH"
 export MOCK_DOCKER_STATE="$STATE"
 export COMPOSE_PROJECT_NAME="iam-server"
 
-mkdir -p "$STATE/networks" "$STATE/network_containers" "$STATE/containers"
+mkdir -p "$STATE/networks" "$STATE/network_containers" "$STATE/containers" "$STATE/name_filters"
 # Stale legacy network (empty label); endpoint only has an ID (no usable name).
 printf '' >"$STATE/networks/iam-server_default"
 printf 'abc123def\n' >"$STATE/network_containers/iam-server_default"
@@ -132,6 +142,25 @@ ensure_compose_network
 label="$(cat "$STATE/networks/iam-server_default")"
 if [[ "$label" != "default" ]]; then
   echo "FAIL: modern network was incorrectly removed" >&2
+  exit 1
+fi
+
+# Missing network is a no-op
+rm -f "$STATE/networks/iam-server_default"
+ensure_compose_network
+
+# Legacy compose v1 container found only via name filter (empty Containers map).
+printf '' >"$STATE/networks/iam-server_default"
+rm -f "$STATE/network_containers/iam-server_default"
+touch "$STATE/containers/legacyctr"
+printf 'legacyctr\n' >"$STATE/name_filters/iam-server_"
+ensure_compose_network
+if [[ -f "$STATE/networks/iam-server_default" ]]; then
+  echo "FAIL: stale network with legacy name-filter container was not removed" >&2
+  exit 1
+fi
+if [[ -f "$STATE/containers/legacyctr" ]]; then
+  echo "FAIL: legacy project container was not removed" >&2
   exit 1
 fi
 
