@@ -22,6 +22,9 @@ fi
 
 export COMPOSE_PROJECT_NAME PROJECT_NAME HOST_PORT POSTGRES_HOST_PORT POSTGRES_HOST_PORT_EXPLICIT COMPOSE_FILE ROOT_DIR
 
+# Forge hosts often lack buildx; Bake then produces no local app image for release tagging.
+export COMPOSE_BAKE="${COMPOSE_BAKE:-false}"
+
 # Remove stale Compose default networks left by older compose/docker that lack
 # com.docker.compose.network=default (Compose v2 refuses to reuse them).
 # Run at most once per process so we never tear down a healthy network mid-script.
