@@ -52,21 +52,19 @@ else
   require_docker
   echo "build.sh: mix not found; building via docker compose (project=$COMPOSE_PROJECT_NAME)"
   compose_cmd build
+  # Materialize the app container so `compose images` (used by Forge tagging) sees it.
+  compose_cmd create web >/dev/null
   echo "build.sh: compose images:" >&2
   compose_cmd images >&2 || true
-  echo "build.sh: docker images (iam-server*):" >&2
-  docker images 'iam-server*' --format 'table {{.Repository}}:{{.Tag}}	{{.ID}}	{{.CreatedSince}}' >&2 || true
-  # Tag common aliases Forge may look up
-  if docker image inspect iam-server:latest >/dev/null 2>&1; then
-    docker tag iam-server:latest "${COMPOSE_PROJECT_NAME}:latest" || true
-    docker tag iam-server:latest "${COMPOSE_PROJECT_NAME}-web:latest" || true
-    docker tag iam-server:latest "${COMPOSE_PROJECT_NAME}-app:latest" || true
-    echo "build.sh: app image iam-server:latest ready (+ aliases)" >&2
-  else
+  if ! docker image inspect iam-server:latest >/dev/null 2>&1; then
     echo "build.sh: iam-server:latest missing after compose build" >&2
     docker images >&2 || true
     exit 1
   fi
+  # Legacy Forge/podman image name from earlier iam-server_iam stacks.
+  docker tag iam-server:latest "localhost/${COMPOSE_PROJECT_NAME}_iam:latest" 2>/dev/null || true
+  docker tag iam-server:latest "${COMPOSE_PROJECT_NAME}_iam:latest" 2>/dev/null || true
+  echo "build.sh: app image iam-server:latest ready" >&2
 fi
 
 echo "build.sh: OK (project=$COMPOSE_PROJECT_NAME host_port=$HOST_PORT)"
