@@ -12,8 +12,8 @@ scripts:
     run: ./build.sh
     description: Compile via mix, or docker compose build when mix is unavailable
   test:
-    run: ./test.sh --exclude-browser
-    description: Run ExUnit + API BDD (browser skipped on Forge; uses compose when mix is missing)
+    run: ./test.sh --unit
+    description: Run domain ExUnit (iam + matrix) via compose when mix is missing; browser/API BDD stay local
   teardown:
     run: ./teardown.sh
     description: Stop the docker compose stack for this project
