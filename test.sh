@@ -110,7 +110,7 @@ run_tests_via_compose() {
   fi
 
   echo "test.sh: running ${mix_cmd[*]} via compose..." >&2
-  compose_cmd run --rm --no-deps --entrypoint "" \
+  compose_cmd run -T --rm --no-deps --entrypoint "" \
     -e MIX_ENV=test \
     -e POSTGRES_HOST=postgres \
     -e POSTGRES_PORT=5432 \
