@@ -110,7 +110,7 @@ run_tests_via_compose() {
   fi
 
   echo "test.sh: running ${mix_cmd[*]} via compose..." >&2
-  compose_cmd run -T --rm --no-deps --entrypoint "" \
+  compose_cmd run -T --rm --no-deps --entrypoint /bin/sh \
     -e MIX_ENV=test \
     -e POSTGRES_HOST=postgres \
     -e POSTGRES_PORT=5432 \
@@ -119,7 +119,7 @@ run_tests_via_compose() {
     -e WALLABY_SKIP=1 \
     -e PORT=4002 \
     lakehouse \
-    sh -c "set -e; mix ecto.migrate -r LakehouseIam.Repo --quiet; $(printf '%q ' "${mix_cmd[@]}"); echo test.sh: mix OK"
+    -c "set -ex; mix ecto.migrate -r LakehouseIam.Repo --quiet; $(printf '%q ' "${mix_cmd[@]}"); echo test.sh: mix OK"
 
   echo "test.sh: OK"
 }
