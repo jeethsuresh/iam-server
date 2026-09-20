@@ -66,7 +66,7 @@ run_tests_via_compose() {
   bash "$SCRIPT_DIR/scripts/lib/common_network_test.sh"
   echo "test.sh: mix not found; running tests via docker compose (project=$COMPOSE_PROJECT_NAME)" >&2
 
-  compose_cmd build lakehouse
+  compose_cmd build web
 
   # Drop leftover test pgdata so each Forge run gets a clean POSTGRES_USER role.
   docker volume rm "${COMPOSE_PROJECT_NAME}_pgdata_v2" >/dev/null 2>&1 || true
@@ -121,7 +121,7 @@ run_tests_via_compose() {
     -e WALLABY_SKIP=1 \
     -e PORT=4002 \
     -e ELIXIR_ERL_OPTIONS="+S 2 :microstate_accounting false" \
-    lakehouse \
+    web \
     -c "set -e; mix ecto.migrate -r LakehouseIam.Repo > /tmp/m.out 2>&1 || { cat /tmp/m.out; exit 1; }; cat /tmp/m.out; $(printf '%q ' "${mix_cmd[@]}") > /tmp/t.out 2>&1 || { echo mix test failed:; cat /tmp/t.out; exit 1; }; cat /tmp/t.out; echo test.sh: mix OK"
 
   echo "test.sh: OK"

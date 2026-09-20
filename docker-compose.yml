@@ -16,7 +16,7 @@ services:
       retries: 15
       start_period: 5s
 
-  lakehouse:
+  web:
     # Explicit image name so Forge can tag/release the compose build artifact.
     image: iam-server:latest
     build:
