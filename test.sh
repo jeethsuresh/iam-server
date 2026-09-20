@@ -110,6 +110,7 @@ run_tests_via_compose() {
   fi
 
   echo "test.sh: running ${mix_cmd[*]} via compose..." >&2
+  # Keep the -c script on one line: Compose/Forge can drop multiline remote args.
   compose_cmd run -T --rm --no-deps --entrypoint /bin/sh \
     -e MIX_ENV=test \
     -e POSTGRES_HOST=postgres \
@@ -119,12 +120,7 @@ run_tests_via_compose() {
     -e WALLABY_SKIP=1 \
     -e PORT=4002 \
     lakehouse \
-    -c "set -e
-mix ecto.migrate -r LakehouseIam.Repo > /tmp/migrate.out 2>&1 || { cat /tmp/migrate.out; exit 1; }
-cat /tmp/migrate.out
-$(printf '%q ' "${mix_cmd[@]}") > /tmp/test.out 2>&1 || { echo 'mix test failed:'; cat /tmp/test.out; exit 1; }
-cat /tmp/test.out
-echo test.sh: mix OK"
+    -c "set -e; mix ecto.migrate -r LakehouseIam.Repo > /tmp/m.out 2>&1 || { cat /tmp/m.out; exit 1; }; cat /tmp/m.out; $(printf '%q ' "${mix_cmd[@]}") > /tmp/t.out 2>&1 || { echo mix test failed:; cat /tmp/t.out; exit 1; }; cat /tmp/t.out; echo test.sh: mix OK"
 
   echo "test.sh: OK"
 }
