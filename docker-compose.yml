@@ -17,6 +17,8 @@ services:
       start_period: 5s
 
   lakehouse:
+    # Explicit image name so Forge can tag/release the compose build artifact.
+    image: ${COMPOSE_PROJECT_NAME:-lakehouse}:latest
     build:
       context: .
       dockerfile: Dockerfile
