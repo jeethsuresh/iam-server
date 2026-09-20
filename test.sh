@@ -101,7 +101,8 @@ run_tests_via_compose() {
 
   local mix_cmd=(mix test --exclude browser)
   if [[ "$RUN_UNIT" -eq 1 && "$RUN_API" -eq 0 && "$RUN_BROWSER" -eq 0 ]]; then
-    mix_cmd=(mix test apps/lakehouse_iam/test apps/lakehouse_matrix/test)
+    # Matrix test_helper starts lakehouse_web (heavy); iam alone is the Forge gate.
+    mix_cmd=(mix test apps/lakehouse_iam/test)
   elif [[ "$RUN_API" -eq 1 && "$RUN_UNIT" -eq 0 && "$RUN_BROWSER" -eq 0 ]]; then
     mix_cmd=(mix test --only api apps/lakehouse_web/test)
   elif [[ "$RUN_BROWSER" -eq 1 && "$RUN_UNIT" -eq 0 && "$RUN_API" -eq 0 ]]; then
@@ -119,6 +120,7 @@ run_tests_via_compose() {
     -e POSTGRES_PASSWORD=postgres \
     -e WALLABY_SKIP=1 \
     -e PORT=4002 \
+    -e ELIXIR_ERL_OPTIONS="+S 2 :microstate_accounting false" \
     lakehouse \
     -c "set -e; mix ecto.migrate -r LakehouseIam.Repo > /tmp/m.out 2>&1 || { cat /tmp/m.out; exit 1; }; cat /tmp/m.out; $(printf '%q ' "${mix_cmd[@]}") > /tmp/t.out 2>&1 || { echo mix test failed:; cat /tmp/t.out; exit 1; }; cat /tmp/t.out; echo test.sh: mix OK"
 
