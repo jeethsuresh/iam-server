@@ -113,7 +113,7 @@ run_tests_via_compose() {
     -e WALLABY_SKIP=1 \
     -e PORT=4002 \
     lakehouse \
-    sh -c "mix ecto.migrate -r LakehouseIam.Repo --quiet; $(printf '%q ' "${mix_cmd[@]}")"
+    sh -c "set -e; mix ecto.migrate -r LakehouseIam.Repo --quiet; $(printf '%q ' "${mix_cmd[@]}"); echo test.sh: mix OK"
 
   echo "test.sh: OK"
 }

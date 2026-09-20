@@ -120,7 +120,7 @@ defmodule LakehouseIam.Accounts do
   Activates a user account. Only the configured admin may call this successfully.
   """
   @spec approve_user(String.t(), String.t()) ::
-          {:ok, Principal.t()} | {:error, :forbidden | :not_found | :already_active}
+          {:ok, Principal.t()} | {:error, :forbidden | :not_found}
   def approve_user(actor_username, target_username)
       when is_binary(actor_username) and is_binary(target_username) do
     actor = normalize_username(actor_username)

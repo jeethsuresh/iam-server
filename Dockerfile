@@ -17,8 +17,10 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh \
   && mix local.rebar --force \
   && mix deps.get \
   && mix deps.compile \
+  && mix compile \
   && MIX_ENV=test mix deps.get \
-  && MIX_ENV=test mix deps.compile
+  && MIX_ENV=test mix deps.compile \
+  && MIX_ENV=test mix compile
 
 EXPOSE 4000
 

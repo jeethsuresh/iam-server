@@ -23,11 +23,6 @@ defmodule LakehouseWeb.AdminController do
         |> put_flash(:error, "User not found.")
         |> redirect(to: ~p"/settings")
 
-      {:error, :already_active} ->
-        conn
-        |> put_flash(:error, "That account is already active.")
-        |> redirect(to: ~p"/settings")
-
       {:error, :forbidden} ->
         conn
         |> put_flash(:error, "Not allowed.")
@@ -53,9 +48,6 @@ defmodule LakehouseWeb.AdminController do
 
           {:error, :not_found} ->
             conn |> put_status(:not_found) |> json(%{message: "User not found"})
-
-          {:error, :already_active} ->
-            conn |> put_status(:conflict) |> json(%{message: "User already active"})
         end
     end
   end
