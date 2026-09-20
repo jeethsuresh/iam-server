@@ -51,20 +51,19 @@ if have_mix; then
 else
   require_docker
   echo "build.sh: mix not found; building via docker compose (project=$COMPOSE_PROJECT_NAME)"
+  # Classic builder emits "Successfully tagged" which Forge release tagging parses.
+  export DOCKER_BUILDKIT=0
+  export COMPOSE_DOCKER_CLI_BUILD=0
   compose_cmd build
-  # Materialize the app container so `compose images` (used by Forge tagging) sees it.
   compose_cmd create web >/dev/null
-  echo "build.sh: compose images:" >&2
-  compose_cmd images >&2 || true
   if ! docker image inspect iam-server:latest >/dev/null 2>&1; then
     echo "build.sh: iam-server:latest missing after compose build" >&2
     docker images >&2 || true
     exit 1
   fi
-  # Legacy Forge/podman image name from earlier iam-server_iam stacks.
-  docker tag iam-server:latest "localhost/${COMPOSE_PROJECT_NAME}_iam:latest" 2>/dev/null || true
-  docker tag iam-server:latest "${COMPOSE_PROJECT_NAME}_iam:latest" 2>/dev/null || true
-  echo "build.sh: app image iam-server:latest ready" >&2
+  image_id="$(docker image inspect -f '{{.Id}}' iam-server:latest)"
+  echo "Successfully tagged iam-server:latest"
+  echo "build.sh: app image iam-server:latest (${image_id}) ready" >&2
 fi
 
 echo "build.sh: OK (project=$COMPOSE_PROJECT_NAME host_port=$HOST_PORT)"
