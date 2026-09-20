@@ -27,7 +27,7 @@ ensure_compose_network() {
 
   # Prefer container IDs (map keys); Names alone can be empty on some engines.
   local ids=""
-  ids="$(docker network inspect -f '{{range $id, $_ := .Containers}}{{println $id}}{{end}}' "$net" 2>/dev/null || true)"
+  ids="$(docker network inspect -f '{{range $id, $c := .Containers}}{{println $id}}{{end}}' "$net" 2>/dev/null || true)"
   ids+=$'\n'
   ids+="$(docker ps -aq --filter "network=$net" 2>/dev/null || true)"
   if [[ -n "$ids" ]]; then
@@ -40,7 +40,7 @@ ensure_compose_network() {
 
   if ! docker network rm "$net" >/dev/null 2>&1; then
     # Last resort: still attached endpoints
-    ids="$(docker network inspect -f '{{range $id, $_ := .Containers}}{{println $id}}{{end}}' "$net" 2>/dev/null || true)"
+    ids="$(docker network inspect -f '{{range $id, $c := .Containers}}{{println $id}}{{end}}' "$net" 2>/dev/null || true)"
     while IFS= read -r id; do
       [[ -z "$id" ]] && continue
       docker network disconnect -f "$net" "$id" >/dev/null 2>&1 || true
