@@ -22,6 +22,9 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh \
   && MIX_ENV=test mix deps.compile \
   && MIX_ENV=test mix compile
 
+ARG FORGE_BUILD_ID=dev
+RUN echo "$FORGE_BUILD_ID" > /etc/forge-build-id
+
 EXPOSE 4000
 
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]

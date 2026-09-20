@@ -54,7 +54,7 @@ else
   # Classic builder emits "Successfully tagged" which Forge release tagging parses.
   export DOCKER_BUILDKIT=0
   export COMPOSE_DOCKER_CLI_BUILD=0
-  compose_cmd build
+  compose_cmd build --build-arg "FORGE_BUILD_ID=$(date -u +%Y%m%d%H%M%S)"
   compose_cmd create web >/dev/null
   if ! docker image inspect iam-server:latest >/dev/null 2>&1; then
     echo "build.sh: iam-server:latest missing after compose build" >&2
