@@ -52,6 +52,12 @@ else
   require_docker
   echo "build.sh: mix not found; building via docker compose (project=$COMPOSE_PROJECT_NAME)"
   compose_cmd build
+  if ! docker image inspect iam-server:latest >/dev/null 2>&1; then
+    echo "build.sh: iam-server:latest missing after compose build" >&2
+    docker images >&2 || true
+    exit 1
+  fi
+  echo "build.sh: app image iam-server:latest ready"
 fi
 
 echo "build.sh: OK (project=$COMPOSE_PROJECT_NAME host_port=$HOST_PORT)"

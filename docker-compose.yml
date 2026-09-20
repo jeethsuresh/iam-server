@@ -18,7 +18,7 @@ services:
 
   lakehouse:
     # Explicit image name so Forge can tag/release the compose build artifact.
-    image: ${COMPOSE_PROJECT_NAME:-lakehouse}:latest
+    image: iam-server:latest
     build:
       context: .
       dockerfile: Dockerfile
