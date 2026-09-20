@@ -71,7 +71,7 @@ run_tests_via_compose() {
 
   local i
   for i in $(seq 1 60); do
-    if compose_cmd exec -T postgres pg_isready -U postgres >/dev/null 2>&1; then
+    if compose_cmd exec -T postgres pg_isready -U postgres -d postgres >/dev/null 2>&1; then
       break
     fi
     if [[ "$i" -eq 60 ]]; then
@@ -80,6 +80,14 @@ run_tests_via_compose() {
     fi
     sleep 1
   done
+
+  # Create the test DB via psql. mix ecto.create under MIX_ENV=test can be OOM-killed
+  # while compiling the test env inside constrained Forge agents.
+  compose_cmd exec -T postgres \
+    psql -U postgres -v ON_ERROR_STOP=1 -tc "SELECT 1 FROM pg_database WHERE datname = 'lakehouse_test'" \
+    | grep -q 1 \
+    || compose_cmd exec -T postgres \
+      psql -U postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE lakehouse_test;"
 
   local mix_cmd=(mix test --exclude browser)
   if [[ "$RUN_UNIT" -eq 1 && "$RUN_API" -eq 0 && "$RUN_BROWSER" -eq 0 ]]; then
@@ -91,7 +99,7 @@ run_tests_via_compose() {
     exit 1
   fi
 
-  compose_cmd run --rm --entrypoint "" \
+  compose_cmd run --rm --no-deps --entrypoint "" \
     -e MIX_ENV=test \
     -e POSTGRES_HOST=postgres \
     -e POSTGRES_PORT=5432 \
@@ -100,7 +108,7 @@ run_tests_via_compose() {
     -e WALLABY_SKIP=1 \
     -e PORT=4002 \
     lakehouse \
-    sh -c "mix ecto.create -r LakehouseIam.Repo --quiet || true; mix ecto.migrate -r LakehouseIam.Repo --quiet; $(printf '%q ' "${mix_cmd[@]}")"
+    sh -c "mix ecto.migrate -r LakehouseIam.Repo --quiet; $(printf '%q ' "${mix_cmd[@]}")"
 
   echo "test.sh: OK"
 }
