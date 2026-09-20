@@ -64,21 +64,21 @@ run_tests_via_compose() {
   require_docker
   # Fast mocked check for stale-network recovery used by compose_cmd.
   bash "$SCRIPT_DIR/scripts/lib/common_network_test.sh"
-  echo "test.sh: mix not found; running tests via docker compose (project=$COMPOSE_PROJECT_NAME)"
+  echo "test.sh: mix not found; running tests via docker compose (project=$COMPOSE_PROJECT_NAME)" >&2
 
   compose_cmd build lakehouse
 
   # Drop leftover test pgdata so each Forge run gets a clean POSTGRES_USER role.
   docker volume rm "${COMPOSE_PROJECT_NAME}_pgdata_v2" >/dev/null 2>&1 || true
 
-  echo "test.sh: starting postgres..."
+  echo "test.sh: starting postgres..." >&2
   compose_cmd up -d postgres
 
   local i
-  for i in $(seq 1 60); do
+  for ((i = 1; i <= 60; i++)); do
     if compose_cmd exec -T postgres pg_isready -U postgres -d postgres >/dev/null 2>&1 \
       && compose_cmd exec -T postgres psql -U postgres -d postgres -c 'SELECT 1' >/dev/null 2>&1; then
-      echo "test.sh: postgres ready (attempt $i)"
+      echo "test.sh: postgres ready (attempt $i)" >&2
       break
     fi
     if [[ "$i" -eq 60 ]]; then
@@ -91,7 +91,7 @@ run_tests_via_compose() {
 
   # Create the test DB via psql. mix ecto.create under MIX_ENV=test can be OOM-killed
   # while compiling the test env inside constrained Forge agents.
-  echo "test.sh: ensuring lakehouse_test database..."
+  echo "test.sh: ensuring lakehouse_test database..." >&2
   if ! compose_cmd exec -T postgres \
     psql -U postgres -d postgres -v ON_ERROR_STOP=1 -tc "SELECT 1 FROM pg_database WHERE datname = 'lakehouse_test'" \
     | grep -q 1; then
@@ -109,7 +109,7 @@ run_tests_via_compose() {
     exit 1
   fi
 
-  echo "test.sh: running ${mix_cmd[*]} via compose..."
+  echo "test.sh: running ${mix_cmd[*]} via compose..." >&2
   compose_cmd run --rm --no-deps --entrypoint "" \
     -e MIX_ENV=test \
     -e POSTGRES_HOST=postgres \
@@ -183,7 +183,7 @@ ensure_postgres() {
   STARTED_PG=1
 
   local i
-  for i in $(seq 1 60); do
+  for ((i = 1; i <= 60; i++)); do
     if compose_cmd exec -T postgres pg_isready -U postgres >/dev/null 2>&1; then
       return 0
     fi
