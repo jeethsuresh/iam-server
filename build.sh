@@ -62,8 +62,13 @@ else
     exit 1
   fi
   image_id="$(docker image inspect -f '{{.Id}}' iam-server:latest)"
+  # Podman-compatible alias used by this Forge host.
+  docker tag iam-server:latest localhost/iam-server:latest 2>/dev/null || true
+  docker tag iam-server:latest localhost/iam-server_web:latest 2>/dev/null || true
   echo "Successfully tagged iam-server:latest"
+  echo "Successfully tagged localhost/iam-server:latest"
   echo "build.sh: app image iam-server:latest (${image_id}) ready" >&2
+  compose_cmd images >&2 || true
 fi
 
 echo "build.sh: OK (project=$COMPOSE_PROJECT_NAME host_port=$HOST_PORT)"
