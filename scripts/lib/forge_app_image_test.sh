@@ -71,8 +71,8 @@ case "$cmd" in
         case "$base" in
           iam-server_latest) echo "iam-server:latest $id" ;;
           localhost_iam-server_latest) echo "localhost/iam-server:latest $id" ;;
-          localhost_iam-server_web_latest) echo "localhost/iam-server_web:latest $id" ;;
-          iam-server_web_latest) echo "iam-server_web:latest $id" ;;
+          localhost_iam-server_app_latest) echo "localhost/iam-server-app:latest $id" ;;
+          iam-server_app_latest) echo "iam-server-app:latest $id" ;;
         esac
       done
       exit 0
@@ -100,7 +100,7 @@ case "$cmd" in
           cat "$STATE_DIR/compose_calls/images_override"
         else
           echo "CONTAINER REPOSITORY TAG IMAGE_ID"
-          echo "proj-web-1 localhost/iam-server latest sha256:deadbeef"
+          echo "proj-app-1 localhost/iam-server latest sha256:deadbeef"
         fi
         ;;
       *) exit 1 ;;
@@ -160,12 +160,12 @@ if [[ "$(cat "$STATE/images/iam-server_latest")" != $'sha256:deadbeef' ]]; then
   cat "$STATE/images/iam-server_latest" >&2
   exit 1
 fi
-if [[ ! -f "$STATE/compose_calls/rm" ]] || ! grep -q 'web' "$STATE/compose_calls/rm"; then
-  echo "FAIL: did not compose rm web before recreate" >&2
+if [[ ! -f "$STATE/compose_calls/rm" ]] || ! grep -q 'app' "$STATE/compose_calls/rm"; then
+  echo "FAIL: did not compose rm app before recreate" >&2
   exit 1
 fi
-if [[ ! -f "$STATE/compose_calls/create" ]] || ! grep -q 'web' "$STATE/compose_calls/create"; then
-  echo "FAIL: did not compose create web" >&2
+if [[ ! -f "$STATE/compose_calls/create" ]] || ! grep -q 'app' "$STATE/compose_calls/create"; then
+  echo "FAIL: did not compose create app" >&2
   exit 1
 fi
 

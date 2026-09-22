@@ -68,14 +68,14 @@ run_tests_via_compose() {
   echo "test.sh: mix not found; running tests via docker compose (project=$COMPOSE_PROJECT_NAME)" >&2
 
   # Prefer the image from build.sh. A BuildKit rebuild here previously left Forge
-  # release tagging with image=(unknown) and dropped the created web container.
+  # release tagging with image=(unknown) and dropped the created app container.
   export DOCKER_BUILDKIT=0
   export COMPOSE_DOCKER_CLI_BUILD=0
   if docker image inspect iam-server:latest >/dev/null 2>&1 \
     || docker image inspect localhost/iam-server:latest >/dev/null 2>&1; then
     echo "test.sh: reusing existing app image (skip rebuild)" >&2
   else
-    compose_cmd build web
+    compose_cmd build app
   fi
 
   # Drop leftover test pgdata so each Forge run gets a clean POSTGRES_USER role.
@@ -132,11 +132,11 @@ run_tests_via_compose() {
     -e WALLABY_SKIP=1 \
     -e PORT=4002 \
     -e ELIXIR_ERL_OPTIONS="+S 2 :microstate_accounting false" \
-    web \
+    app \
     -c "set -e; mix ecto.migrate -r LakehouseIam.Repo > /tmp/m.out 2>&1 || { cat /tmp/m.out; exit 1; }; cat /tmp/m.out; $(printf '%q ' "${mix_cmd[@]}") > /tmp/t.out 2>&1 || { echo mix test failed:; cat /tmp/t.out; exit 1; }; cat /tmp/t.out; echo test.sh: mix OK"
 
   # Network cleanup / compose run --rm can leave Forge unable to resolve the app
-  # image (image=(unknown)). Recreate tags + web container before exit.
+  # image (image=(unknown)). Recreate tags + app container before exit.
   ensure_forge_app_image
 
   echo "test.sh: OK"

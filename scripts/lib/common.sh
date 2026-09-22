@@ -96,9 +96,9 @@ compose_cmd() {
   docker compose -f "$COMPOSE_FILE" -p "$COMPOSE_PROJECT_NAME" "$@"
 }
 
-# Forge release tagging resolves the compose app image via `compose images`
-# (needs a created web container) and/or build-log lines "Successfully tagged ...".
-# Call after build (and again after test, which may destroy the web container).
+# Forge release tagging resolves the compose app image via services.app.image and `compose images -q app`
+# (needs a created app container) and/or build-log lines "Successfully tagged ...".
+# Call after build (and again after test, which may destroy the app container).
 ensure_forge_app_image() {
   local image_id=""
   local primary="iam-server:latest"
@@ -134,13 +134,13 @@ ensure_forge_app_image() {
   # Re-resolve after possible rmi side effects; prefer localhost/ then primary.
   if docker image inspect "$localhost_ref" >/dev/null 2>&1; then
     docker tag "$localhost_ref" "$primary"
-    docker tag "$localhost_ref" localhost/iam-server_web:latest 2>/dev/null || true
-    docker tag "$localhost_ref" iam-server_web:latest 2>/dev/null || true
+    docker tag "$localhost_ref" localhost/iam-server_app:latest 2>/dev/null || true
+    docker tag "$localhost_ref" iam-server-app:latest 2>/dev/null || true
     image_id="$(docker image inspect -f '{{.Id}}' "$localhost_ref")"
   elif docker image inspect "$primary" >/dev/null 2>&1; then
     docker tag "$primary" "$localhost_ref"
-    docker tag "$primary" localhost/iam-server_web:latest 2>/dev/null || true
-    docker tag "$primary" iam-server_web:latest 2>/dev/null || true
+    docker tag "$primary" localhost/iam-server_app:latest 2>/dev/null || true
+    docker tag "$primary" iam-server-app:latest 2>/dev/null || true
     image_id="$(docker image inspect -f '{{.Id}}' "$primary")"
   else
     echo "ensure_forge_app_image: no iam-server image after stale-tag cleanup" >&2
@@ -167,18 +167,18 @@ ensure_forge_app_image() {
   # Note: Podman compose create does not support --no-deps (unlike `run`).
   ensure_compose_network
   COMPOSE_NETWORK_ENSURED=1
-  # Recreate web so it references the retagged iam-server:latest.
-  compose_cmd rm -f web >/dev/null 2>&1 || true
-  compose_cmd create web >/dev/null
+  # Recreate app so it references the retagged iam-server:latest.
+  compose_cmd rm -f app >/dev/null 2>&1 || true
+  compose_cmd create app >/dev/null
   echo "Successfully tagged iam-server:latest"
   echo "Successfully tagged localhost/iam-server:latest"
   echo "Successfully built ${short_id}"
   echo "ensure_forge_app_image: app image iam-server:latest (${image_id}) ready" >&2
   images_out="$(compose_cmd images 2>/dev/null || true)"
   printf '%s\n' "$images_out" >&2
-  # Forge looks up the web service row; refuse to continue if it is missing.
-  if ! grep -E 'iam-server-web-1|[[:space:]]web[[:space:]]' <<<"$images_out" >/dev/null 2>&1; then
-    if ! grep -E 'iam-server(_web)?[[:space:]]+latest|localhost/iam-server' <<<"$images_out" >/dev/null 2>&1; then
+  # Forge looks up the app service row; refuse to continue if it is missing.
+  if ! grep -E 'iam-server-app-1|[[:space:]]app[[:space:]]' <<<"$images_out" >/dev/null 2>&1; then
+    if ! grep -E 'iam-server(_app)?[[:space:]]+latest|localhost/iam-server' <<<"$images_out" >/dev/null 2>&1; then
       echo "ensure_forge_app_image: compose images has no resolvable iam-server app image" >&2
       return 1
     fi
@@ -187,7 +187,7 @@ ensure_forge_app_image() {
     echo "ensure_forge_app_image: compose images still reports unknown/<none> for app image" >&2
     return 1
   fi
-  # Prove the short name and the compose web image id are the same digest.
+  # Prove the short name and the compose app image id are the same digest.
   echo "ensure_forge_app_image: docker images (iam-server*)" >&2
   docker images --format '{{.Repository}}:{{.Tag}} {{.ID}}' 2>/dev/null | grep -E 'iam-server' >&2 || true
 }

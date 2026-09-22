@@ -21,7 +21,7 @@ compose_cmd images --format json 2>&1 || true
 echo "=== compose ps -a ==="
 compose_cmd ps -a 2>&1 || true
 echo "=== container inspect Image / Config.Image / ImageName ==="
-for c in iam-server-web-1; do
+for c in iam-server-app-1; do
   echo "-- $c --"
   docker inspect -f 'Image={{.Image}} Config.Image={{.Config.Image}}' "$c" 2>&1 || echo "(no container)"
 done

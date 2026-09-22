@@ -16,8 +16,9 @@ services:
       retries: 15
       start_period: 5s
 
-  web:
+  app:
     # Explicit image name so Forge can tag/release the compose build artifact.
+    # Forge release tagging reads services.app.image and `compose images -q app`.
     image: iam-server:latest
     build:
       context: .
