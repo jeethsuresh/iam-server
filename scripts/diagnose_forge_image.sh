@@ -27,6 +27,10 @@ for c in iam-server-app-1; do
 done
 echo "=== ensure_forge_app_image ==="
 ensure_forge_app_image
+# ensure_forge_app_image only creates the app container (Forge tagging needs that).
+# Restore a running stack so diagnose does not leave production Created/stopped.
+echo "=== restore running app (compose up -d app) ==="
+compose_cmd up -d app
 echo "=== post-ensure compose images ==="
 compose_cmd images 2>&1 || true
 echo "diagnose_forge_image.sh: OK"

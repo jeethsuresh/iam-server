@@ -153,6 +153,7 @@ trap cleanup EXIT
 
 # Always assert the Forge compose contract (service must be named app).
 bash "$SCRIPT_DIR/scripts/lib/compose_app_service_test.sh"
+bash "$SCRIPT_DIR/scripts/lib/diagnose_forge_image_test.sh"
 
 if ! have_mix; then
   run_tests_via_compose
