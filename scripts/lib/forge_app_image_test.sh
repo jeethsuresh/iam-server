@@ -159,7 +159,8 @@ if [[ "$(cat "$STATE/images/iam-server_latest")" != $'sha256:deadbeef' ]]; then
   echo "FAIL: iam-server:latest was not moved onto sha256:deadbeef" >&2
   cat "$STATE/images/iam-server_latest" >&2
   exit 1
-fiif [[ ! -f "$STATE/compose_calls/rm" ]] || ! grep -q 'web' "$STATE/compose_calls/rm"; then
+fi
+if [[ ! -f "$STATE/compose_calls/rm" ]] || ! grep -q 'web' "$STATE/compose_calls/rm"; then
   echo "FAIL: did not compose rm web before recreate" >&2
   exit 1
 fi
