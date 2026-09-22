@@ -17,6 +17,9 @@ scripts:
   teardown:
     run: ./teardown.sh
     description: Stop the docker compose stack for this project
+  diagnose_image:
+    run: ./scripts/diagnose_forge_image.sh
+    description: Probe compose/docker image state Forge release tagging would see
 
 deployments:
   web:
