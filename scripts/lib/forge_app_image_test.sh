@@ -137,11 +137,6 @@ if [[ ! -f "$STATE/compose_calls/create" ]] || ! grep -q 'web' "$STATE/compose_c
   cat "$STATE/compose_calls/log" >&2 || true
   exit 1
 fi
-if ! grep -q -- '--no-deps' "$STATE/compose_calls/create"; then
-  echo "FAIL: compose create missing --no-deps" >&2
-  cat "$STATE/compose_calls/create" >&2 || true
-  exit 1
-fi
 if ! grep -q 'app image iam-server:latest' "$TMP/err"; then
   echo "FAIL: stderr missing app image ready line" >&2
   cat "$TMP/err" >&2

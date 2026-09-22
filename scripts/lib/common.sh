@@ -122,12 +122,12 @@ ensure_forge_app_image() {
   docker tag "$primary" localhost/iam-server:latest 2>/dev/null || true
   docker tag "$primary" localhost/iam-server_web:latest 2>/dev/null || true
   docker tag "$primary" iam-server_web:latest 2>/dev/null || true
-  # compose images only lists images for created containers. --no-deps avoids
-  # waiting on postgres health when we only need the web container for tagging.
+  # compose images only lists images for created containers.
   # Re-check network labels: Podman may recreate the network mid-script.
+  # Note: Podman compose create does not support --no-deps (unlike `run`).
   ensure_compose_network
   COMPOSE_NETWORK_ENSURED=1
-  compose_cmd create --no-deps web >/dev/null
+  compose_cmd create web >/dev/null
   echo "Successfully tagged iam-server:latest"
   echo "Successfully tagged localhost/iam-server:latest"
   echo "Successfully built ${short_id}"
