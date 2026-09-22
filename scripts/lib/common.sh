@@ -25,53 +25,65 @@ export COMPOSE_PROJECT_NAME PROJECT_NAME HOST_PORT POSTGRES_HOST_PORT POSTGRES_H
 # Forge hosts often lack buildx; Bake then produces no local app image for release tagging.
 export COMPOSE_BAKE="${COMPOSE_BAKE:-false}"
 
-# Remove stale Compose default networks left by older compose/docker that lack
-# com.docker.compose.network=default (Compose v2 refuses to reuse them).
+# Compose v2 requires com.docker.compose.network=default on the project network.
+# Podman (Forge) often recreates that network with an empty label, so we remove
+# stale networks and pre-create a correctly labeled one before any compose call.
 # Run at most once per process so we never tear down a healthy network mid-script.
 COMPOSE_NETWORK_ENSURED=0
 
 ensure_compose_network() {
   local net="${COMPOSE_PROJECT_NAME}_default"
-  # Existence check must not rely on label templates (nil Labels can error).
-  if ! docker network inspect "$net" >/dev/null 2>&1; then
-    return 0
-  fi
   local label=""
-  label="$(docker network inspect -f '{{index .Labels "com.docker.compose.network"}}' "$net" 2>/dev/null || true)"
-  if [[ "$label" == "default" ]]; then
-    return 0
-  fi
-  echo "common.sh: removing stale compose network $net (label='$label', expected 'default')" >&2
 
-  # Prefer container IDs attached to this network only (never sweep by project name
-  # prefix — that can kill a healthy postgres mid-test when labels are misread).
-  local ids=""
-  ids="$(docker network inspect -f '{{range $id, $c := .Containers}}{{println $id}}{{end}}' "$net" 2>/dev/null || true)"
-  ids+=$'\n'
-  ids+="$(docker ps -aq --filter "network=$net" 2>/dev/null || true)"
-  if [[ -n "$ids" ]]; then
-    while IFS= read -r id; do
-      [[ -z "$id" ]] && continue
-      docker network disconnect -f "$net" "$id" >/dev/null 2>&1 || true
-      docker rm -f "$id" >/dev/null 2>&1 || true
-    done <<<"$ids"
-  fi
+  if docker network inspect "$net" >/dev/null 2>&1; then
+    # Existence check must not rely on label templates alone (nil Labels can error).
+    label="$(docker network inspect -f '{{index .Labels "com.docker.compose.network"}}' "$net" 2>/dev/null || true)"
+    if [[ "$label" == "default" ]]; then
+      return 0
+    fi
+    echo "common.sh: removing stale compose network $net (label='$label', expected 'default')" >&2
 
-  if ! docker network rm "$net" >/dev/null 2>&1; then
-    # Last resort: still attached endpoints
+    # Prefer container IDs attached to this network only (never sweep by project name
+    # prefix — that can kill a healthy postgres mid-test when labels are misread).
+    local ids=""
     ids="$(docker network inspect -f '{{range $id, $c := .Containers}}{{println $id}}{{end}}' "$net" 2>/dev/null || true)"
     ids+=$'\n'
     ids+="$(docker ps -aq --filter "network=$net" 2>/dev/null || true)"
-    while IFS= read -r id; do
-      [[ -z "$id" ]] && continue
-      docker network disconnect -f "$net" "$id" >/dev/null 2>&1 || true
-      docker rm -f "$id" >/dev/null 2>&1 || true
-    done <<<"$ids"
-    docker network rm "$net" >/dev/null 2>&1 || true
+    if [[ -n "$ids" ]]; then
+      while IFS= read -r id; do
+        [[ -z "$id" ]] && continue
+        docker network disconnect -f "$net" "$id" >/dev/null 2>&1 || true
+        docker rm -f "$id" >/dev/null 2>&1 || true
+      done <<<"$ids"
+    fi
+
+    if ! docker network rm "$net" >/dev/null 2>&1; then
+      # Last resort: still attached endpoints
+      ids="$(docker network inspect -f '{{range $id, $c := .Containers}}{{println $id}}{{end}}' "$net" 2>/dev/null || true)"
+      ids+=$'\n'
+      ids+="$(docker ps -aq --filter "network=$net" 2>/dev/null || true)"
+      while IFS= read -r id; do
+        [[ -z "$id" ]] && continue
+        docker network disconnect -f "$net" "$id" >/dev/null 2>&1 || true
+        docker rm -f "$id" >/dev/null 2>&1 || true
+      done <<<"$ids"
+      docker network rm "$net" >/dev/null 2>&1 || true
+    fi
+
+    if docker network inspect "$net" >/dev/null 2>&1; then
+      echo "common.sh: failed to remove stale network $net; refuse to continue" >&2
+      return 1
+    fi
   fi
 
-  if docker network inspect "$net" >/dev/null 2>&1; then
-    echo "common.sh: failed to remove stale network $net; refuse to continue" >&2
+  # Pre-create so Compose/Podman reuse a correctly labeled network instead of
+  # recreating one with an empty com.docker.compose.network label.
+  echo "common.sh: creating compose network $net with compose labels" >&2
+  if ! docker network create \
+    --label "com.docker.compose.network=default" \
+    --label "com.docker.compose.project=${COMPOSE_PROJECT_NAME}" \
+    "$net" >/dev/null; then
+    echo "common.sh: failed to create compose network $net" >&2
     return 1
   fi
 }

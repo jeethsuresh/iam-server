@@ -63,6 +63,28 @@ case "$cmd" in
         rm -f "$STATE_DIR/networks/$net"
         echo "removed $net"
         ;;
+      create)
+        # docker network create [--label k=v ...] NAME
+        net=""
+        label_network=""
+        label_project=""
+        while [[ $# -gt 0 ]]; do
+          case "$1" in
+            --label)
+              case "$2" in
+                com.docker.compose.network=*) label_network="${2#com.docker.compose.network=}" ;;
+                com.docker.compose.project=*) label_project="${2#com.docker.compose.project=}" ;;
+              esac
+              shift 2
+              ;;
+            *) net="$1"; shift ;;
+          esac
+        done
+        [[ -n "$net" ]] || exit 1
+        printf '%s' "$label_network" >"$STATE_DIR/networks/$net"
+        printf '%s' "$label_project" >"$STATE_DIR/network_projects/$net"
+        echo "created $net"
+        ;;
       *) exit 1 ;;
     esac
     ;;
@@ -116,7 +138,7 @@ export PATH="$MOCK_BIN:$PATH"
 export MOCK_DOCKER_STATE="$STATE"
 export COMPOSE_PROJECT_NAME="iam-server"
 
-mkdir -p "$STATE/networks" "$STATE/network_containers" "$STATE/containers" "$STATE/name_filters"
+mkdir -p "$STATE/networks" "$STATE/network_containers" "$STATE/network_projects" "$STATE/containers" "$STATE/name_filters"
 # Stale legacy network (empty label); endpoint only has an ID (no usable name).
 printf '' >"$STATE/networks/iam-server_default"
 printf 'abc123def\n' >"$STATE/network_containers/iam-server_default"
@@ -127,8 +149,18 @@ source "$SCRIPT_DIR/common.sh"
 
 ensure_compose_network
 
-if [[ -f "$STATE/networks/iam-server_default" ]]; then
-  echo "FAIL: stale network was not removed" >&2
+if [[ ! -f "$STATE/networks/iam-server_default" ]]; then
+  echo "FAIL: network was not recreated after removing stale one" >&2
+  exit 1
+fi
+label="$(cat "$STATE/networks/iam-server_default")"
+if [[ "$label" != "default" ]]; then
+  echo "FAIL: recreated network label='$label' (expected 'default')" >&2
+  exit 1
+fi
+project_label="$(cat "$STATE/network_projects/iam-server_default")"
+if [[ "$project_label" != "iam-server" ]]; then
+  echo "FAIL: project label='$project_label' (expected 'iam-server')" >&2
   exit 1
 fi
 if [[ -f "$STATE/containers/abc123def" ]]; then
@@ -138,6 +170,7 @@ fi
 
 # Healthy modern network must be left alone
 printf 'default' >"$STATE/networks/iam-server_default"
+printf 'iam-server' >"$STATE/network_projects/iam-server_default"
 ensure_compose_network
 label="$(cat "$STATE/networks/iam-server_default")"
 if [[ "$label" != "default" ]]; then
@@ -145,8 +178,17 @@ if [[ "$label" != "default" ]]; then
   exit 1
 fi
 
-# Missing network is a no-op
-rm -f "$STATE/networks/iam-server_default"
+# Missing network must be created with compose labels (Podman + Compose v2).
+rm -f "$STATE/networks/iam-server_default" "$STATE/network_projects/iam-server_default"
 ensure_compose_network
+if [[ ! -f "$STATE/networks/iam-server_default" ]]; then
+  echo "FAIL: missing network was not created" >&2
+  exit 1
+fi
+label="$(cat "$STATE/networks/iam-server_default")"
+if [[ "$label" != "default" ]]; then
+  echo "FAIL: created network label='$label' (expected 'default')" >&2
+  exit 1
+fi
 
 echo "common_network_test.sh: OK"
