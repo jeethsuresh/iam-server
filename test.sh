@@ -65,6 +65,7 @@ run_tests_via_compose() {
   # Fast mocked checks for Forge compose helpers (network labels + app image tags).
   bash "$SCRIPT_DIR/scripts/lib/common_network_test.sh"
   bash "$SCRIPT_DIR/scripts/lib/forge_app_image_test.sh"
+  bash "$SCRIPT_DIR/scripts/lib/compose_app_service_test.sh"
   echo "test.sh: mix not found; running tests via docker compose (project=$COMPOSE_PROJECT_NAME)" >&2
 
   # Prefer the image from build.sh. A BuildKit rebuild here previously left Forge
@@ -149,6 +150,9 @@ cleanup() {
   fi
 }
 trap cleanup EXIT
+
+# Always assert the Forge compose contract (service must be named app).
+bash "$SCRIPT_DIR/scripts/lib/compose_app_service_test.sh"
 
 if ! have_mix; then
   run_tests_via_compose
