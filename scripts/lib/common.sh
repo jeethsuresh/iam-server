@@ -102,31 +102,45 @@ compose_cmd() {
 ensure_forge_app_image() {
   local image_id=""
   local primary="iam-server:latest"
+  local localhost_ref="localhost/iam-server:latest"
   local images_out=""
   local short_id=""
+  local tagged_id=""
 
-  if ! docker image inspect "$primary" >/dev/null 2>&1; then
-    if docker image inspect "localhost/iam-server:latest" >/dev/null 2>&1; then
-      docker tag "localhost/iam-server:latest" "$primary"
-    else
-      echo "ensure_forge_app_image: iam-server:latest missing after compose build" >&2
-      docker images >&2 || true
-      return 1
-    fi
+  # Prefer the image compose/Podman actually built (often only under localhost/).
+  if docker image inspect "$localhost_ref" >/dev/null 2>&1; then
+    image_id="$(docker image inspect -f '{{.Id}}' "$localhost_ref")"
+  elif docker image inspect "$primary" >/dev/null 2>&1; then
+    image_id="$(docker image inspect -f '{{.Id}}' "$primary")"
+  else
+    echo "ensure_forge_app_image: iam-server:latest missing after compose build" >&2
+    docker images >&2 || true
+    return 1
   fi
 
-  image_id="$(docker image inspect -f '{{.Id}}' "$primary")"
+  # Tag by digest so we overwrite stale BuildKit tags that still hold
+  # iam-server:latest on a different image id (Forge then reports image=(unknown)).
+  docker tag "$image_id" "$primary"
+  docker tag "$image_id" "$localhost_ref"
+  docker tag "$image_id" localhost/iam-server_web:latest 2>/dev/null || true
+  docker tag "$image_id" iam-server_web:latest 2>/dev/null || true
+
+  tagged_id="$(docker image inspect -f '{{.Id}}' "$primary" 2>/dev/null || true)"
+  if [[ "$tagged_id" != "$image_id" ]]; then
+    echo "ensure_forge_app_image: failed to move iam-server:latest onto ${image_id} (still ${tagged_id:-missing})" >&2
+    docker images >&2 || true
+    return 1
+  fi
+
   short_id="${image_id#sha256:}"
   short_id="${short_id:0:12}"
-  # Podman-compatible aliases used by this Forge host.
-  docker tag "$primary" localhost/iam-server:latest 2>/dev/null || true
-  docker tag "$primary" localhost/iam-server_web:latest 2>/dev/null || true
-  docker tag "$primary" iam-server_web:latest 2>/dev/null || true
-  # compose images only lists images for created containers.
+
   # Re-check network labels: Podman may recreate the network mid-script.
   # Note: Podman compose create does not support --no-deps (unlike `run`).
   ensure_compose_network
   COMPOSE_NETWORK_ENSURED=1
+  # Recreate web so it references the retagged iam-server:latest.
+  compose_cmd rm -f web >/dev/null 2>&1 || true
   compose_cmd create web >/dev/null
   echo "Successfully tagged iam-server:latest"
   echo "Successfully tagged localhost/iam-server:latest"
@@ -136,7 +150,6 @@ ensure_forge_app_image() {
   printf '%s\n' "$images_out" >&2
   # Forge looks up the web service row; refuse to continue if it is missing.
   if ! grep -E 'iam-server-web-1|[[:space:]]web[[:space:]]' <<<"$images_out" >/dev/null 2>&1; then
-    # Prefer matching repository name if container name format differs.
     if ! grep -E 'iam-server(_web)?[[:space:]]+latest|localhost/iam-server' <<<"$images_out" >/dev/null 2>&1; then
       echo "ensure_forge_app_image: compose images has no resolvable iam-server app image" >&2
       return 1
@@ -146,6 +159,9 @@ ensure_forge_app_image() {
     echo "ensure_forge_app_image: compose images still reports unknown/<none> for app image" >&2
     return 1
   fi
+  # Prove the short name and the compose web image id are the same digest.
+  echo "ensure_forge_app_image: docker images (iam-server*)" >&2
+  docker images --format '{{.Repository}}:{{.Tag}} {{.ID}}' 2>/dev/null | grep -E 'iam-server' >&2 || true
 }
 
 have_mix() {
