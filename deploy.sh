@@ -42,7 +42,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 export PORT="$HOST_PORT"
-UP_ARGS=(up --build)
+UP_ARGS=(up --build --remove-orphans)
 if [[ "$DETACH" -eq 1 ]]; then
   UP_ARGS+=(-d)
 fi

@@ -23,6 +23,9 @@ scripts:
   probe_forge_tagging:
     run: ./scripts/probe_forge_tagging.sh
     description: Extract Forge release image-tagging logic from the Forge container
+  remove_orphan_web:
+    run: ./scripts/remove_orphan_web.sh
+    description: Remove leftover iam-server-web-1 after renaming compose service to app
 
 deployments:
   web:
