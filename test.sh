@@ -69,13 +69,15 @@ run_tests_via_compose() {
 
   # Prefer the image from build.sh. A BuildKit rebuild here previously left Forge
   # release tagging with image=(unknown) and dropped the created web container.
+  export DOCKER_BUILDKIT=0
+  export COMPOSE_DOCKER_CLI_BUILD=0
+  local compose_run_opts=(run -T --rm --no-deps --no-build)
   if docker image inspect iam-server:latest >/dev/null 2>&1 \
     || docker image inspect localhost/iam-server:latest >/dev/null 2>&1; then
     echo "test.sh: reusing existing app image (skip rebuild)" >&2
   else
-    export DOCKER_BUILDKIT=0
-    export COMPOSE_DOCKER_CLI_BUILD=0
     compose_cmd build web
+    compose_run_opts=(run -T --rm --no-deps)
   fi
 
   # Drop leftover test pgdata so each Forge run gets a clean POSTGRES_USER role.
@@ -122,7 +124,8 @@ run_tests_via_compose() {
 
   echo "test.sh: running ${mix_cmd[*]} via compose..." >&2
   # Keep the -c script on one line: Compose/Forge can drop multiline remote args.
-  compose_cmd run -T --rm --no-deps --entrypoint /bin/sh \
+  # --no-build when reusing build.sh's image so BuildKit cannot retag to (unknown).
+  compose_cmd "${compose_run_opts[@]}" --entrypoint /bin/sh \
     -e MIX_ENV=test \
     -e POSTGRES_HOST=postgres \
     -e POSTGRES_PORT=5432 \

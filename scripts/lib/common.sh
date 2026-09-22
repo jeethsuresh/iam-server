@@ -102,6 +102,8 @@ compose_cmd() {
 ensure_forge_app_image() {
   local image_id=""
   local primary="iam-server:latest"
+  local images_out=""
+  local short_id=""
 
   if ! docker image inspect "$primary" >/dev/null 2>&1; then
     if docker image inspect "localhost/iam-server:latest" >/dev/null 2>&1; then
@@ -114,15 +116,36 @@ ensure_forge_app_image() {
   fi
 
   image_id="$(docker image inspect -f '{{.Id}}' "$primary")"
+  short_id="${image_id#sha256:}"
+  short_id="${short_id:0:12}"
   # Podman-compatible aliases used by this Forge host.
   docker tag "$primary" localhost/iam-server:latest 2>/dev/null || true
   docker tag "$primary" localhost/iam-server_web:latest 2>/dev/null || true
-  # compose images only lists images for created containers.
-  compose_cmd create web >/dev/null
+  docker tag "$primary" iam-server_web:latest 2>/dev/null || true
+  # compose images only lists images for created containers. --no-deps avoids
+  # waiting on postgres health when we only need the web container for tagging.
+  # Re-check network labels: Podman may recreate the network mid-script.
+  ensure_compose_network
+  COMPOSE_NETWORK_ENSURED=1
+  compose_cmd create --no-deps web >/dev/null
   echo "Successfully tagged iam-server:latest"
   echo "Successfully tagged localhost/iam-server:latest"
+  echo "Successfully built ${short_id}"
   echo "ensure_forge_app_image: app image iam-server:latest (${image_id}) ready" >&2
-  compose_cmd images >&2 || true
+  images_out="$(compose_cmd images 2>/dev/null || true)"
+  printf '%s\n' "$images_out" >&2
+  # Forge looks up the web service row; refuse to continue if it is missing.
+  if ! grep -E 'iam-server-web-1|[[:space:]]web[[:space:]]' <<<"$images_out" >/dev/null 2>&1; then
+    # Prefer matching repository name if container name format differs.
+    if ! grep -E 'iam-server(_web)?[[:space:]]+latest|localhost/iam-server' <<<"$images_out" >/dev/null 2>&1; then
+      echo "ensure_forge_app_image: compose images has no resolvable iam-server app image" >&2
+      return 1
+    fi
+  fi
+  if grep -E 'iam-server.*[[:space:]](\(unknown\)|<none>|unknown)[[:space:]]' <<<"$images_out" >/dev/null 2>&1; then
+    echo "ensure_forge_app_image: compose images still reports unknown/<none> for app image" >&2
+    return 1
+  fi
 }
 
 have_mix() {
