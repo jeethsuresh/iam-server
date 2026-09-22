@@ -96,6 +96,35 @@ compose_cmd() {
   docker compose -f "$COMPOSE_FILE" -p "$COMPOSE_PROJECT_NAME" "$@"
 }
 
+# Forge release tagging resolves the compose app image via `compose images`
+# (needs a created web container) and/or build-log lines "Successfully tagged ...".
+# Call after build (and again after test, which may destroy the web container).
+ensure_forge_app_image() {
+  local image_id=""
+  local primary="iam-server:latest"
+
+  if ! docker image inspect "$primary" >/dev/null 2>&1; then
+    if docker image inspect "localhost/iam-server:latest" >/dev/null 2>&1; then
+      docker tag "localhost/iam-server:latest" "$primary"
+    else
+      echo "ensure_forge_app_image: iam-server:latest missing after compose build" >&2
+      docker images >&2 || true
+      return 1
+    fi
+  fi
+
+  image_id="$(docker image inspect -f '{{.Id}}' "$primary")"
+  # Podman-compatible aliases used by this Forge host.
+  docker tag "$primary" localhost/iam-server:latest 2>/dev/null || true
+  docker tag "$primary" localhost/iam-server_web:latest 2>/dev/null || true
+  # compose images only lists images for created containers.
+  compose_cmd create web >/dev/null
+  echo "Successfully tagged iam-server:latest"
+  echo "Successfully tagged localhost/iam-server:latest"
+  echo "ensure_forge_app_image: app image iam-server:latest (${image_id}) ready" >&2
+  compose_cmd images >&2 || true
+}
+
 have_mix() {
   command -v mix >/dev/null 2>&1
 }

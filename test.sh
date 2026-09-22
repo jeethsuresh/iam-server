@@ -62,11 +62,21 @@ export PORT="${PORT:-4002}"
 # Forge deploy hosts often lack host Elixir; run the suite inside compose instead.
 run_tests_via_compose() {
   require_docker
-  # Fast mocked check for stale-network recovery used by compose_cmd.
+  # Fast mocked checks for Forge compose helpers (network labels + app image tags).
   bash "$SCRIPT_DIR/scripts/lib/common_network_test.sh"
+  bash "$SCRIPT_DIR/scripts/lib/forge_app_image_test.sh"
   echo "test.sh: mix not found; running tests via docker compose (project=$COMPOSE_PROJECT_NAME)" >&2
 
-  compose_cmd build web
+  # Prefer the image from build.sh. A BuildKit rebuild here previously left Forge
+  # release tagging with image=(unknown) and dropped the created web container.
+  if docker image inspect iam-server:latest >/dev/null 2>&1 \
+    || docker image inspect localhost/iam-server:latest >/dev/null 2>&1; then
+    echo "test.sh: reusing existing app image (skip rebuild)" >&2
+  else
+    export DOCKER_BUILDKIT=0
+    export COMPOSE_DOCKER_CLI_BUILD=0
+    compose_cmd build web
+  fi
 
   # Drop leftover test pgdata so each Forge run gets a clean POSTGRES_USER role.
   docker volume rm "${COMPOSE_PROJECT_NAME}_pgdata_v2" >/dev/null 2>&1 || true
@@ -123,6 +133,10 @@ run_tests_via_compose() {
     -e ELIXIR_ERL_OPTIONS="+S 2 :microstate_accounting false" \
     web \
     -c "set -e; mix ecto.migrate -r LakehouseIam.Repo > /tmp/m.out 2>&1 || { cat /tmp/m.out; exit 1; }; cat /tmp/m.out; $(printf '%q ' "${mix_cmd[@]}") > /tmp/t.out 2>&1 || { echo mix test failed:; cat /tmp/t.out; exit 1; }; cat /tmp/t.out; echo test.sh: mix OK"
+
+  # Network cleanup / compose run --rm can leave Forge unable to resolve the app
+  # image (image=(unknown)). Recreate tags + web container before exit.
+  ensure_forge_app_image
 
   echo "test.sh: OK"
 }

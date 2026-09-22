@@ -55,20 +55,7 @@ else
   export DOCKER_BUILDKIT=0
   export COMPOSE_DOCKER_CLI_BUILD=0
   compose_cmd build --build-arg "FORGE_BUILD_ID=$(date -u +%Y%m%d%H%M%S)"
-  compose_cmd create web >/dev/null
-  if ! docker image inspect iam-server:latest >/dev/null 2>&1; then
-    echo "build.sh: iam-server:latest missing after compose build" >&2
-    docker images >&2 || true
-    exit 1
-  fi
-  image_id="$(docker image inspect -f '{{.Id}}' iam-server:latest)"
-  # Podman-compatible alias used by this Forge host.
-  docker tag iam-server:latest localhost/iam-server:latest 2>/dev/null || true
-  docker tag iam-server:latest localhost/iam-server_web:latest 2>/dev/null || true
-  echo "Successfully tagged iam-server:latest"
-  echo "Successfully tagged localhost/iam-server:latest"
-  echo "build.sh: app image iam-server:latest (${image_id}) ready" >&2
-  compose_cmd images >&2 || true
+  ensure_forge_app_image
 fi
 
 echo "build.sh: OK (project=$COMPOSE_PROJECT_NAME host_port=$HOST_PORT)"
