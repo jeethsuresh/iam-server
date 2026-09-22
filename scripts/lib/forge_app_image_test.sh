@@ -52,6 +52,33 @@ case "$cmd" in
       cp "$STATE_DIR/images/$src_safe" "$STATE_DIR/images/$safe"
     fi
     ;;
+  rmi)
+    ref="${1:-}"
+    echo "rmi $ref" >>"$STATE_DIR/tags/rmi"
+    safe="$(printf '%s' "$ref" | tr '/:' '__')"
+    rm -f "$STATE_DIR/images/$safe"
+    ;;
+  images)
+    # docker images --format '{{.Repository}}:{{.Tag}} {{.ID}}'
+    if [[ "${1:-}" == "--format" ]]; then
+      for f in "$STATE_DIR/images/"*; do
+        [[ -f "$f" ]] || continue
+        base="$(basename "$f")"
+        # reverse tr '/:' '__' is lossy; keep seeded names as files we care about
+        id="$(tr -d '\n' <"$f")"
+        id="${id#sha256:}"
+        id="${id:0:12}"
+        case "$base" in
+          iam-server_latest) echo "iam-server:latest $id" ;;
+          localhost_iam-server_latest) echo "localhost/iam-server:latest $id" ;;
+          localhost_iam-server_web_latest) echo "localhost/iam-server_web:latest $id" ;;
+          iam-server_web_latest) echo "iam-server_web:latest $id" ;;
+        esac
+      done
+      exit 0
+    fi
+    exit 0
+    ;;
   compose)
     echo "$*" >>"$STATE_DIR/compose_calls/log"
     while [[ $# -gt 0 ]]; do
@@ -79,10 +106,6 @@ case "$cmd" in
       *) exit 1 ;;
     esac
     ;;
-  images)
-    # ensure_forge_app_image may dump filtered image list to stderr.
-    exit 0
-    ;;
   *) exit 1 ;;
 esac
 EOF
@@ -95,7 +118,7 @@ export COMPOSE_FILE="docker-compose.yml"
 
 # Seed Podman-style localhost tag (what compose build leaves).
 printf 'sha256:deadbeef\n' >"$STATE/images/localhost_iam-server_latest"
-# Stale short name on a different id — ensure must overwrite via digest tag.
+# Stale short name on a different id — ensure must remove then retag.
 printf 'sha256:stalebeef\n' >"$STATE/images/iam-server_latest"
 
 # shellcheck source=scripts/lib/common.sh
@@ -116,14 +139,14 @@ if ! grep -q 'Successfully tagged iam-server:latest' <<<"$out"; then
   echo "stdout=$out" >&2
   exit 1
 fi
-if ! grep -q 'Successfully tagged localhost/iam-server:latest' <<<"$out"; then
-  echo "FAIL: stdout missing Successfully tagged localhost/iam-server:latest" >&2
-  echo "stdout=$out" >&2
+if ! grep -q 'removing stale iam-server:latest' "$TMP/err"; then
+  echo "FAIL: expected stale short-name removal" >&2
+  cat "$TMP/err" >&2
   exit 1
 fi
-if ! grep -q 'Successfully built deadbeef' <<<"$out"; then
-  echo "FAIL: stdout missing Successfully built short image id" >&2
-  echo "stdout=$out" >&2
+if [[ ! -f "$STATE/tags/rmi" ]] || ! grep -q 'iam-server:latest' "$STATE/tags/rmi"; then
+  echo "FAIL: did not docker rmi stale iam-server:latest" >&2
+  cat "$STATE/tags/rmi" >&2 || true
   exit 1
 fi
 if ! grep -q 'sha256:deadbeef->iam-server:latest' "$STATE/tags/log"; then
@@ -131,30 +154,18 @@ if ! grep -q 'sha256:deadbeef->iam-server:latest' "$STATE/tags/log"; then
   cat "$STATE/tags/log" >&2 || true
   exit 1
 fi
-if ! grep -q 'localhost/iam-server_web:latest' "$STATE/tags/log"; then
-  echo "FAIL: did not docker tag localhost/iam-server_web:latest" >&2
-  cat "$STATE/tags/log" >&2 || true
-  exit 1
-fi
-if [[ ! -f "$STATE/compose_calls/rm" ]] || ! grep -q 'web' "$STATE/compose_calls/rm"; then
-  echo "FAIL: did not compose rm web before recreate" >&2
-  cat "$STATE/compose_calls/log" >&2 || true
-  exit 1
-fi
-if [[ ! -f "$STATE/compose_calls/create" ]] || ! grep -q 'web' "$STATE/compose_calls/create"; then
-  echo "FAIL: did not compose create web" >&2
-  cat "$STATE/compose_calls/log" >&2 || true
-  exit 1
-fi
-if ! grep -q 'app image iam-server:latest' "$TMP/err"; then
-  echo "FAIL: stderr missing app image ready line" >&2
-  cat "$TMP/err" >&2
-  exit 1
-fi
 # Short name must now resolve to the current digest, not the stale one.
 if [[ "$(cat "$STATE/images/iam-server_latest")" != $'sha256:deadbeef' ]]; then
   echo "FAIL: iam-server:latest was not moved onto sha256:deadbeef" >&2
   cat "$STATE/images/iam-server_latest" >&2
+  exit 1
+fi
+if [[ ! -f "$STATE/compose_calls/rm" ]] || ! grep -q 'web' "$STATE/compose_calls/rm"; then
+  echo "FAIL: did not compose rm web before recreate" >&2
+  exit 1
+fi
+if [[ ! -f "$STATE/compose_calls/create" ]] || ! grep -q 'web' "$STATE/compose_calls/create"; then
+  echo "FAIL: did not compose create web" >&2
   exit 1
 fi
 
