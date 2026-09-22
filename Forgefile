@@ -20,6 +20,9 @@ scripts:
   diagnose_image:
     run: ./scripts/diagnose_forge_image.sh
     description: Probe compose/docker image state Forge release tagging would see
+  probe_forge_tagging:
+    run: ./scripts/probe_forge_tagging.sh
+    description: Extract Forge release image-tagging logic from the Forge container
 
 deployments:
   web:
