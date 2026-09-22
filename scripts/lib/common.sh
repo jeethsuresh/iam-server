@@ -118,11 +118,10 @@ ensure_forge_app_image() {
     return 1
   fi
 
-  # Tag by digest so we overwrite stale BuildKit tags that still hold
-  # iam-server:latest on a different image id (Forge then reports image=(unknown)).
-  # Podman may keep a bare iam-server:latest tag beside localhost/iam-server:latest;
-  # `docker tag` onto the short name is a no-op for the localhost image, so remove
-  # the stale short-name tag first when it points at another id.
+  # Podman may keep a bare iam-server:latest tag beside localhost/iam-server:latest
+  # on a *different* image id (stale BuildKit). Plain `docker tag` onto the short
+  # name will not move it. Remove the stale short-name tag, then retag from the
+  # localhost/ ref (Podman rejects `docker tag sha256:…` as docker.io/library/…).
   local listed_id=""
   listed_id="$(docker images --format '{{.Repository}}:{{.Tag}} {{.ID}}' 2>/dev/null \
     | awk -v p="$primary" '$1 == p { print $2; exit }' || true)"
@@ -132,10 +131,24 @@ ensure_forge_app_image() {
     echo "ensure_forge_app_image: removing stale $primary -> $listed_id (want $short_id)" >&2
     docker rmi "$primary" 2>/dev/null || true
   fi
-  docker tag "$image_id" "$primary"
-  docker tag "$image_id" "$localhost_ref"
-  docker tag "$image_id" localhost/iam-server_web:latest 2>/dev/null || true
-  docker tag "$image_id" iam-server_web:latest 2>/dev/null || true
+  # Re-resolve after possible rmi side effects; prefer localhost/ then primary.
+  if docker image inspect "$localhost_ref" >/dev/null 2>&1; then
+    docker tag "$localhost_ref" "$primary"
+    docker tag "$localhost_ref" localhost/iam-server_web:latest 2>/dev/null || true
+    docker tag "$localhost_ref" iam-server_web:latest 2>/dev/null || true
+    image_id="$(docker image inspect -f '{{.Id}}' "$localhost_ref")"
+  elif docker image inspect "$primary" >/dev/null 2>&1; then
+    docker tag "$primary" "$localhost_ref"
+    docker tag "$primary" localhost/iam-server_web:latest 2>/dev/null || true
+    docker tag "$primary" iam-server_web:latest 2>/dev/null || true
+    image_id="$(docker image inspect -f '{{.Id}}' "$primary")"
+  else
+    echo "ensure_forge_app_image: no iam-server image after stale-tag cleanup" >&2
+    docker images >&2 || true
+    return 1
+  fi
+  short_id="${image_id#sha256:}"
+  short_id="${short_id:0:12}"
 
   tagged_id="$(docker image inspect -f '{{.Id}}' "$primary" 2>/dev/null || true)"
   if [[ "$tagged_id" != "$image_id" ]]; then
@@ -150,8 +163,7 @@ ensure_forge_app_image() {
     echo "ensure_forge_app_image: $primary still listed as $listed_id after retag (want $short_id)" >&2
     docker images --format '{{.Repository}}:{{.Tag}} {{.ID}}' >&2 || true
     return 1
-  fi
-  # Re-check network labels: Podman may recreate the network mid-script.
+  fi  # Re-check network labels: Podman may recreate the network mid-script.
   # Note: Podman compose create does not support --no-deps (unlike `run`).
   ensure_compose_network
   COMPOSE_NETWORK_ENSURED=1

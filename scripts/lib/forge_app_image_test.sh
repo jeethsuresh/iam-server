@@ -149,8 +149,8 @@ if [[ ! -f "$STATE/tags/rmi" ]] || ! grep -q 'iam-server:latest' "$STATE/tags/rm
   cat "$STATE/tags/rmi" >&2 || true
   exit 1
 fi
-if ! grep -q 'sha256:deadbeef->iam-server:latest' "$STATE/tags/log"; then
-  echo "FAIL: did not digest-tag iam-server:latest onto current image" >&2
+if ! grep -q 'localhost/iam-server:latest->iam-server:latest' "$STATE/tags/log"; then
+  echo "FAIL: did not retag iam-server:latest from localhost/iam-server:latest" >&2
   cat "$STATE/tags/log" >&2 || true
   exit 1
 fi
@@ -159,8 +159,7 @@ if [[ "$(cat "$STATE/images/iam-server_latest")" != $'sha256:deadbeef' ]]; then
   echo "FAIL: iam-server:latest was not moved onto sha256:deadbeef" >&2
   cat "$STATE/images/iam-server_latest" >&2
   exit 1
-fi
-if [[ ! -f "$STATE/compose_calls/rm" ]] || ! grep -q 'web' "$STATE/compose_calls/rm"; then
+fiif [[ ! -f "$STATE/compose_calls/rm" ]] || ! grep -q 'web' "$STATE/compose_calls/rm"; then
   echo "FAIL: did not compose rm web before recreate" >&2
   exit 1
 fi
