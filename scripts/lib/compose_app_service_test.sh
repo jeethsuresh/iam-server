@@ -43,4 +43,12 @@ if awk '
   exit 1
 fi
 
+# Forge staging health-checks HTTP with compose defaults. Defaulting MIX_ENV to prod
+# loads runtime.exs fail-closed secret checks against the docker-dev placeholders and
+# the app never listens (staging health check → fetch failed).
+if ! grep -E '^[[:space:]]+MIX_ENV:[[:space:]]+\$\{APP_MIX_ENV:-dev\}[[:space:]]*$' "$COMPOSE" >/dev/null; then
+  echo "FAIL: app MIX_ENV must default to APP_MIX_ENV:-dev so Forge staging boots with compose secrets" >&2
+  exit 1
+fi
+
 echo "compose_app_service_test.sh: OK"

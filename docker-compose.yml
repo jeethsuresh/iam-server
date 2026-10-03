@@ -27,7 +27,10 @@ services:
       - "${HOST_PORT:-4000}:4000"
       - "${DEMO_HOST_PORT:-4100}:4100"
     environment:
-      MIX_ENV: ${APP_MIX_ENV:-prod}
+      # Default to dev: the image is compiled for MIX_ENV=dev, and prod runtime
+      # rejects the docker-dev secret placeholders below. Set APP_MIX_ENV=prod only
+      # when injecting fresh SECRET_KEY_BASE / JWT_SECRET / IAM_ADMIN_PASSWORD.
+      MIX_ENV: ${APP_MIX_ENV:-dev}
       DATABASE_URL: ${DATABASE_URL:-ecto://postgres:postgres@postgres/lakehouse_dev}
       PHX_HOST: ${PHX_HOST:-iam.jeeth.dev}
       POSTGRES_HOST: postgres

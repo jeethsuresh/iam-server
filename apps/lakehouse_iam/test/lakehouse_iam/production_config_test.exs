@@ -56,4 +56,17 @@ defmodule LakehouseIam.ProductionConfigTest do
     System.put_env("PHX_HOST", "example.com")
     assert_raise RuntimeError, ~r/PHX_HOST/, &runtime/0
   end
+
+  test "compose default secret placeholders cannot boot production" do
+    System.put_env(%{
+      "DATABASE_URL" => "ecto://postgres:postgres@postgres/lakehouse_dev",
+      "SECRET_KEY_BASE" =>
+        "dEVDOCKERdEVDOCKERdEVDOCKERdEVDOCKERdEVDOCKERdEVDOCKERdEVDOCKERdEVDOCKERdEVDOCKER",
+      "JWT_SECRET" => "docker-dev-jwt-secret-change-me-in-production",
+      "IAM_ADMIN_PASSWORD" => "changeme",
+      "PHX_HOST" => "iam.jeeth.dev"
+    })
+
+    assert_raise RuntimeError, ~r/SECRET_KEY_BASE must be/, &runtime/0
+  end
 end
