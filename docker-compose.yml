@@ -27,7 +27,9 @@ services:
       - "${HOST_PORT:-4000}:4000"
       - "${DEMO_HOST_PORT:-4100}:4100"
     environment:
-      MIX_ENV: dev
+      MIX_ENV: ${APP_MIX_ENV:-prod}
+      DATABASE_URL: ${DATABASE_URL:-ecto://postgres:postgres@postgres/lakehouse_dev}
+      PHX_HOST: ${PHX_HOST:-iam.jeeth.dev}
       POSTGRES_HOST: postgres
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -38,7 +40,7 @@ services:
       SECRET_KEY_BASE: ${SECRET_KEY_BASE:-dEVDOCKERdEVDOCKERdEVDOCKERdEVDOCKERdEVDOCKERdEVDOCKERdEVDOCKERdEVDOCKERdEVDOCKERdEVDOCKER}
       IAM_ADMIN_USERNAME: ${IAM_ADMIN_USERNAME:-admin}
       IAM_ADMIN_PASSWORD: ${IAM_ADMIN_PASSWORD:-changeme}
-      IAM_RELAXED_CALLBACK_URLS: ${IAM_RELAXED_CALLBACK_URLS:-1}
+      IAM_RELAXED_CALLBACK_URLS: ${IAM_RELAXED_CALLBACK_URLS:-false}
       LAKEHOUSE_MEDIA_ROOT: ${LAKEHOUSE_MEDIA_ROOT:-/var/lib/lakehouse/media}
       # Test-only demo app (not part of default product deploy UX): set LAKEHOUSE_DEMO=1
       LAKEHOUSE_DEMO: ${LAKEHOUSE_DEMO:-}

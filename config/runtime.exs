@@ -14,17 +14,27 @@ if config_env() == :prod do
     pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10"),
     socket_options: maybe_ipv6
 
-  secret_key_base =
-    System.get_env("SECRET_KEY_BASE") ||
-      raise """
-      environment variable SECRET_KEY_BASE is missing.
-      """
+  require_secret = fn name, minimum ->
+    value = System.fetch_env!(name)
+    if byte_size(value) < minimum or
+         value in ["docker-dev-jwt-secret-change-me-in-production",
+                   "dEVDOCKERdEVDOCKERdEVDOCKERdEVDOCKERdEVDOCKERdEVDOCKERdEVDOCKERdEVDOCKERdEVDOCKER"] do
+      raise "#{name} must be a fresh production secret (at least #{minimum} bytes)"
+    end
+    value
+  end
 
-  host = System.get_env("PHX_HOST") || "example.com"
+  secret_key_base = require_secret.("SECRET_KEY_BASE", 64)
+  jwt_secret = require_secret.("JWT_SECRET", 32)
+  admin_password = require_secret.("IAM_ADMIN_PASSWORD", 12)
+
+  host = System.fetch_env!("PHX_HOST")
+  if host == "" or host == "example.com", do: raise("PHX_HOST must be the public hostname")
   port = String.to_integer(System.get_env("PORT") || "4000")
 
   config :lakehouse_web, LakehouseWeb.Endpoint,
     url: [host: host, port: 443, scheme: "https"],
+    check_origin: ["https://#{host}"],
     http: [
       ip: {0, 0, 0, 0},
       port: port
@@ -32,10 +42,10 @@ if config_env() == :prod do
     secret_key_base: secret_key_base
 
   config :lakehouse_iam,
-    jwt_secret: System.fetch_env!("JWT_SECRET"),
+    jwt_secret: jwt_secret,
     admin_username: System.get_env("IAM_ADMIN_USERNAME", "admin"),
-    admin_password: System.get_env("IAM_ADMIN_PASSWORD", ""),
-    relaxed_callback_urls: System.get_env("IAM_RELAXED_CALLBACK_URLS") not in [nil, ""]
+    admin_password: admin_password,
+    relaxed_callback_urls: System.get_env("IAM_RELAXED_CALLBACK_URLS") in ~w(true 1)
 end
 
 if media_root = System.get_env("LAKEHOUSE_MEDIA_ROOT") do

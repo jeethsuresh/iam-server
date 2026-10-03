@@ -30,6 +30,7 @@ scripts:
 deployments:
   web:
     description: Lakehouse IAM + Matrix web app (postgres + lakehouse)
+    subdomain: iam
     auto_deploy: false
     scripts:
       build: build
