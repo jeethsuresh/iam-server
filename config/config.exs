@@ -7,6 +7,8 @@ config :lakehouse_iam, LakehouseIam.Repo,
 config :lakehouse_iam, ecto_repos: [LakehouseIam.Repo]
 
 config :lakehouse_iam,
+  identity_domain: System.get_env("IAM_DOMAIN", "localhost"),
+  public_url: System.get_env("IAM_PUBLIC_URL", "http://localhost:4000"),
   jwt_secret: System.get_env("JWT_SECRET", "dev-only-change-me-use-long-secret"),
   token_ttl_seconds: 3600,
   admin_username: System.get_env("IAM_ADMIN_USERNAME", "admin"),

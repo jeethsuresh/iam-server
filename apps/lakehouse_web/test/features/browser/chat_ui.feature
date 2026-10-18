@@ -6,6 +6,10 @@ Feature: Browser chat and settings
     When I sign in through the browser as "alice" with password "password123"
     Then I should be on the rooms page
 
+  Scenario: Sign in with a qualified identity
+    When I sign in through the browser as "@qualified:localhost" with password "password123"
+    Then I should be on the rooms page
+
   @negative
   Scenario: Invalid browser sign-in shows an error
     Given an approved user "alice" with password "password123"

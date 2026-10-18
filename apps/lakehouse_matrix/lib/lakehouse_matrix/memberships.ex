@@ -23,7 +23,8 @@ defmodule LakehouseMatrix.Memberships do
         join: m in RoomMembership,
         on: m.room_id == r.id,
         where:
-          m.principal_id == ^principal_id and fragment("?->>'membership' = 'join'", m.membership_state),
+          m.principal_id == ^principal_id and
+            fragment("?->>'membership' = 'join'", m.membership_state),
         order_by: [desc: m.inserted_at],
         select: r
     )
@@ -70,7 +71,12 @@ defmodule LakehouseMatrix.Memberships do
     )
   end
 
-  @spec apply_membership(Ecto.UUID.t(), String.t(), String.t(), LakehouseMatrix.Events.Context.t()) ::
+  @spec apply_membership(
+          Ecto.UUID.t(),
+          String.t(),
+          String.t(),
+          LakehouseMatrix.Events.Context.t()
+        ) ::
           {:ok, RoomMembership.t()} | {:error, Ecto.Changeset.t() | :unknown_member}
   def apply_membership(room_id, mxid, membership, ctx) do
     case principal_id_for_mxid(mxid) do
@@ -82,9 +88,19 @@ defmodule LakehouseMatrix.Memberships do
     end
   end
 
-  @spec upsert_membership(Ecto.UUID.t(), Ecto.UUID.t(), String.t(), LakehouseMatrix.Events.Context.t()) ::
+  @spec upsert_membership(
+          Ecto.UUID.t(),
+          Ecto.UUID.t(),
+          String.t(),
+          LakehouseMatrix.Events.Context.t()
+        ) ::
           {:ok, RoomMembership.t()} | {:error, Ecto.Changeset.t()}
-  def upsert_membership(room_id, principal_id, membership, %LakehouseMatrix.Events.Context{} = ctx) do
+  def upsert_membership(
+        room_id,
+        principal_id,
+        membership,
+        %LakehouseMatrix.Events.Context{} = ctx
+      ) do
     state = %{
       "membership" => membership,
       "displayname" => Map.get(ctx.content, "displayname"),
@@ -173,8 +189,8 @@ defmodule LakehouseMatrix.Memberships do
 
   defp principal_id_for_mxid(mxid) when is_binary(mxid) do
     username =
-      case String.split(mxid, ":", parts: 2) do
-        ["@" <> user, _domain] -> String.downcase(user)
+      case LakehouseMatrix.Identity.parse_user_id(mxid) do
+        {:ok, user} -> user
         _ -> nil
       end
 

@@ -29,6 +29,7 @@ defmodule LakehouseMatrix.MixProject do
   defp deps do
     [
       {:lakehouse_iam, in_umbrella: true},
+      {:req, "~> 0.5"},
       {:phoenix_pubsub, "~> 2.1"}
     ]
   end

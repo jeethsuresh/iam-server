@@ -8,17 +8,21 @@ defmodule LakehouseIam.ProductionConfigTest do
     "JWT_SECRET" => String.duplicate("j", 48),
     "IAM_ADMIN_PASSWORD" => "a-fresh-admin-password-for-tests",
     "PHX_HOST" => "iam.jeeth.dev",
+    "IAM_PUBLIC_URL" => "https://iam.jeeth.dev",
+    "IAM_DOMAIN" => "jeeth.dev",
     "IAM_RELAXED_CALLBACK_URLS" => "false"
   }
 
   setup do
     old = Map.new(@values, fn {key, _} -> {key, System.get_env(key)} end)
     System.put_env(@values)
+
     on_exit(fn ->
       for {key, value} <- old do
         if value, do: System.put_env(key, value), else: System.delete_env(key)
       end
     end)
+
     :ok
   end
 
@@ -31,7 +35,10 @@ defmodule LakehouseIam.ProductionConfigTest do
     endpoint = prod[:lakehouse_web][LakehouseWeb.Endpoint]
     refute endpoint[:debug_errors]
     refute endpoint[:code_reloader]
-    assert runtime()[:lakehouse_web][LakehouseWeb.Endpoint][:check_origin] == ["https://iam.jeeth.dev"]
+
+    assert runtime()[:lakehouse_web][LakehouseWeb.Endpoint][:check_origin] == [
+             "https://iam.jeeth.dev"
+           ]
   end
 
   test "false callback flags do not enable relaxed validation" do
@@ -55,6 +62,29 @@ defmodule LakehouseIam.ProductionConfigTest do
   test "placeholder public hostname is rejected" do
     System.put_env("PHX_HOST", "example.com")
     assert_raise RuntimeError, ~r/PHX_HOST/, &runtime/0
+  end
+
+  test "identity domain is separate from the public host and production database TLS is verified" do
+    config = runtime()
+    assert config[:lakehouse_iam][:identity_domain] == "jeeth.dev"
+    assert config[:lakehouse_iam][:public_url] == "https://iam.jeeth.dev"
+    assert config[:lakehouse_iam][LakehouseIam.Repo][:ssl][:verify] == :verify_peer
+    refute config[:lakehouse_iam][:bootstrap_on_start]
+  end
+
+  test "an existing Matrix namespace can be retained when moving its database" do
+    previous = System.get_env("MATRIX_DOMAIN")
+
+    on_exit(fn ->
+      if previous,
+        do: System.put_env("MATRIX_DOMAIN", previous),
+        else: System.delete_env("MATRIX_DOMAIN")
+    end)
+
+    System.put_env("MATRIX_DOMAIN", "legacy.example")
+    config = runtime()
+    assert config[:lakehouse_iam][:identity_domain] == "jeeth.dev"
+    assert config[:lakehouse_matrix][:homeserver_domain] == "legacy.example"
   end
 
   test "compose default secret placeholders cannot boot production" do

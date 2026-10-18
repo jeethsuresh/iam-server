@@ -10,24 +10,24 @@ defmodule LakehouseWeb.Matrix.ClientController do
   end
 
   def login(conn, params) do
-  type = Map.get(params, "type", "m.login.password")
+    type = Map.get(params, "type", "m.login.password")
 
-  if type != "m.login.password" do
-    matrix_error(conn, 400, "M_INVALID_PARAM", "Only m.login.password is supported")
-  else
-    {username, password} = extract_credentials(params)
+    if type != "m.login.password" do
+      matrix_error(conn, 400, "M_INVALID_PARAM", "Only m.login.password is supported")
+    else
+      {username, password} = extract_credentials(params)
 
-    case Matrix.login(username, password) do
-      {:ok, session} ->
-        json(conn, session)
+      case Matrix.login(username, password) do
+        {:ok, session} ->
+          json(conn, session)
 
-      {:error, :inactive} ->
-        matrix_error(conn, 403, "M_USER_DEACTIVATED", "Account is not active")
+        {:error, :inactive} ->
+          matrix_error(conn, 403, "M_USER_DEACTIVATED", "Account is not active")
 
-      {:error, :invalid_credentials} ->
-        matrix_error(conn, 403, "M_FORBIDDEN", "Invalid username or password")
+        {:error, :invalid_credentials} ->
+          matrix_error(conn, 403, "M_FORBIDDEN", "Invalid username or password")
+      end
     end
-  end
   end
 
   def sync(conn, params) do
@@ -55,7 +55,7 @@ defmodule LakehouseWeb.Matrix.ClientController do
     username =
       case Identity.parse_user_id(user) do
         {:ok, name} -> name
-        :error -> String.trim_leading(to_string(user), "@") |> String.split(":", parts: 2) |> hd()
+        :error -> to_string(user)
       end
 
     case Matrix.invite(conn.assigns.principal_id, room_ref, username) do
@@ -124,11 +124,14 @@ defmodule LakehouseWeb.Matrix.ClientController do
     end
   end
 
-  def send_event(conn, %{
-        "roomId" => room_ref,
-        "eventType" => "m.room.message",
-        "txnId" => txn_id
-      } = params) do
+  def send_event(
+        conn,
+        %{
+          "roomId" => room_ref,
+          "eventType" => "m.room.message",
+          "txnId" => txn_id
+        } = params
+      ) do
     with {:ok, room_uuid} <- Identity.parse_room_id(room_ref) do
       content =
         params
@@ -204,7 +207,7 @@ defmodule LakehouseWeb.Matrix.ClientController do
     username =
       case Identity.parse_user_id(user) do
         {:ok, name} -> name
-        :error -> user |> to_string() |> String.trim_leading("@") |> String.split(":", parts: 2) |> hd()
+        :error -> to_string(user)
       end
 
     case Matrix.remove_member(conn.assigns.principal_id, room_ref, username) do

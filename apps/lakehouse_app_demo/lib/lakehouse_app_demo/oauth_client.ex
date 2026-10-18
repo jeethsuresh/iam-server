@@ -4,21 +4,8 @@ defmodule LakehouseAppDemo.OAuthClient do
   alias LakehouseAppDemo.Pkce
 
   def parse_username_at_host(input) when is_binary(input) do
-    case String.split(input, "@", parts: 2) do
-      [local, host] when local != "" and host != "" ->
-        base =
-          cond do
-            String.starts_with?(host, "http://") or String.starts_with?(host, "https://") ->
-              String.trim_trailing(host, "/")
-
-            true ->
-              "http://#{host}"
-          end
-
-        {:ok, String.downcase(local), base}
-
-      _ ->
-        {:error, "use username@host form"}
+    with {:ok, identity} <- LakehouseIam.Identifier.parse(input) do
+      {:ok, identity.user_id, "https://" <> identity.domain}
     end
   end
 
@@ -37,13 +24,13 @@ defmodule LakehouseAppDemo.OAuthClient do
       state: state
     }
 
-    url = String.trim_trailing(iam_base, "/") <> "/backend/register"
+    url = endpoint(iam_base, "backend_registration_endpoint", "/backend/register")
 
-    case Req.post(url, json: body, receive_timeout: 10_000) do
+    case Req.post(url, json: body, redirect: false, receive_timeout: 10_000) do
       {:ok, %{status: 200, body: %{"sessionID" => sid}}} ->
         authorize =
-          String.trim_trailing(iam_base, "/") <>
-            "/oauth/authorize?sessionID=" <> URI.encode_www_form(sid)
+          endpoint(iam_base, "authorization_endpoint", "/oauth/authorize") <>
+            "?sessionID=" <> URI.encode_www_form(sid)
 
         {:ok, %{authorize_url: authorize, verifier: verifier, state: state, session_id: sid}}
 
@@ -56,7 +43,7 @@ defmodule LakehouseAppDemo.OAuthClient do
   end
 
   def exchange_token(iam_base, code, verifier, redirect_uri) do
-    url = String.trim_trailing(iam_base, "/") <> "/oauth/token"
+    url = endpoint(iam_base, "token_endpoint", "/oauth/token")
 
     case Req.post(url,
            form: %{
@@ -65,6 +52,7 @@ defmodule LakehouseAppDemo.OAuthClient do
              code_verifier: verifier,
              redirect_uri: redirect_uri
            },
+           redirect: false,
            receive_timeout: 10_000
          ) do
       {:ok, %{status: 200, body: body}} -> {:ok, body}
@@ -74,10 +62,11 @@ defmodule LakehouseAppDemo.OAuthClient do
   end
 
   def api_get(iam_base, path, access_token) do
-    url = String.trim_trailing(iam_base, "/") <> path
+    url = base(iam_base) <> path
 
     case Req.get(url,
            headers: [{"authorization", "Bearer #{access_token}"}],
+           redirect: false,
            receive_timeout: 10_000
          ) do
       {:ok, %{status: 200, body: body}} -> {:ok, body}
@@ -87,11 +76,12 @@ defmodule LakehouseAppDemo.OAuthClient do
   end
 
   def api_post(iam_base, path, access_token, json_body) do
-    url = String.trim_trailing(iam_base, "/") <> path
+    url = base(iam_base) <> path
 
     case Req.post(url,
            json: json_body,
            headers: [{"authorization", "Bearer #{access_token}"}],
+           redirect: false,
            receive_timeout: 10_000
          ) do
       {:ok, %{status: status, body: body}} when status in 200..299 -> {:ok, body}
@@ -99,4 +89,9 @@ defmodule LakehouseAppDemo.OAuthClient do
       {:error, err} -> {:error, inspect(err)}
     end
   end
+
+  defp base(%{"issuer" => issuer}), do: issuer
+  defp base(base) when is_binary(base), do: String.trim_trailing(base, "/")
+  defp endpoint(config, key, _path) when is_map(config), do: Map.fetch!(config, key)
+  defp endpoint(base, _key, path), do: base(base) <> path
 end

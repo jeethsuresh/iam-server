@@ -33,6 +33,10 @@ services:
       MIX_ENV: ${APP_MIX_ENV:-dev}
       DATABASE_URL: ${DATABASE_URL:-ecto://postgres:postgres@postgres/lakehouse_dev}
       PHX_HOST: ${PHX_HOST:-iam.jeeth.dev}
+      IAM_PUBLIC_URL: ${IAM_PUBLIC_URL:-https://iam.jeeth.dev}
+      IAM_DOMAIN: ${IAM_DOMAIN:-jeeth.dev}
+      # The Compose database stays on its private network. Cloudflare uses verified TLS.
+      DATABASE_SSL: ${DATABASE_SSL:-disable}
       POSTGRES_HOST: postgres
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres

@@ -24,7 +24,12 @@ defmodule LakehouseIam.Apps.Tokens do
         insert_token(grant.id, access_raw, :access, DateTime.add(now, @access_ttl_sec, :second))
 
       {:ok, _} =
-        insert_token(grant.id, refresh_raw, :refresh, DateTime.add(now, @refresh_ttl_sec, :second))
+        insert_token(
+          grant.id,
+          refresh_raw,
+          :refresh,
+          DateTime.add(now, @refresh_ttl_sec, :second)
+        )
 
       %{
         access_token: access_raw,
@@ -98,6 +103,8 @@ defmodule LakehouseIam.Apps.Tokens do
         end
     end
   end
+
+  def refresh(_), do: {:error, :invalid}
 
   @spec revoke_grant_tokens(Ecto.UUID.t()) :: :ok
   def revoke_grant_tokens(grant_id) do

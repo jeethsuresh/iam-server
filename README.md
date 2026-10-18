@@ -2,6 +2,12 @@
 
 This repository implements the architecture described in `original-plan.md`:
 
+Cloudflare launch preparation is documented in [docs/cloudflare.md](docs/cloudflare.md):
+Workers launch the production Phoenix release in a Container, and `@user:domain`
+identities discover their IAM host through `/.well-known/webfinger`. The demo app
+uses discovery before starting the existing PKCE login flow. The Forgefile includes
+a separate `cloudflare` deployment target; the local `web` target stays available.
+
 - **OTP-first**: federated IAM sessions, supervised room actors, Registry-backed routing.
 - **iam-server compatible HTTP surface** for integrations that already speak that protocol.
 - **Bounded contexts**: `lakehouse_iam` (identity + RBAC), `lakehouse_matrix` (rooms + `RoomServer`), `lakehouse_web` (HTTP + Channels + Presence).
@@ -10,7 +16,7 @@ This repository implements the architecture described in `original-plan.md`:
 
 | App | Responsibility |
 |-----|----------------|
-| `lakehouse_iam` | `LakehouseIam.Repo`, principals/credentials/RBAC, HS256 + federated ES256 JWT, in-memory federated sessions |
+| `lakehouse_iam` | `LakehouseIam.Repo`, principals/credentials/RBAC, HS256 JWT, persistent PKCE sessions and single-use codes |
 | `lakehouse_matrix` | Room persistence (shared Postgres schema), `LakehouseMatrix.RoomServer`, `DynamicSupervisor` |
 | `lakehouse_web` | Phoenix endpoint, iam-server routes, `/api/v1` REST, sockets |
 

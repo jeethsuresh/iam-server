@@ -15,3 +15,8 @@ erl_crash.dump
 /apps/*/priv/media/
 
 /apps/*/tmp/
+
+/cloudflare/node_modules/
+/cloudflare/.wrangler/
+/cloudflare/dist/
+/cloudflare/.dev.vars*

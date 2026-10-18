@@ -98,7 +98,9 @@ defmodule LakehouseAppDemo.PageController do
         end
 
       _ ->
-        OAuthClient.parse_username_at_host(username_at)
+        with {:ok, identity, metadata} <- LakehouseIam.Discovery.resolve(username_at) do
+          {:ok, identity.user_id, metadata}
+        end
     end
   end
 
@@ -123,8 +125,8 @@ defmodule LakehouseAppDemo.PageController do
     #{err}
     <form method="post" action="/login">
       <input type="hidden" name="_csrf_token" value="#{Plug.HTML.html_escape(csrf)}" />
-      <label>Lakehouse username@host
-        <input name="username" placeholder="alice@127.0.0.1:4002" required />
+      <label>Lakehouse @username:domain
+        <input name="username" placeholder="@alice:example.com" required />
       </label>
       <button type="submit">Continue</button>
     </form>

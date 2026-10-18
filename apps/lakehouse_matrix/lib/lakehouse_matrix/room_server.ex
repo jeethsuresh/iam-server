@@ -143,7 +143,8 @@ defmodule LakehouseMatrix.RoomServer do
     state = %{
       state
       | subscribers: Map.delete(state.subscribers, pid),
-        presence: if(principal_id, do: Map.delete(state.presence, principal_id), else: state.presence)
+        presence:
+          if(principal_id, do: Map.delete(state.presence, principal_id), else: state.presence)
     }
 
     if principal_id do
@@ -242,9 +243,9 @@ defmodule LakehouseMatrix.RoomServer do
   end
 
   defp principal_id_for_mxid(mxid) when is_binary(mxid) do
-    case String.split(mxid, ":", parts: 2) do
-      ["@" <> user, _domain] ->
-        case LakehouseIam.Accounts.fetch_user(String.downcase(user)) do
+    case LakehouseMatrix.Identity.parse_user_id(mxid) do
+      {:ok, user} ->
+        case LakehouseIam.Accounts.fetch_user(user) do
           {:ok, p} -> p.id
           :error -> nil
         end

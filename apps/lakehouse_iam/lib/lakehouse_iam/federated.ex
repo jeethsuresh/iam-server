@@ -1,173 +1,124 @@
 defmodule LakehouseIam.Federated do
-  @moduledoc """
-  In-memory federated OAuth PKCE sessions and one-time authorization codes.
+  @moduledoc "Postgres-backed PKCE login sessions and atomically consumed authorization codes."
 
-  App identity is the origin of `caller_url` / `redirect_url` (must match).
-  """
-  use GenServer
-
-  alias LakehouseIam.Apps.{Origin, Pkce, Scopes, VerifiedDomain}
+  import Ecto.Query
+  alias LakehouseIam.Apps.{Origin, Scopes, VerifiedDomain}
   alias LakehouseIam.Auth.CallbackURL
-
-  defstruct sessions: %{}, codes: %{}
+  alias LakehouseIam.{Identifier, Repo}
+  alias LakehouseIam.Schema.FederatedEntry
 
   @session_ttl_ms 10 * 60 * 1000
   @code_ttl_ms 5 * 60 * 1000
-
-  def start_link(opts \\ []) do
-    GenServer.start_link(__MODULE__, opts, name: __MODULE__)
-  end
+  @payload_keys ~w(username domain caller_url redirect_url app_origin code_challenge code_challenge_method scopes state expires_at grant_id)a
 
   def reset! do
-    GenServer.call(__MODULE__, :reset)
+    Repo.delete_all(FederatedEntry)
+    :ok
   end
 
-  @doc """
-  Registers a PKCE federated login attempt.
-
-  Attrs: `:username`, `:caller_url`, `:redirect_url`, `:code_challenge`,
-  `:code_challenge_method` (default `"S256"`), `:scope` (string or list),
-  optional `:state`.
-  """
   def register(attrs) when is_map(attrs) do
-    GenServer.call(__MODULE__, {:register, attrs})
-  end
-
-  def fetch(session_id), do: GenServer.call(__MODULE__, {:fetch, session_id})
-  def delete(session_id), do: GenServer.call(__MODULE__, {:delete, session_id})
-
-  def put_code(code, payload) when is_binary(code) and is_map(payload) do
-    GenServer.call(__MODULE__, {:put_code, code, payload})
-  end
-
-  def take_code(code) when is_binary(code) do
-    GenServer.call(__MODULE__, {:take_code, code})
-  end
-
-  def verify_pkce(payload, verifier) do
-    Pkce.verify(verifier, payload.code_challenge, payload.code_challenge_method || "S256")
-  end
-
-  @impl true
-  def init(_opts) do
-    {:ok, %__MODULE__{}}
-  end
-
-  @impl true
-  def handle_call(:reset, _from, _state) do
-    {:reply, :ok, %__MODULE__{}}
-  end
-
-  def handle_call({:fetch, session_id}, _from, state) do
-    sess = Map.get(state.sessions, session_id)
-
-    sess =
-      cond do
-        is_nil(sess) -> nil
-        expired?(sess.expires_at) -> nil
-        true -> sess
-      end
-
-    {:reply, sess, state}
-  end
-
-  def handle_call({:delete, session_id}, _from, state) do
-    {:reply, :ok, %{state | sessions: Map.delete(state.sessions, session_id)}}
-  end
-
-  def handle_call({:register, attrs}, _from, state) do
-    case build_session(attrs) do
-      {:ok, session_id, username, sess} ->
-        {:reply, {:ok, session_id, username},
-         %{state | sessions: Map.put(state.sessions, session_id, sess)}}
-
-      {:error, _} = err ->
-        {:reply, err, state}
-    end
-  end
-
-  def handle_call({:put_code, code, payload}, _from, state) do
-    entry = Map.put(payload, :expires_at, System.system_time(:millisecond) + @code_ttl_ms)
-    {:reply, :ok, %{state | codes: Map.put(state.codes, code, entry)}}
-  end
-
-  def handle_call({:take_code, code}, _from, state) do
-    case Map.pop(state.codes, code) do
-      {nil, _} ->
-        {:reply, nil, state}
-
-      {entry, codes} ->
-        if expired?(entry.expires_at) do
-          {:reply, nil, %{state | codes: codes}}
-        else
-          {:reply, entry, %{state | codes: codes}}
-        end
-    end
-  end
-
-  defp build_session(attrs) do
-    username =
-      (attr(attrs, :username, "username") || "")
-      |> to_string()
-      |> String.trim()
-      |> String.downcase()
-
-    caller_url = attr(attrs, :caller_url, "callerURL")
-    redirect_url = attr(attrs, :redirect_url, "redirectURL")
-    challenge = attr(attrs, :code_challenge, "codeChallenge")
-    method = attr(attrs, :code_challenge_method, "codeChallengeMethod") || "S256"
-    scope_raw = attr(attrs, :scope, "scope") || ""
-    state = attr(attrs, :state, "state")
-
-    with :ok <- require_username(username),
-         {:ok, scopes} <- Scopes.parse(scope_raw),
-         :ok <- require_binary(caller_url, "callerURL"),
-         :ok <- require_binary(redirect_url, "redirectURL"),
-         :ok <- CallbackURL.validate(caller_url, "callerURL"),
-         :ok <- CallbackURL.validate(redirect_url, "redirectURL"),
-         :ok <- require_same_origin(caller_url, redirect_url),
+    with {:ok, username} <- Identifier.local_username(attr(attrs, :username, "username")),
+         {:ok, scopes} <- Scopes.parse(attr(attrs, :scope, "scope") || ""),
+         caller_url <- attr(attrs, :caller_url, "callerURL"),
+         redirect_url <- attr(attrs, :redirect_url, "redirectURL"),
+         :ok <- validate_url(caller_url, "callerURL"),
+         :ok <- validate_url(redirect_url, "redirectURL"),
+         true <- Origin.same_origin?(caller_url, redirect_url),
          {:ok, app_origin} <- Origin.from_url(redirect_url),
-         :ok <- require_s256(method),
-         :ok <- require_binary(challenge, "codeChallenge"),
+         "S256" <- attr(attrs, :code_challenge_method, "codeChallengeMethod") || "S256",
+         challenge when is_binary(challenge) <- attr(attrs, :code_challenge, "codeChallenge"),
+         true <- Regex.match?(~r/\A[A-Za-z0-9_-]{43}\z/, challenge),
          :ok <- VerifiedDomain.verify(%{origin: app_origin}) do
-      session_id = Ecto.UUID.generate()
+      id = Ecto.UUID.generate()
 
-      sess = %{
+      session = %{
         username: username,
+        domain: Identifier.domain(),
         caller_url: caller_url,
         redirect_url: redirect_url,
         app_origin: app_origin,
         code_challenge: challenge,
-        code_challenge_method: method,
+        code_challenge_method: "S256",
         scopes: scopes,
-        state: state,
-        expires_at: System.system_time(:millisecond) + @session_ttl_ms
+        state: attr(attrs, :state, "state")
       }
 
-      {:ok, session_id, username, sess}
-    end
-  end
-
-  defp require_username(""), do: {:error, "Invalid username"}
-  defp require_username(_), do: :ok
-
-  defp require_binary(v, _name) when is_binary(v) and v != "", do: :ok
-  defp require_binary(_, name), do: {:error, "#{name} required"}
-
-  defp require_same_origin(a, b) do
-    if Origin.same_origin?(a, b) do
-      :ok
+      with :ok <- put_entry(id, :session, session, @session_ttl_ms), do: {:ok, id, username}
     else
-      {:error, "callerURL and redirectURL must share the same origin"}
+      false ->
+        {:error,
+         "callerURL and redirectURL must share the same origin; a valid S256 codeChallenge is required"}
+
+      {:error, _} = error ->
+        error
+
+      _ ->
+        {:error, "codeChallengeMethod must be S256 and codeChallenge is required"}
     end
   end
 
-  defp require_s256("S256"), do: :ok
-  defp require_s256(_), do: {:error, "codeChallengeMethod must be S256"}
+  def fetch(id) when is_binary(id) do
+    case Repo.get(FederatedEntry, key(:session, id)) do
+      %{data: data, expires_at: expires_at} ->
+        if expires_at > now(), do: decode(data), else: nil
 
-  defp attr(map, atom_key, string_key) do
-    Map.get(map, atom_key) || Map.get(map, string_key)
+      _ ->
+        nil
+    end
   end
 
-  defp expired?(expires_at), do: System.system_time(:millisecond) > expires_at
+  def fetch(_), do: nil
+
+  def delete(id) do
+    Repo.delete_all(from e in FederatedEntry, where: e.key == ^key(:session, id))
+    :ok
+  end
+
+  def put_code(code, payload), do: put_entry(code, :code, payload, @code_ttl_ms)
+
+  def take_code(code) when is_binary(code) do
+    cutoff = now()
+    # DELETE RETURNING is one database operation: concurrent exchanges cannot both win.
+    case Repo.delete_all(
+           from e in FederatedEntry,
+             where: e.key == ^key(:code, code) and e.expires_at > ^cutoff,
+             select: e.data
+         ) do
+      {1, [data]} -> decode(data)
+      _ -> nil
+    end
+  end
+
+  def take_code(_), do: nil
+
+  def verify_pkce(payload, verifier) do
+    LakehouseIam.Apps.Pkce.verify(verifier, payload.code_challenge, payload.code_challenge_method)
+  end
+
+  defp put_entry(id, kind, payload, ttl) do
+    cutoff = now()
+    Repo.delete_all(from e in FederatedEntry, where: e.expires_at <= ^cutoff)
+
+    case Repo.insert(%FederatedEntry{
+           key: key(kind, id),
+           kind: kind,
+           data: Map.put(payload, :expires_at, cutoff + ttl),
+           expires_at: cutoff + ttl
+         }) do
+      {:ok, _} -> :ok
+      {:error, _} -> {:error, "could not store login state"}
+    end
+  end
+
+  defp decode(data) do
+    Map.new(@payload_keys, fn key -> {key, Map.get(data, Atom.to_string(key))} end)
+  end
+
+  defp validate_url(url, name) when is_binary(url) and url != "",
+    do: CallbackURL.validate(url, name)
+
+  defp validate_url(_, name), do: {:error, "#{name} required"}
+  defp attr(attrs, atom, string), do: Map.get(attrs, atom) || Map.get(attrs, string)
+  defp key(kind, id), do: :crypto.hash(:sha256, "#{kind}:#{id}") |> Base.encode16(case: :lower)
+  defp now, do: System.system_time(:millisecond)
 end

@@ -20,7 +20,8 @@ defmodule LakehouseIam.Apps.Pkce do
 
   def verify(verifier, challenge, "S256")
       when is_binary(verifier) and is_binary(challenge) do
-    if challenge(verifier) == challenge do
+    if Regex.match?(~r/\A[A-Za-z0-9._~-]{43,128}\z/, verifier) and
+         challenge(verifier) == challenge do
       :ok
     else
       {:error, "invalid_code_verifier"}

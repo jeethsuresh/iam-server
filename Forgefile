@@ -8,12 +8,15 @@ project:
   compose_slug: iam-server
 
 scripts:
+  cloudflare_check:
+    run: ./scripts/cloudflare-check.sh
+    description: Install pinned Worker dependencies, type-check, and test discovery/proxy routing
   build:
     run: ./build.sh
     description: Compile via mix, or docker compose build when mix is unavailable
   test:
-    run: ./test.sh --unit
-    description: Run domain ExUnit (iam + matrix) via compose when mix is missing; browser/API BDD stay local
+    run: ./test.sh --exclude-browser
+    description: Run domain, HTTP and API BDD tests; browser tests run with Chrome locally
   teardown:
     run: ./teardown.sh
     description: Stop the docker compose stack for this project
@@ -28,6 +31,15 @@ scripts:
     description: Remove leftover iam-server-web-1 after renaming compose service to app
 
 deployments:
+  cloudflare:
+    kind: cloudflare-workers
+    description: Launch the Phoenix IAM release through one Cloudflare Container
+    auto_deploy: false
+    credential: cloudflare-iam
+    cloudflare:
+      config: cloudflare/wrangler.jsonc
+    scripts:
+      build: cloudflare_check
   web:
     description: Lakehouse IAM + Matrix web app (postgres + lakehouse)
     subdomain: iam

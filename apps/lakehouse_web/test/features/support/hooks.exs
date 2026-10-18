@@ -21,6 +21,10 @@ defmodule LakehouseWeb.Bdd.Hooks do
   end
 
   after_scenario context do
+    for {key, value} <- Map.get(context, :identity_config_before, %{}) do
+      Application.put_env(:lakehouse_iam, key, value)
+    end
+
     case Map.get(context, :session) do
       nil -> :ok
       session -> Wallaby.end_session(session)
@@ -40,7 +44,9 @@ defmodule LakehouseWeb.Bdd.Hooks do
     Enum.any?(tags, &(&1 == "browser"))
   end
 
-  defp normalize_tag(tag) when is_atom(tag), do: tag |> Atom.to_string() |> String.trim_leading("@")
+  defp normalize_tag(tag) when is_atom(tag),
+    do: tag |> Atom.to_string() |> String.trim_leading("@")
+
   defp normalize_tag(tag) when is_binary(tag), do: String.trim_leading(tag, "@")
   defp normalize_tag(_), do: ""
 end

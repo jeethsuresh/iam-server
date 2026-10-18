@@ -24,7 +24,7 @@ defmodule LakehouseWeb.OAuthPkceTest do
 
     reg =
       OAuthClient.backend_register(%{
-        "username" => user.username,
+        "username" => LakehouseIam.Identifier.format(user.username),
         "callerURL" => caller,
         "redirectURL" => redirect,
         "codeChallenge" => challenge,
@@ -35,6 +35,7 @@ defmodule LakehouseWeb.OAuthPkceTest do
 
     body = json_response(reg, 200)
     assert %{"sessionID" => sid, "username" => "oauthuser"} = body
+    assert body["userID"] == LakehouseIam.Identifier.format("oauthuser")
     refute Map.has_key?(body, "publicKey")
 
     code = consent_code(user.username, sid, %{"all_rooms" => "true"})
@@ -51,6 +52,7 @@ defmodule LakehouseWeb.OAuthPkceTest do
 
     me = OAuthClient.me(access)
     assert %{"username" => "oauthuser", "name" => "oauthuser"} = json_response(me, 200)
+    assert json_response(me, 200)["user_id"] == LakehouseIam.Identifier.format("oauthuser")
 
     chats = OAuthClient.chats(access)
     assert %{"chats" => chats_list} = json_response(chats, 200)
@@ -91,6 +93,26 @@ defmodule LakehouseWeb.OAuthPkceTest do
       })
 
     assert tok.status == 400
+  end
+
+  test "another application reuses the IAM browser login and asks for consent", %{user: user} do
+    reg =
+      OAuthClient.backend_register(%{
+        "username" => LakehouseIam.Identifier.format(user.username),
+        "callerURL" => "http://127.0.0.1:4103/",
+        "redirectURL" => "http://127.0.0.1:4103/callback",
+        "codeChallenge" => Pkce.challenge(Pkce.generate_verifier()),
+        "scope" => "profile.name"
+      })
+
+    sid = json_response(reg, 200)["sessionID"]
+
+    conn =
+      build_conn()
+      |> Plug.Test.init_test_session(%{user_jwt: Token.issue(user.username)})
+      |> get("/oauth/authorize", sessionID: sid)
+
+    assert redirected_to(conn, 302) == "/oauth/consent?sessionID=#{sid}"
   end
 
   test "cross-origin register rejected" do

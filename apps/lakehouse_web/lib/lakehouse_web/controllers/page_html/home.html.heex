@@ -12,7 +12,7 @@
 <form action={~p"/web/login"} method="post">
   <input type="hidden" name="_csrf_token" value={get_csrf_token()} />
   <label for="username">Username</label>
-  <input id="username" name="username" type="text" autocomplete="username" required value={@username} />
+  <input id="username" name="username" type="text" autocomplete="username" placeholder={LakehouseIam.Identifier.format("user")} required value={@username} />
 
   <label for="password">Password</label>
   <input id="password" name="password" type="password" autocomplete="current-password" required />

@@ -1,6 +1,6 @@
 FROM hexpm/elixir:1.18.5-erlang-27.3.4.17-alpine-3.21.7
 
-RUN apk add --no-cache build-base git postgresql-client imagemagick
+RUN apk add --no-cache bash build-base git postgresql-client imagemagick imagemagick-jpeg
 
 WORKDIR /app
 

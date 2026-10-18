@@ -84,6 +84,12 @@ defmodule LakehouseWeb.Router do
   scope "/", LakehouseWeb do
     pipe_through :api
 
+    get "/healthz", DiscoveryController, :health
+    get "/readyz", DiscoveryController, :ready
+    get "/.well-known/webfinger", DiscoveryController, :webfinger
+    get "/.well-known/iam-configuration", DiscoveryController, :configuration
+    get "/.well-known/matrix/client", DiscoveryController, :matrix_client
+
     post "/backend/register", IamBackendController, :create
     post "/login", IamSessionController, :create
     post "/register", IamRegistrationController, :create

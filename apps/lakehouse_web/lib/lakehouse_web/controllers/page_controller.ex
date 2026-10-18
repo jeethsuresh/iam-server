@@ -5,10 +5,10 @@ defmodule LakehouseWeb.PageController do
     case get_session(conn, :user_jwt) do
       token when is_binary(token) and token != "" ->
         case LakehouseIam.Auth.Token.verify(token) do
-          {:ok, _} ->
+          {:ok, _} when not is_map_key(params, "sessionID") ->
             redirect(conn, to: ~p"/rooms")
 
-          :error ->
+          _ ->
             render_home(conn, params)
         end
 
