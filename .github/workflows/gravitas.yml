@@ -40,4 +40,5 @@ jobs:
       - name: Record release image
         env:
           IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
-        run: printf 'IAM release image: ghcr.io/jeethsuresh/iam-server@%s\n' "$IMAGE_DIGEST" >> "$GITHUB_STEP_SUMMARY"
+        run: |
+          printf 'IAM release image: ghcr.io/jeethsuresh/iam-server@%s\n' "$IMAGE_DIGEST" >> "$GITHUB_STEP_SUMMARY"

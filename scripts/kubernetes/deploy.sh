@@ -28,6 +28,9 @@ kube=(kubectl --context "$KUBE_CONTEXT" --namespace iam)
 # Prerequisites are intentionally managed separately from application releases.
 "${kube[@]}" get secret iam-secrets iam-db-app iam-db-ca >/dev/null
 "${kube[@]}" apply -f "$work/release.yaml" --selector 'app.kubernetes.io/component!=server'
+if [[ "$overlay" == gravitas ]]; then
+  "${kube[@]}" rollout status statefulset/iam-db --timeout=180s
+fi
 job="iam-migrate-$(date +%s)-$RANDOM"
 "${kube[@]}" create job "$job" --from=cronjob/iam-migrate
 if ! "${kube[@]}" wait --for=condition=complete "job/$job" --timeout=330s; then
