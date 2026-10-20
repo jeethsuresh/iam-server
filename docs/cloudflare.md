@@ -80,8 +80,10 @@ add routes for `iam.example.com/*` and **only** these apex paths:
 The apex routes delegate discovery with a 307; ordinary apex traffic stays with
 its existing application. Alternatively, configure those redirects on the current
 apex web server. A DNS record alone cannot delegate a well-known path. IAM itself
-returns the discovery JSON on its canonical hostname. Workers.dev and preview URLs
-are disabled so there is one canonical login origin.
+returns the discovery JSON on its canonical hostname. The checked-in deployment is
+named `iam` and initially uses `https://iam.jeeth.workers.dev` as its canonical
+origin and identity domain. For a custom domain, change both settings and routes;
+disable Workers.dev if it is no longer the canonical login origin.
 
 Install dependencies with `cd cloudflare && npm ci`. Set Worker secrets using
 `npx wrangler secret put NAME` for each of:
@@ -90,6 +92,12 @@ Install dependencies with `cd cloudflare && npm ci`. Set Worker secrets using
 - `JWT_SECRET` (at least 32 bytes, fresh random material)
 - `SECRET_KEY_BASE` (at least 64 bytes, fresh random material)
 - `IAM_ADMIN_PASSWORD` (at least 12 bytes)
+- `IAM_REGISTRATION_KEY` (the shared invitation key required to create accounts)
+
+Both browser signup and JSON `POST /register` require `registration_key`. Missing
+or incorrect keys cannot create an account. Keys are compared exactly and kept in
+runtime secrets; existing logins and app PKCE session registration need no key.
+Accounts still require the existing administrator approval after signup.
 
 Secrets are injected into the container at runtime, never as image build arguments.
 Before the first launch, run the release tasks against the same database using a
@@ -103,7 +111,7 @@ docker run --rm --env-file /secure/iam.env iam-server:release \
   /app/bin/lakehouse eval 'LakehouseIam.Release.bootstrap()'
 ```
 
-The env file needs IAM_DOMAIN, IAM_PUBLIC_URL and the four secrets listed above.
+The env file needs IAM_DOMAIN, IAM_PUBLIC_URL and the five secrets listed above.
 Migrations and bootstrap are explicit operations, not startup hooks. Back up the
 existing database before migration. Import an existing Forge database with standard
 Postgres dump/restore if moving to another database. The migration adds a new auth

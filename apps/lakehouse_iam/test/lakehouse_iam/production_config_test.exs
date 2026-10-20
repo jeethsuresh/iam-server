@@ -7,6 +7,7 @@ defmodule LakehouseIam.ProductionConfigTest do
     "SECRET_KEY_BASE" => String.duplicate("s", 64),
     "JWT_SECRET" => String.duplicate("j", 48),
     "IAM_ADMIN_PASSWORD" => "a-fresh-admin-password-for-tests",
+    "IAM_REGISTRATION_KEY" => "test-invitation-key",
     "PHX_HOST" => "iam.jeeth.dev",
     "IAM_PUBLIC_URL" => "https://iam.jeeth.dev",
     "IAM_DOMAIN" => "jeeth.dev",
@@ -70,6 +71,14 @@ defmodule LakehouseIam.ProductionConfigTest do
     assert config[:lakehouse_iam][:public_url] == "https://iam.jeeth.dev"
     assert config[:lakehouse_iam][LakehouseIam.Repo][:ssl][:verify] == :verify_peer
     refute config[:lakehouse_iam][:bootstrap_on_start]
+    assert config[:lakehouse_iam][:registration_key] == "test-invitation-key"
+  end
+
+  test "production requires a nonempty registration key" do
+    System.put_env("IAM_REGISTRATION_KEY", "")
+    assert_raise RuntimeError, ~r/IAM_REGISTRATION_KEY must be/, &runtime/0
+    System.delete_env("IAM_REGISTRATION_KEY")
+    assert_raise System.EnvError, &runtime/0
   end
 
   test "an existing Matrix namespace can be retained when moving its database" do

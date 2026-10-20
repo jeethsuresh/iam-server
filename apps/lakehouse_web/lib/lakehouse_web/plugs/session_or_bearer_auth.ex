@@ -33,7 +33,7 @@ defmodule LakehouseWeb.Plugs.SessionOrBearerAuth do
             username = claims["username"]
 
             case LakehouseIam.Accounts.fetch_user(username) do
-              {:ok, principal} ->
+              {:ok, %{active: true} = principal} ->
                 conn
                 |> assign(:jwt_claims, claims)
                 |> assign(:username, username)
@@ -42,7 +42,7 @@ defmodule LakehouseWeb.Plugs.SessionOrBearerAuth do
                 |> assign(:auth_token, token)
                 |> assign(:current_user_is_admin, LakehouseIam.Accounts.admin?(username))
 
-              :error ->
+              _ ->
                 maybe_halt_unauthorized(conn, "Unknown user")
             end
 

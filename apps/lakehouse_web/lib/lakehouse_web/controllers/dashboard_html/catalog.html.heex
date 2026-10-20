@@ -1,0 +1,18 @@
+<div class="dashboard-page catalog-page">
+  <header class="page-heading"><div><p class="eyebrow">ADMINISTRATION</p><h1>Service catalog</h1><p>A shared starting point for everyone on Gravitas.</p></div><a href={~p"/dashboard"} class="text-link">Back to services ↗</a></header>
+  <%= for {kind, message} <- @flash do %><div role="status" class={"flash flash--#{kind}"}><%= message %></div><% end %>
+  <div class="catalog-columns"><section class="catalog-form-panel"><h2>Add a service</h2><p class="muted">Choose an app that supports signing in with Gravitas.</p>
+    <.form for={@form} action={~p"/services"} id="service-form">
+      <label for="service-name">Service name</label><input id="service-name" type="text" name="service[name]" value={@form[:name].value} required maxlength="80" placeholder="e.g. Fieldnotes" /><span class="field-error"><%= errors(@form, :name) %></span>
+      <label for="service-description">Description <span class="optional">optional</span></label><textarea id="service-description" name="service[description]" maxlength="240" rows="3" placeholder="What is this service for?"><%= @form[:description].value %></textarea><span class="field-error"><%= errors(@form, :description) %></span>
+      <label for="service-home">Service URL</label><input id="service-home" name="service[home_url]" type="url" value={@form[:home_url].value} required placeholder="https://notes.gravitas.cool" /><span class="field-error"><%= errors(@form, :home_url) %></span>
+      <label for="service-login">Sign-in URL</label><input id="service-login" name="service[login_url]" type="url" value={@form[:login_url].value} required placeholder="https://notes.gravitas.cool/auth/gravitas/start" /><span class="field-error"><%= errors(@form, :login_url) %></span>
+      <p class="field-help">The app’s Gravitas sign-in entry point, on the same domain as the service. The app uses this to create its own secure session.</p>
+      <button type="submit" class="primary-button">Add service</button>
+    </.form>
+  </section><section class="catalog-list-panel"><div class="section-heading"><h2>In the catalog <span class="count"><%= length(@services) %></span></h2></div>
+    <%= if @services == [] do %><div class="empty-state"><h3>Room for something useful.</h3><p>Your first service will appear here and on everyone’s dashboard.</p></div><% end %>
+    <%= for service <- @services do %><article class="catalog-row"><span class="service-icon"><%= initial(service.name) %></span><div><h3><%= service.name %></h3><p><%= service.home_url %></p></div><form action={~p"/services/#{service.id}/delete"} method="post"><input type="hidden" name="_csrf_token" value={get_csrf_token()} /><button type="submit" class="remove-button" aria-label={"Remove " <> service.name}>Remove</button></form></article><% end %>
+    <p class="field-help">Adding a service makes it discoverable. Each person still chooses whether to connect their account.</p>
+  </section></div>
+</div>

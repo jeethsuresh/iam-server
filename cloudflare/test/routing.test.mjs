@@ -8,6 +8,7 @@ function environment(fetch = async () => new Response('iam')) {
     DATABASE_URL: 'postgres://test:password@db.example.com/iam',
     JWT_SECRET: 'j'.repeat(32), SECRET_KEY_BASE: 's'.repeat(64),
     IAM_ADMIN_PASSWORD: 'test-admin-password',
+    IAM_REGISTRATION_KEY: 'test-invitation-key',
     IAM: { getByName(name) { assert.equal(name, 'iam-primary'); return { fetch }; } },
   };
 }
@@ -61,10 +62,12 @@ test('WebSocket upgrades use the same named container', async () => {
 test('secrets are runtime environment only with no insecure production defaults', () => {
   assert.throws(() => containerEnvironment({ ...environment(), JWT_SECRET: '' }), /Missing JWT_SECRET/);
   assert.throws(() => containerEnvironment({ ...environment(), SECRET_KEY_BASE: 'short' }), /64/);
+  assert.throws(() => containerEnvironment({ ...environment(), IAM_REGISTRATION_KEY: '' }), /Missing IAM_REGISTRATION_KEY/);
   const env = containerEnvironment(environment());
   assert.equal(env.IAM_PUBLIC_URL, 'https://iam.example.com');
   assert.equal(env.IAM_DOMAIN, 'example.com');
   assert.equal(containerEnvironment({ ...environment(), MATRIX_DOMAIN: 'legacy.example' }).MATRIX_DOMAIN, 'legacy.example');
   assert.equal(env.IAM_ADMIN_PASSWORD, 'test-admin-password');
+  assert.equal(env.IAM_REGISTRATION_KEY, 'test-invitation-key');
   assert.equal(env.IAM_RELAXED_CALLBACK_URLS, undefined);
 });

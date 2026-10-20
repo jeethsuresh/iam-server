@@ -2,6 +2,23 @@
 Feature: IAM registration and login
   Users register, admins approve, and login returns a JWT.
 
+  Scenario: Invitation key permits signup for administrator approval
+    When I register via API as "invited" with password "password123" and key "test-invitation-key"
+    Then the API response status should be 200
+    And account "invited" should await approval
+
+  @negative
+  Scenario: Missing invitation key blocks signup
+    When I register via API as "uninvited" with password "password123"
+    Then the API response status should be 403
+    And account "uninvited" should not exist
+
+  @negative
+  Scenario: Wrong invitation key blocks signup
+    When I register via API as "uninvited" with password "password123" and key "wrong"
+    Then the API response status should be 403
+    And account "uninvited" should not exist
+
   Scenario: Pending user is approved and can log in
     Given the bootstrap admin is available
     And a pending user "carol" with password "password123"

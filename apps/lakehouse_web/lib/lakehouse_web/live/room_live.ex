@@ -66,7 +66,7 @@ defmodule LakehouseWeb.RoomLive do
         {:noreply,
          socket
          |> assign(:rooms, Rooms.list_rooms_for(socket.assigns.principal_id))
-         |> push_patch(to: ~p"/rooms/#{room_uuid}")}
+         |> push_patch(to: ~p"/groups/#{room_uuid}")}
 
       {:error, _} ->
         {:noreply, put_flash(socket, :error, "Could not create room.")}
@@ -237,7 +237,7 @@ defmodule LakehouseWeb.RoomLive do
          typing_users: [],
          typing_label: nil
        )
-       |> push_patch(to: ~p"/rooms")}
+       |> push_patch(to: ~p"/groups")}
     else
       {:noreply, socket}
     end
@@ -471,7 +471,7 @@ defmodule LakehouseWeb.RoomLive do
           typing_label: nil
         )
         |> put_flash(:error, "Room not found.")
-        |> push_patch(to: ~p"/rooms")
+        |> push_patch(to: ~p"/groups")
 
       room ->
         if Memberships.joined?(room.id, principal_id) do
@@ -509,7 +509,7 @@ defmodule LakehouseWeb.RoomLive do
             typing_label: nil
           )
           |> put_flash(:error, "You are not a member of this room.")
-          |> push_patch(to: ~p"/rooms")
+          |> push_patch(to: ~p"/groups")
         end
     end
   end

@@ -15,6 +15,7 @@ defmodule LakehouseAppDemo.Router do
     pipe_through :browser
 
     get "/", PageController, :index
+    get "/auth/gravitas/start", PageController, :launch
     post "/login", PageController, :start_login
     get "/oauth/callback", PageController, :callback
     get "/logout", PageController, :logout

@@ -44,7 +44,7 @@ defmodule LakehouseMatrix.Media.Store.S3 do
         receive_timeout: 10_000,
         aws_sigv4: [
           service: :s3,
-          region: "auto",
+          region: Keyword.get(config, :region, "auto"),
           access_key_id: Keyword.fetch!(config, :access_key_id),
           secret_access_key: Keyword.fetch!(config, :secret_access_key)
         ]

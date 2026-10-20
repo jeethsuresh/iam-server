@@ -1,3 +1,7 @@
+## Gravitas dashboard and Kubernetes
+
+The signed-in home now lists connected and available services. Administrators maintain the shared service catalog; Groups keeps the existing room experience. See [DigitalOcean Kubernetes deployment and service integration](docs/kubernetes.md) for release images, database storage, optional failover, wildcard TLS, secret configuration and the app-side PKCE login contract.
+
 # Lakehouse — IAM + Matrix-style rooms + WebRTC orchestration (Elixir umbrella)
 
 This repository implements the architecture described in `original-plan.md`:

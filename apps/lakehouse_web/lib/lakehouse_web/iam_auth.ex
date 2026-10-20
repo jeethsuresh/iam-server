@@ -84,7 +84,14 @@ defmodule LakehouseWeb.IamAuth do
           grant = Grants.get(principal.id, sess.app_origin)
 
           if skip_consent?(grant, sess.scopes) do
-            finish_with_code(sess, principal, session_id, grant.room_mode, grant.room_ids, user_jwt)
+            finish_with_code(
+              sess,
+              principal,
+              session_id,
+              grant.room_mode,
+              grant.room_ids,
+              user_jwt
+            )
           else
             {:ok,
              %{
@@ -116,8 +123,17 @@ defmodule LakehouseWeb.IamAuth do
     end
   end
 
-  @spec register(String.t(), String.t()) :: {:ok, LakehouseIam.Schema.Principal.t()} | error()
-  def register(username, password) do
+  @spec register(String.t(), String.t(), term()) ::
+          {:ok, LakehouseIam.Schema.Principal.t()} | error()
+  def register(username, password, registration_key) do
+    with :ok <- LakehouseIam.Registration.authorize(registration_key) do
+      create_account(username, password)
+    else
+      {:error, message} -> {:error, :forbidden, message}
+    end
+  end
+
+  defp create_account(username, password) when is_binary(username) and is_binary(password) do
     case Accounts.register_user(username, password) do
       {:ok, principal} ->
         {:ok, principal}
@@ -129,6 +145,8 @@ defmodule LakehouseWeb.IamAuth do
         {:error, :bad_request, bin}
     end
   end
+
+  defp create_account(_, _), do: {:error, :bad_request, "username and password are required"}
 
   defp format_changeset(cs) do
     Ecto.Changeset.traverse_errors(cs, fn {msg, opts} ->

@@ -24,6 +24,8 @@ config :lakehouse_iam,
   admin_username: "admin",
   admin_password: "adminpass"
 
+config :lakehouse_iam, :registration_key, "test-invitation-key"
+
 demo_port = String.to_integer(System.get_env("DEMO_PORT") || "4102")
 
 config :lakehouse_app_demo,

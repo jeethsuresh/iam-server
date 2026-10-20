@@ -18,7 +18,7 @@ defmodule LakehouseWeb.UserAuth do
             username = claims["username"]
 
             case LakehouseIam.Accounts.fetch_user(username) do
-              {:ok, principal} ->
+              {:ok, %{active: true} = principal} ->
                 {:cont,
                  assign(socket,
                    username: username,
@@ -26,7 +26,7 @@ defmodule LakehouseWeb.UserAuth do
                    current_user_is_admin: LakehouseIam.Accounts.admin?(username)
                  )}
 
-              :error ->
+              _ ->
                 {:halt, redirect(socket, to: ~p"/")}
             end
 

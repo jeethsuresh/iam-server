@@ -1,0 +1,19 @@
+FROM hexpm/elixir:1.18.5-erlang-27.3.4.17-alpine-3.21.7 AS build
+RUN apk add --no-cache build-base git
+WORKDIR /app
+ENV MIX_ENV=prod
+RUN mix local.hex --force && mix local.rebar --force
+COPY mix.exs mix.lock .formatter.exs ./
+COPY config config
+COPY apps apps
+RUN mix deps.get --only prod && mix deps.compile && mix compile && mix release lakehouse
+
+FROM alpine:3.21
+RUN apk add --no-cache libstdc++ openssl ncurses-libs ca-certificates imagemagick imagemagick-jpeg \
+    && addgroup -S -g 1000 lakehouse && adduser -S -u 1000 -G lakehouse lakehouse
+WORKDIR /app
+COPY --from=build --chown=lakehouse:lakehouse /app/_build/prod/rel/lakehouse ./
+ENV PHX_SERVER=true PORT=4000 RELEASE_DISTRIBUTION=none RELEASE_TMP=/tmp HOME=/tmp ERL_CRASH_DUMP=/tmp/erl_crash.dump
+USER lakehouse
+EXPOSE 4000
+CMD ["/app/bin/lakehouse", "start"]

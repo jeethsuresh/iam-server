@@ -1,4 +1,3 @@
-<header class="settings-header">
-  <a href={~p"/rooms"} class="settings-header__back">← Rooms</a>
-</header>
-<%= @inner_content %>
+<.shell username={@username} admin={@current_user_is_admin} active={:settings}>
+  <%= @inner_content %>
+</.shell>

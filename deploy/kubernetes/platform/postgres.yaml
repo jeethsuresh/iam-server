@@ -1,0 +1,36 @@
+# Install a supported CloudNativePG operator before applying this resource.
+# Default: one Postgres pod with one persistent DigitalOcean block volume.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: iam-db
+  namespace: iam
+spec:
+  instances: 1
+  enableSuperuserAccess: false
+  bootstrap:
+    initdb:
+      database: iam
+      owner: iam
+  storage:
+    size: 10Gi
+    storageClass: do-block-storage
+  affinity:
+    enablePodAntiAffinity: true
+    podAntiAffinityType: preferred
+    topologyKey: kubernetes.io/hostname
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 100m
+      memory: 256Mi
+  postgresql:
+    parameters:
+      shared_buffers: 32MB
+      max_connections: "30"
+      work_mem: 2MB
+      maintenance_work_mem: 16MB
+  # Configure and verify off-cluster backups before importing real accounts.
+  # Replicas and persistent disks alone do not protect against accidental deletion.

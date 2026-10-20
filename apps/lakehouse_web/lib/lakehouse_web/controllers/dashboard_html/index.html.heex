@@ -1,0 +1,32 @@
+<div class="dashboard-page">
+  <header class="page-heading"><div><p class="eyebrow">YOUR GRAVITAS ACCOUNT</p><h1>A little more connected.</h1><p>All your services. One place to call home.</p></div><span class="session-status"><span></span> Signed in securely</span></header>
+  <%= for {kind, message} <- @flash do %><div role="status" class={"flash flash--#{kind}"}><%= message %></div><% end %>
+  <section aria-labelledby="connected-heading" class="service-section">
+    <div class="section-heading"><div><h2 id="connected-heading">Connected services <span class="count"><%= length(@directory.connected) + length(@directory.uncatalogued) %></span></h2><p>Your account is connected. Pick up where you left off.</p></div><a href={~p"/settings"} class="text-link">Manage connections ↗</a></div>
+    <div class="service-grid" id="connected-services">
+      <%= for service <- @directory.connected do %>
+        <article class="service-card service-card--connected">
+          <div class="card-top"><span class="service-icon"><%= initial(service.name) %></span><span class="connection-badge"><span></span> Connected</span></div>
+          <h3><%= service.name %></h3><div class="service-domain"><%= hostname(service.home_url) %></div><p><%= service.description || "Your Gravitas account, connected." %></p>
+          <a href={~p"/services/#{service.id}/launch"} class="service-action" data-service={service.name}>Open service <span aria-hidden="true">↗</span><span class="sr-only"> <%= service.name %></span></a>
+        </article>
+      <% end %>
+      <%= for grant <- @directory.uncatalogued do %>
+        <article class="service-card"><div class="card-top"><span class="service-icon">↗</span><span class="connection-badge">Connected</span></div><h3><%= hostname(grant.app_origin) %></h3><p>This connection is outside the service catalog. An administrator can add its sign-in link.</p><a href={grant.app_origin} class="service-action" rel="noreferrer">Visit service ↗</a></article>
+      <% end %>
+    </div>
+    <%= if @directory.connected == [] and @directory.uncatalogued == [] do %>
+      <div class="empty-state"><span class="empty-icon" aria-hidden="true">◈</span><h3>Your next connection starts here.</h3><p>Connect an available service below. It will appear here, ready to open.</p></div>
+    <% end %>
+  </section>
+  <section aria-labelledby="available-heading" class="service-section">
+    <div class="section-heading"><div><h2 id="available-heading">Available services <span class="count"><%= length(@directory.available) %></span></h2><p>A shared collection of apps that welcome your Gravitas account.</p></div><%= if @current_user_is_admin do %><a href={~p"/services/manage"} class="secondary-button">+ Add a service</a><% end %></div>
+    <div class="service-grid" id="available-services">
+      <%= for service <- @directory.available do %>
+        <article class="service-card"><div class="card-top"><span class="service-icon"><%= initial(service.name) %></span><span class="external-mark" aria-hidden="true">↗</span></div><h3><%= service.name %></h3><div class="service-domain"><%= hostname(service.home_url) %></div><p><%= service.description || "Sign in with your Gravitas account." %></p><a href={~p"/services/#{service.id}/launch"} class="service-action" data-service={service.name}>Connect service <span aria-hidden="true">→</span><span class="sr-only"> <%= service.name %></span></a></article>
+      <% end %>
+    </div>
+    <%= if @directory.available == [] do %><div class="empty-state empty-state--compact"><h3><%= if @directory.connected == [], do: "A home for your favorite services.", else: "You’re all connected." %></h3><p><%= if @current_user_is_admin, do: "Add an app to the shared catalog to make it available here.", else: "New services will appear here when your administrator adds them." %></p></div><% end %>
+  </section>
+  <footer class="dashboard-footer"><span class="small-mark">g.</span> One identity. Your corner of the internet.<a href={~p"/groups"}>Find your groups →</a></footer>
+</div>

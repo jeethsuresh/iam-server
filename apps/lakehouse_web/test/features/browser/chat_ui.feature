@@ -2,13 +2,13 @@
 Feature: Browser chat and settings
   Interactive users sign in and use the LiveView rooms UI.
 
-  Scenario: Sign in lands on rooms
+  Scenario: Sign in lands on services
     When I sign in through the browser as "alice" with password "password123"
-    Then I should be on the rooms page
+    Then I should see my services dashboard
 
   Scenario: Sign in with a qualified identity
     When I sign in through the browser as "@qualified:localhost" with password "password123"
-    Then I should be on the rooms page
+    Then I should see my services dashboard
 
   @negative
   Scenario: Invalid browser sign-in shows an error

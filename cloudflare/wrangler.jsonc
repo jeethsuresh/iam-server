@@ -1,14 +1,14 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "iam-server",
+  "name": "iam",
   "main": "src/index.ts",
   "compatibility_date": "2026-10-17",
-  "workers_dev": false,
+  "workers_dev": true,
   "preview_urls": false,
   "observability": { "enabled": true },
   "vars": {
-    "IAM_DOMAIN": "example.com",
-    "IAM_PUBLIC_URL": "https://iam.example.com",
+    "IAM_DOMAIN": "iam.jeeth.workers.dev",
+    "IAM_PUBLIC_URL": "https://iam.jeeth.workers.dev",
     "IAM_ADMIN_USERNAME": "admin"
   },
   "containers": [{

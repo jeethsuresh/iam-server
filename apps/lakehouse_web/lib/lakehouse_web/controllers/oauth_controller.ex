@@ -32,13 +32,15 @@ defmodule LakehouseWeb.OAuthController do
             else
               # Wrong user logged in — send to login for the expected username
               redirect(conn,
-                to: ~p"/?username=#{URI.encode_www_form(sess.username)}&sessionID=#{URI.encode_www_form(session_id)}"
+                to:
+                  ~p"/?username=#{URI.encode_www_form(sess.username)}&sessionID=#{URI.encode_www_form(session_id)}"
               )
             end
 
           :error ->
             redirect(conn,
-              to: ~p"/?username=#{URI.encode_www_form(sess.username)}&sessionID=#{URI.encode_www_form(session_id)}"
+              to:
+                ~p"/?username=#{URI.encode_www_form(sess.username)}&sessionID=#{URI.encode_www_form(session_id)}"
             )
         end
     end
@@ -117,10 +119,14 @@ defmodule LakehouseWeb.OAuthController do
             json(conn, tokens)
 
           {:error, :redirect_mismatch} ->
-            conn |> put_status(400) |> json(%{error: "invalid_grant", error_description: "redirect_uri mismatch"})
+            conn
+            |> put_status(400)
+            |> json(%{error: "invalid_grant", error_description: "redirect_uri mismatch"})
 
           {:error, :invalid_code_verifier} ->
-            conn |> put_status(400) |> json(%{error: "invalid_grant", error_description: "PKCE verification failed"})
+            conn
+            |> put_status(400)
+            |> json(%{error: "invalid_grant", error_description: "PKCE verification failed"})
 
           {:error, _} ->
             conn |> put_status(400) |> json(%{error: "invalid_grant"})
@@ -144,8 +150,14 @@ defmodule LakehouseWeb.OAuthController do
     case get_session(conn, :user_jwt) do
       token when is_binary(token) and token != "" ->
         case Token.verify(token) do
-          {:ok, %{"username" => username}} -> Accounts.fetch_user(username)
-          _ -> :error
+          {:ok, %{"username" => username}} ->
+            case Accounts.fetch_user(username) do
+              {:ok, %{active: true} = principal} -> {:ok, principal}
+              _ -> :error
+            end
+
+          _ ->
+            :error
         end
 
       _ ->

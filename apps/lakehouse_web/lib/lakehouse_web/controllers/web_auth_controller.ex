@@ -20,7 +20,7 @@ defmodule LakehouseWeb.WebAuthController do
         conn
         |> put_session(:user_jwt, token)
         |> put_flash(:info, "Signed in.")
-        |> redirect(to: ~p"/rooms")
+        |> redirect(to: ~p"/dashboard")
 
       {:ok, %{redirect: "/" <> _ = path, user_jwt: jwt}} ->
         conn
@@ -43,7 +43,7 @@ defmodule LakehouseWeb.WebAuthController do
   end
 
   def register(conn, params) do
-    case IamAuth.register(params["username"], params["password"]) do
+    case IamAuth.register(params["username"], params["password"], params["registration_key"]) do
       {:ok, principal} ->
         msg =
           if principal.active do

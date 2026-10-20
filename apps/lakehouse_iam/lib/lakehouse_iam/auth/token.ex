@@ -23,15 +23,23 @@ defmodule LakehouseIam.Auth.Token do
 
     case JOSE.JWT.verify_strict(jwk, ["HS256"], compact) do
       {true, %JOSE.JWT{fields: fields}, _jws} ->
-        {:ok, fields}
+        if is_integer(fields["exp"]) and fields["exp"] > System.system_time(:second) and
+             is_binary(fields["username"]) do
+          {:ok, fields}
+        else
+          :error
+        end
 
       {false, _, _} ->
         :error
     end
+  rescue
+    _ -> :error
   end
 
   defp hs256_jwk do
     secret = Application.fetch_env!(:lakehouse_iam, :jwt_secret)
+
     # Derive a 256-bit oct key from arbitrary configured secret (production should still use a strong secret).
     JOSE.JWK.from_oct(:crypto.hash(:sha256, secret))
   end

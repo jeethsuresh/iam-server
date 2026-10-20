@@ -13,6 +13,7 @@ config :lakehouse_iam,
   token_ttl_seconds: 3600,
   admin_username: System.get_env("IAM_ADMIN_USERNAME", "admin"),
   admin_password: System.get_env("IAM_ADMIN_PASSWORD", ""),
+  registration_key: System.get_env("IAM_REGISTRATION_KEY"),
   relaxed_callback_urls: System.get_env("IAM_RELAXED_CALLBACK_URLS") not in [nil, ""]
 
 config :lakehouse_web, :session_options,
@@ -38,6 +39,7 @@ config :logger, :console,
   metadata: [:request_id]
 
 config :phoenix, :json_library, Jason
+config :phoenix, :filter_parameters, ["password", "registration_key"]
 
 config :lakehouse_matrix, :pubsub, LakehouseWeb.PubSub
 

@@ -8,6 +8,12 @@ project:
   compose_slug: iam-server
 
 scripts:
+  kubernetes_render:
+    run: ./scripts/kubernetes/deploy.sh --render "$IAM_IMAGE"
+    description: Render the DOKS release for a configured immutable IAM_IMAGE
+  kubernetes_deploy:
+    run: ./scripts/kubernetes/deploy.sh "$IAM_IMAGE"
+    description: Migrate and release to the explicit KUBE_CONTEXT; requires registry image and cluster credentials
   cloudflare_check:
     run: ./scripts/cloudflare-check.sh
     description: Install pinned Worker dependencies, type-check, and test discovery/proxy routing

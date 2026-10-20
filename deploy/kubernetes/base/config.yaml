@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: iam-config
+  labels:
+    app.kubernetes.io/name: iam
+    app.kubernetes.io/component: configuration
+data:
+  IAM_PUBLIC_URL: https://gravitas.cool
+  IAM_DOMAIN: gravitas.cool
+  PHX_HOST: gravitas.cool
+  PORT: "4000"
+  POOL_SIZE: "3"
+  DATABASE_CA_FILE: /etc/postgres-ca/ca.crt
+  IAM_EPHEMERAL_DISK: "true"
+  ELIXIR_ERL_OPTIONS: "+S 1:1 +A 2"
+  # Add S3_ENDPOINT, S3_BUCKET and S3_REGION for private Spaces media storage.
+  # Without S3 configuration uploads fail explicitly; nothing is stored on pod disk.

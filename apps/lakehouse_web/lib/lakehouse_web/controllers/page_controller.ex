@@ -5,8 +5,11 @@ defmodule LakehouseWeb.PageController do
     case get_session(conn, :user_jwt) do
       token when is_binary(token) and token != "" ->
         case LakehouseIam.Auth.Token.verify(token) do
-          {:ok, _} when not is_map_key(params, "sessionID") ->
-            redirect(conn, to: ~p"/rooms")
+          {:ok, %{"username" => username}} when not is_map_key(params, "sessionID") ->
+            case LakehouseIam.Accounts.fetch_user(username) do
+              {:ok, %{active: true}} -> redirect(conn, to: ~p"/dashboard")
+              _ -> conn |> delete_session(:user_jwt) |> render_home(params)
+            end
 
           _ ->
             render_home(conn, params)

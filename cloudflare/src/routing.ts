@@ -9,6 +9,7 @@ export interface RuntimeEnv extends Settings {
   SECRET_KEY_BASE: string;
   IAM_ADMIN_USERNAME?: string;
   IAM_ADMIN_PASSWORD?: string;
+  IAM_REGISTRATION_KEY: string;
   MATRIX_DOMAIN?: string;
   R2_ENDPOINT?: string;
   R2_BUCKET?: string;
@@ -31,7 +32,7 @@ export function publicOrigin(env: Settings): URL {
 
 export function containerEnvironment(env: RuntimeEnv): Record<string, string> {
   const issuer = publicOrigin(env);
-  for (const name of ['DATABASE_URL', 'JWT_SECRET', 'SECRET_KEY_BASE', 'IAM_ADMIN_PASSWORD'] as const) {
+  for (const name of ['DATABASE_URL', 'JWT_SECRET', 'SECRET_KEY_BASE', 'IAM_ADMIN_PASSWORD', 'IAM_REGISTRATION_KEY'] as const) {
     if (!env[name]) throw new Error(`Missing ${name} Worker secret`);
   }
   if (env.JWT_SECRET.length < 32 || env.SECRET_KEY_BASE.length < 64) {
@@ -48,6 +49,7 @@ export function containerEnvironment(env: RuntimeEnv): Record<string, string> {
     SECRET_KEY_BASE: env.SECRET_KEY_BASE,
     IAM_ADMIN_USERNAME: env.IAM_ADMIN_USERNAME || 'admin',
     IAM_ADMIN_PASSWORD: env.IAM_ADMIN_PASSWORD || '',
+    IAM_REGISTRATION_KEY: env.IAM_REGISTRATION_KEY,
     PHX_SERVER: 'true', PORT: '4000', RELEASE_DISTRIBUTION: 'none',
   };
   for (const name of ['R2_ENDPOINT', 'R2_BUCKET', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY'] as const) {

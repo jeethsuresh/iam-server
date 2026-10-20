@@ -12,6 +12,35 @@ defmodule LakehouseWeb.Bdd.BrowserSteps do
     {:ok, Map.put(context, :session, session)}
   end
 
+  step "I sign up in the browser as {string} with key {string}",
+       %{args: [username, key]} = context do
+    session =
+      context.session
+      |> visit("/register")
+      |> fill_in(Query.text_field("Username"), with: username)
+      |> fill_in(Query.text_field("Password"), with: "password123")
+      |> fill_in(Query.text_field("Registration key"), with: key)
+      |> click(Query.button("Register"))
+
+    # Wait for the server response before the following account assertions.
+    assert_has(session, Query.css(".flash"))
+    {:ok, Map.put(context, :session, session)}
+  end
+
+  step "I should see registration awaiting approval", context do
+    assert_has(context.session, Query.css(".flash--info", text: "administrator must approve"))
+    :ok
+  end
+
+  step "I should see a registration key error", context do
+    assert_has(
+      context.session,
+      Query.css(".flash--error", text: "A valid registration key is required.")
+    )
+
+    :ok
+  end
+
   step "I sign in through the browser as {string} with password {string}",
        %{args: [username, password]} = context do
     ensure_approved_user(username, password)
@@ -27,7 +56,7 @@ defmodule LakehouseWeb.Bdd.BrowserSteps do
   end
 
   step "I should be on the rooms page", context do
-    assert_has(context.session, Query.css(".chat-master__title", text: "Rooms"))
+    assert_has(context.session, Query.css(".chat-master__title", text: "Groups"))
     :ok
   end
 
@@ -39,6 +68,7 @@ defmodule LakehouseWeb.Bdd.BrowserSteps do
   step "I create a room named {string} in the browser", %{args: [name]} = context do
     session =
       context.session
+      |> click(Query.link("Groups"))
       |> assert_has(Query.css(".chat-master__create"))
       |> fill_in(Query.css(".chat-master__input"), with: name)
       |> click(Query.css(".chat-master__create-btn"))
@@ -175,7 +205,10 @@ defmodule LakehouseWeb.Bdd.BrowserSteps do
 
   defp write_temp_png(filename) do
     path = Path.join(System.tmp_dir!(), "wallaby-#{filename}")
-    {_, 0} = System.cmd("magick", ["-size", "240x180", "plasma:fractal", path], stderr_to_stdout: true)
+
+    {_, 0} =
+      System.cmd("magick", ["-size", "240x180", "plasma:fractal", path], stderr_to_stdout: true)
+
     path
   end
 
@@ -218,7 +251,10 @@ defmodule LakehouseWeb.Bdd.BrowserSteps do
 
   step "I open the demo app", context do
     Application.put_env(:lakehouse_iam, :relaxed_callback_urls, true)
-    demo_port = Application.get_env(:lakehouse_app_demo, LakehouseAppDemo.Endpoint)[:url][:port] || 4102
+
+    demo_port =
+      Application.get_env(:lakehouse_app_demo, LakehouseAppDemo.Endpoint)[:url][:port] || 4102
+
     session = context.session |> visit("http://127.0.0.1:#{demo_port}/")
     assert_has(session, Query.css("h1", text: "Lakehouse App Demo"))
     {:ok, Map.put(context, :session, session)}
@@ -276,6 +312,77 @@ defmodule LakehouseWeb.Bdd.BrowserSteps do
     assert_has(context.session, Query.css("h1", text: "Signed in"))
     assert_has(context.session, Query.css("strong", text: name))
     :ok
+  end
+
+  step "I should see my services dashboard", context do
+    assert_has(context.session, Query.css("h1", text: "A little more connected."))
+    assert_has(context.session, Query.css("#connected-heading", text: "Connected services"))
+    assert_has(context.session, Query.css("#available-heading", text: "Available services"))
+    :ok
+  end
+
+  step "I use a phone-sized browser", context do
+    session = resize_window(context.session, 390, 844)
+    {:ok, Map.put(context, :session, session)}
+  end
+
+  step "I can navigate to my groups on a phone", context do
+    session = context.session |> click(Query.link("Groups"))
+    assert_has(session, Query.css(".chat-master__title", text: "Groups"))
+    # Capture the responsive app after navigation, including the persistent global menu.
+    take_screenshot(session, name: "gravitas-mobile-groups")
+    {:ok, Map.put(context, :session, session)}
+  end
+
+  step "I add service {string} to the shared catalog", %{args: [name]} = context do
+    session =
+      context.session
+      |> click(Query.link("Service catalog"))
+      |> fill_in(Query.text_field("Service name"), with: name)
+      |> fill_in(Query.css("#service-home"), with: "https://notes.example.com/")
+      |> fill_in(Query.css("#service-login"),
+        with: "https://notes.example.com/auth/gravitas/start"
+      )
+      |> click(Query.button("Add service"))
+
+    assert_has(session, Query.css(".catalog-row", text: name))
+    session = session |> click(Query.link("Services"))
+    assert_has(session, Query.css("#available-services", text: name))
+    {:ok, Map.put(context, :session, session)}
+  end
+
+  step "the demo app is in the shared service catalog", _context do
+    Application.put_env(:lakehouse_iam, :relaxed_callback_urls, true)
+    port = Application.get_env(:lakehouse_app_demo, LakehouseAppDemo.Endpoint)[:url][:port]
+
+    {:ok, _} =
+      LakehouseIam.Apps.Catalog.create(%{
+        name: "Demo",
+        home_url: "http://127.0.0.1:#{port}/",
+        login_url: "http://127.0.0.1:#{port}/auth/gravitas/start"
+      })
+
+    :ok
+  end
+
+  step "I launch the demo from my available services", context do
+    session = context.session |> click(Query.css("#available-services a[data-service=Demo]"))
+    # The existing Gravitas session should go directly to consent, without a password form.
+    assert_has(session, Query.css("h1", text: "Authorize application"))
+    refute_has(session, Query.button("Sign in"))
+    {:ok, Map.put(context, :session, session)}
+  end
+
+  step "I sign out of only the demo app and reopen it from connected services", context do
+    port = Application.get_env(:lakehouse_app_demo, LakehouseAppDemo.Endpoint)[:url][:port]
+    session = context.session |> visit("http://127.0.0.1:#{port}/logout")
+    assert_has(session, Query.css("h1", text: "Lakehouse App Demo"))
+    session = session |> visit("/dashboard")
+    assert_has(session, Query.css("#connected-services", text: "Demo"))
+    session = session |> click(Query.css("#connected-services a[data-service=Demo]"))
+    assert_has(session, Query.css("h1", text: "Signed in"))
+    refute_has(session, Query.button("Allow"))
+    {:ok, Map.put(context, :session, session)}
   end
 
   defp ensure_approved_user(username, password) do

@@ -1,0 +1,61 @@
+# DOKS VPC-native networking, Kubernetes >= 1.33, accepted cilium GatewayClass.
+# Applying this resource provisions a billable shared DigitalOcean load balancer.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: gravitas
+  namespace: gravitas-system
+spec:
+  gatewayClassName: cilium
+  infrastructure:
+    annotations:
+      service.beta.kubernetes.io/do-loadbalancer-name: gravitas
+      service.beta.kubernetes.io/do-loadbalancer-tls-passthrough: "true"
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+    - name: apex-https
+      hostname: gravitas.cool
+      protocol: HTTPS
+      port: 443
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - name: gravitas-tls
+      allowedRoutes:
+        namespaces:
+          from: Selector
+          selector:
+            matchLabels:
+              gravitas.cool/gateway-access: "true"
+    - name: apps-https
+      hostname: "*.gravitas.cool"
+      protocol: HTTPS
+      port: 443
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - name: gravitas-tls
+      allowedRoutes:
+        namespaces:
+          from: Selector
+          selector:
+            matchLabels:
+              gravitas.cool/gateway-access: "true"
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: https-redirect
+  namespace: gravitas-system
+spec:
+  parentRefs:
+    - name: gravitas
+      sectionName: http
+  rules:
+    - filters:
+        - type: RequestRedirect
+          requestRedirect:
+            scheme: https
+            statusCode: 301

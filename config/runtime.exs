@@ -52,6 +52,7 @@ if config_env() == :prod do
   secret_key_base = require_secret.("SECRET_KEY_BASE", 64)
   jwt_secret = require_secret.("JWT_SECRET", 32)
   admin_password = require_secret.("IAM_ADMIN_PASSWORD", 12)
+  registration_key = require_secret.("IAM_REGISTRATION_KEY", 1)
   host = System.get_env("PHX_HOST") || public_uri.host
 
   if host == "" or host == "example.com" or host != public_uri.host,
@@ -70,6 +71,7 @@ if config_env() == :prod do
     jwt_secret: jwt_secret,
     admin_username: System.get_env("IAM_ADMIN_USERNAME", "admin"),
     admin_password: admin_password,
+    registration_key: registration_key,
     relaxed_callback_urls: false,
     bootstrap_on_start: false
 
@@ -77,16 +79,19 @@ if config_env() == :prod do
   # when moving an existing database; IAM discovery can use its own domain.
   config :lakehouse_matrix, :homeserver_domain, System.get_env("MATRIX_DOMAIN") || identity_domain
 
-  if endpoint = System.get_env("R2_ENDPOINT") do
-    unless String.starts_with?(endpoint, "https://"), do: raise("R2_ENDPOINT must use HTTPS")
+  if endpoint = System.get_env("S3_ENDPOINT") || System.get_env("R2_ENDPOINT") do
+    unless String.starts_with?(endpoint, "https://"), do: raise("S3_ENDPOINT must use HTTPS")
 
     config :lakehouse_matrix,
       media_store: LakehouseMatrix.Media.Store.S3,
       s3: [
         endpoint: endpoint,
-        bucket: System.fetch_env!("R2_BUCKET"),
-        access_key_id: System.fetch_env!("R2_ACCESS_KEY_ID"),
-        secret_access_key: System.fetch_env!("R2_SECRET_ACCESS_KEY")
+        bucket: System.get_env("S3_BUCKET") || System.fetch_env!("R2_BUCKET"),
+        region: System.get_env("S3_REGION", "auto"),
+        access_key_id:
+          System.get_env("S3_ACCESS_KEY_ID") || System.fetch_env!("R2_ACCESS_KEY_ID"),
+        secret_access_key:
+          System.get_env("S3_SECRET_ACCESS_KEY") || System.fetch_env!("R2_SECRET_ACCESS_KEY")
       ]
   else
     if System.get_env("IAM_EPHEMERAL_DISK") == "true" do

@@ -15,6 +15,19 @@ defmodule LakehouseMatrix.S3StoreTest do
     on_exit(fn -> Application.put_env(:lakehouse_matrix, :s3, old) end)
   end
 
+  test "Spaces requests use the configured signing region" do
+    config = Application.fetch_env!(:lakehouse_matrix, :s3) |> Keyword.put(:region, "nyc3")
+    Application.put_env(:lakehouse_matrix, :s3, config)
+
+    plug = fn conn ->
+      [auth] = Plug.Conn.get_req_header(conn, "authorization")
+      assert auth =~ "/nyc3/s3/aws4_request"
+      Plug.Conn.send_resp(conn, 200, "")
+    end
+
+    assert :ok = S3.put("object", "hello", plug: plug)
+  end
+
   test "R2 requests are signed and response bytes are preserved" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.request_path == "/media/object-id"

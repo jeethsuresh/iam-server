@@ -61,9 +61,17 @@ defmodule LakehouseWeb.Router do
     live_session :require_user,
       on_mount: [{LakehouseWeb.UserAuth, :require_user}],
       root_layout: {LakehouseWeb.Layouts, :root} do
+      live "/groups", RoomLive, :index
+      live "/groups/:id", RoomLive, :show
       live "/rooms", RoomLive, :index
       live "/rooms/:id", RoomLive, :show
     end
+
+    get "/dashboard", DashboardController, :index
+    get "/services/manage", DashboardController, :catalog
+    post "/services", DashboardController, :create
+    post "/services/:id/delete", DashboardController, :delete
+    get "/services/:id/launch", DashboardController, :launch
 
     get "/settings", SettingsController, :index
     get "/profile", IamProfileController, :show
@@ -120,6 +128,7 @@ defmodule LakehouseWeb.Router do
   scope "/api/v1", LakehouseWeb.Api, as: :api do
     pipe_through [:api, :authenticated]
 
+    resources "/services", ServiceController, only: [:index, :create, :delete]
     resources "/rooms", RoomController, only: [:index, :create, :show]
   end
 
