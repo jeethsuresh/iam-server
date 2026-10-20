@@ -1,0 +1,20 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: iam
+resources:
+  - ../base
+  - postgres.yaml
+  - media.yaml
+  - ingress.yaml
+patches:
+  - path: app-storage.yaml
+  - target:
+      kind: ConfigMap
+      name: iam-config
+    patch: |-
+      - op: replace
+        path: /data/IAM_EPHEMERAL_DISK
+        value: "false"
+      - op: add
+        path: /data/LAKEHOUSE_MEDIA_ROOT
+        value: /var/lib/iam/media

@@ -13,3 +13,5 @@ tmp
 cloudflare/node_modules
 cloudflare/.wrangler
 apps/*/assets/node_modules
+
+.local

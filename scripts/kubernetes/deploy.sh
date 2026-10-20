@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+overlay="${IAM_KUSTOMIZE_OVERLAY:-digitalocean}"
+case "$overlay" in
+  digitalocean|gravitas) ;;
+  *) echo 'IAM_KUSTOMIZE_OVERLAY must be digitalocean or gravitas' >&2; exit 1 ;;
+esac
 render_only=0
 if [[ "${1:-}" == --render ]]; then render_only=1; shift; fi
 image="${1:?Usage: KUBE_CONTEXT=... deploy.sh [--render] registry/iam:commit-tag}"
@@ -10,13 +15,13 @@ if [[ ! "$image" =~ ^[a-zA-Z0-9./:_@-]+$ || "$image" == *:latest || ( "$image" !
 fi
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
-cp -R "$root/deploy/kubernetes/base" "$root/deploy/kubernetes/digitalocean" "$work/"
+cp -R "$root/deploy/kubernetes/base" "$root/deploy/kubernetes/$overlay" "$work/"
 if [[ "$image" == *@sha256:* ]]; then
-  printf '\nimages:\n  - name: iam\n    newName: %s\n    digest: %s\n' "${image%@*}" "${image#*@}" >> "$work/digitalocean/kustomization.yaml"
+  printf '\nimages:\n  - name: iam\n    newName: %s\n    digest: %s\n' "${image%@*}" "${image#*@}" >> "$work/$overlay/kustomization.yaml"
 else
-  printf '\nimages:\n  - name: iam\n    newName: %s\n    newTag: %s\n' "${image%:*}" "${image##*:}" >> "$work/digitalocean/kustomization.yaml"
+  printf '\nimages:\n  - name: iam\n    newName: %s\n    newTag: %s\n' "${image%:*}" "${image##*:}" >> "$work/$overlay/kustomization.yaml"
 fi
-kubectl kustomize "$work/digitalocean" > "$work/release.yaml"
+kubectl kustomize "$work/$overlay" > "$work/release.yaml"
 if [[ "$render_only" == 1 ]]; then cat "$work/release.yaml"; exit 0; fi
 : "${KUBE_CONTEXT:?Set KUBE_CONTEXT explicitly to your DOKS kubectl context}"
 kube=(kubectl --context "$KUBE_CONTEXT" --namespace iam)

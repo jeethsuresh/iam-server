@@ -20,3 +20,5 @@ erl_crash.dump
 /cloudflare/.wrangler/
 /cloudflare/dist/
 /cloudflare/.dev.vars*
+
+/.local/

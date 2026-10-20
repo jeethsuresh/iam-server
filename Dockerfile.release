@@ -1,7 +1,7 @@
 FROM hexpm/elixir:1.18.5-erlang-27.3.4.17-alpine-3.21.7 AS build
 RUN apk add --no-cache build-base git
 WORKDIR /app
-ENV MIX_ENV=prod
+ENV MIX_ENV=prod ERL_FLAGS="+S 2:2 +SDcpu 1 +SDio 1 +A 2"
 RUN mix local.hex --force && mix local.rebar --force
 COPY mix.exs mix.lock .formatter.exs ./
 COPY config config

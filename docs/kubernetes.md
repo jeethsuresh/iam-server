@@ -1,3 +1,21 @@
+# Live Gravitas deployment
+
+The deployed overlay is `deploy/kubernetes/gravitas`: the existing shared Traefik ingress, an IAM-only Postgres StatefulSet, verified database TLS, retained database storage and a separate retained media volume. It does not install a cluster-wide database operator or another load balancer. The optional CloudNativePG/Cilium templates below are alternatives and are not used by this installation.
+
+IAM is at **https://gravitas.cool**. Traefik owns the shared apex/wildcard certificate in its own namespace; the IAM Ingress references the apex host without a certificate secret. Keep Namecheap credentials out of IAM and Kubernetes. Shared certificate and DNS management is maintained with the RSS/Office infrastructure.
+
+The first installation starts fresh; Forge's accounts, groups and media are left untouched. Runtime credentials, the database CA and the first-install administrator login are kept locally under `.local/gravitas/` with owner-only permissions, excluded from Git and Docker contexts. `admin-login.env` contains the administrator login. Runtime secrets also exist in namespace `iam`; the app uses a non-superuser Postgres role. Database connections require TLS and verify a private CA; plaintext database connections are rejected.
+
+All application, database and migration-job CPU/memory requests equal their limits: **100m CPU / 256Mi memory**. The database uses a retained 10Gi volume, and private media uses a retained 1Gi volume. A replacement pod can reattach these volumes; there is a recovery interruption. Back up and test restoring these volumes and a logical database export; automated off-cluster backups are not yet configured. The database leaf certificate needs renewal before its one-year expiry using the retained CA; replace `iam-db-server-tls` and restart Postgres after renewal.
+
+GitHub Actions publishes an AMD64 image from `Dockerfile.release` on the deployment branch and main, with immutable commit tags and an image digest. Deploy the selected digest explicitly:
+
+```sh
+IAM_KUSTOMIZE_OVERLAY=gravitas KUBE_CONTEXT=do-tor1-gravitas-k8s-services ./scripts/kubernetes/deploy.sh ghcr.io/jeethsuresh/iam-server@sha256:YOUR_DIGEST
+```
+
+The first-install bootstrap uses `scripts/kubernetes/bootstrap.sh`; do not repeat it during upgrades because it can reset the administrator password. Registration requires the configured invitation key and administrator approval. Service catalog entries should be added only after their app supports the Gravitas PKCE sign-in entry point.
+
 # Gravitas on DigitalOcean Kubernetes
 
 This keeps Phoenix, Postgres, Matrix groups and the existing PKCE protocol. The signed-in home is `/dashboard`; public identity and discovery live at `https://gravitas.cool`. There is no Worker or Cloudflare Container in this deployment.
