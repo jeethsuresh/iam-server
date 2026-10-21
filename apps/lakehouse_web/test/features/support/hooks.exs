@@ -21,10 +21,6 @@ defmodule LakehouseWeb.Bdd.Hooks do
   end
 
   after_scenario context do
-    for {key, value} <- Map.get(context, :identity_config_before, %{}) do
-      Application.put_env(:lakehouse_iam, key, value)
-    end
-
     case Map.get(context, :session) do
       nil -> :ok
       session -> Wallaby.end_session(session)
