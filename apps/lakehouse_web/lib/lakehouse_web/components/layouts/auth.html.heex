@@ -1,5 +1,5 @@
 <nav class="auth-nav">
-  <a href={~p"/"}>Sign in</a>
-  <a href={~p"/register"}>Register</a>
+  <a href={LakehouseWeb.IamAuth.login_path(Map.get(assigns, :username), Map.get(assigns, :session_id))}>Sign in</a>
+  <a href={LakehouseWeb.IamAuth.registration_path(Map.get(assigns, :session_id))}>Register</a>
 </nav>
 <%= @inner_content %>

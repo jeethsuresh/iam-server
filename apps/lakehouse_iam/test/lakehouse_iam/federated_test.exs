@@ -49,6 +49,23 @@ defmodule LakehouseIam.FederatedTest do
     assert msg =~ "same origin"
   end
 
+  test "a session without a username binds once to the authenticated local user" do
+    assert {:ok, sid, nil} =
+             Federated.register(%{
+               caller_url: "http://127.0.0.1:4100/",
+               redirect_url: "http://127.0.0.1:4100/callback",
+               code_challenge: Pkce.challenge(Pkce.generate_verifier()),
+               state: "app-owned-state",
+               scope: "profile.name"
+             })
+
+    assert Federated.fetch(sid).username == nil
+    assert {:ok, %{username: "alice"}} = Federated.bind_user(sid, "alice")
+    assert {:ok, %{username: "alice"}} = Federated.bind_user(sid, "alice")
+    assert {:error, :username_mismatch} = Federated.bind_user(sid, "bob")
+    assert Federated.fetch(sid).username == "alice"
+  end
+
   test "code is single-use" do
     Federated.put_code("abc", %{
       grant_id: "g1",

@@ -38,12 +38,19 @@ defmodule LakehouseWeb.WebAuthController do
       {:error, _status, body} ->
         conn
         |> put_flash(:error, humanize_error(body))
-        |> redirect(to: ~p"/")
+        |> redirect(to: IamAuth.login_path(username, session_id))
     end
   end
 
   def register(conn, params) do
-    case IamAuth.register(params["username"], params["password"], params["registration_key"]) do
+    session_id = params["sessionID"]
+
+    result =
+      with :ok <- IamAuth.registration_session(session_id, params["username"]) do
+        IamAuth.register(params["username"], params["password"], params["registration_key"])
+      end
+
+    case result do
       {:ok, principal} ->
         msg =
           if principal.active do
@@ -52,14 +59,26 @@ defmodule LakehouseWeb.WebAuthController do
             "Registration received. An administrator must approve your account before you can sign in."
           end
 
-        conn
-        |> put_flash(:info, msg)
-        |> redirect(to: ~p"/")
+        if session_id in [nil, ""] do
+          conn |> put_flash(:info, msg) |> redirect(to: ~p"/")
+        else
+          case LakehouseIam.Federated.bind_user(session_id, principal.username) do
+            {:ok, _} ->
+              conn
+              |> put_flash(:info, msg)
+              |> redirect(to: IamAuth.login_path(principal.username, session_id))
+
+            {:error, _} ->
+              conn
+              |> put_flash(:info, msg <> " Start sign-in again from your app.")
+              |> redirect(to: ~p"/")
+          end
+        end
 
       {:error, _status, body} ->
         conn
         |> put_flash(:error, humanize_error(body))
-        |> redirect(to: ~p"/register")
+        |> redirect(to: IamAuth.registration_path(session_id))
     end
   end
 

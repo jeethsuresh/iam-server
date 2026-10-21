@@ -12,6 +12,7 @@ cat > "$work/kubectl" <<'MOCK'
 set -euo pipefail
 if [[ "$1" == kustomize ]]; then exec "$IAM_TEST_KUBECTL" "$@"; fi
 printf '%s\n' "$*" >> "$IAM_TEST_LOG"
+if [[ "$*" == *'get deployment iam -o jsonpath='* ]]; then printf '1'; fi
 if [[ "$*" == *'wait --for=condition=complete'* && "${IAM_TEST_FAIL_MIGRATION:-0}" == 1 ]]; then exit 1; fi
 MOCK
 chmod +x "$work/kubectl"
@@ -35,4 +36,20 @@ PY
 if IAM_TEST_FAIL_MIGRATION=1 "$root/scripts/kubernetes/deploy.sh" "$image" 2> "$work/error"; then echo 'Expected failed migration'; exit 1; fi
 if grep -q 'app.kubernetes.io/component=server\|rollout status' "$IAM_TEST_LOG"; then echo 'Failed migration updated app'; exit 1; fi
 if "$root/scripts/kubernetes/deploy.sh" --render registry.example.com/iam:latest > /dev/null 2>&1; then echo 'Mutable latest tag accepted'; exit 1; fi
+: > "$IAM_TEST_LOG"
+IAM_MAINTENANCE_RELEASE=1 "$root/scripts/kubernetes/deploy.sh" "$image"
+python3 - "$IAM_TEST_LOG" <<'PY'
+from pathlib import Path
+import sys
+calls=Path(sys.argv[1]).read_text().splitlines()
+pause=next(i for i,x in enumerate(calls) if 'scale deployment/iam --replicas=0' in x)
+deleted=next(i for i,x in enumerate(calls) if 'wait --for=delete pod' in x)
+migrate=next(i for i,x in enumerate(calls) if 'create job ' in x)
+app=next(i for i,x in enumerate(calls) if 'app.kubernetes.io/component=server' in x and 'apply ' in x)
+assert pause < deleted < migrate < app
+PY
+: > "$IAM_TEST_LOG"
+if IAM_MAINTENANCE_RELEASE=1 IAM_TEST_FAIL_MIGRATION=1 "$root/scripts/kubernetes/deploy.sh" "$image" 2> "$work/error"; then echo 'Expected failed maintenance migration'; exit 1; fi
+grep -q 'scale deployment/iam --replicas=1' "$IAM_TEST_LOG" || { echo 'Failed maintenance release did not restore old pod'; exit 1; }
+if grep -q 'apply .*app.kubernetes.io/component=server' "$IAM_TEST_LOG"; then echo 'Failed maintenance migration updated app'; exit 1; fi
 echo 'kubernetes/deploy_test.sh: OK (render, migration ordering, failure gate)'

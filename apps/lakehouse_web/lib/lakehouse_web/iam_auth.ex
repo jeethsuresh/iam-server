@@ -71,19 +71,14 @@ defmodule LakehouseWeb.IamAuth do
   end
 
   @doc "Continue federated flow for an already-authenticated principal."
-  def continue_federated(principal, session_id) do
-    case Federated.fetch(session_id) do
-      nil ->
-        {:error, :internal_server_error, "Session ID does not exist."}
+  def continue_federated(principal, session_id, opts \\ []) do
+    case Federated.bind_user(session_id, principal.username) do
+      {:ok, sess} ->
+        user_jwt = Token.issue(principal.username)
+        grant = Grants.get(principal.id, sess.app_origin)
 
-      sess ->
-        if sess.username != principal.username do
-          {:error, :unauthorized, "Invalid session ID."}
-        else
-          user_jwt = Token.issue(principal.username)
-          grant = Grants.get(principal.id, sess.app_origin)
-
-          if skip_consent?(grant, sess.scopes) do
+        cond do
+          skip_consent?(grant, sess.scopes) ->
             finish_with_code(
               sess,
               principal,
@@ -92,16 +87,62 @@ defmodule LakehouseWeb.IamAuth do
               grant.room_ids,
               user_jwt
             )
-          else
+
+          Keyword.get(opts, :silent, false) ->
+            {:error, :consent_required, "Application consent is required."}
+
+          true ->
             {:ok,
              %{
                redirect: "/oauth/consent?sessionID=#{URI.encode_www_form(session_id)}",
                user_jwt: user_jwt
              }}
-          end
         end
+
+      {:error, :username_mismatch} ->
+        {:error, :unauthorized, "Invalid session ID."}
+
+      {:error, _} ->
+        {:error, :bad_request, "Session ID does not exist or has expired."}
     end
   end
+
+  def login_path(username \\ nil, session_id \\ nil) do
+    query = %{}
+
+    query =
+      if is_binary(username) and username != "",
+        do: Map.put(query, "username", username),
+        else: query
+
+    query =
+      if is_binary(session_id) and session_id != "",
+        do: Map.put(query, "sessionID", session_id),
+        else: query
+
+    if map_size(query) == 0, do: "/", else: "/?" <> URI.encode_query(query)
+  end
+
+  def registration_path(session_id) when is_binary(session_id) and session_id != "",
+    do: "/register?" <> URI.encode_query(%{"sessionID" => session_id})
+
+  def registration_path(_), do: "/register"
+
+  def registration_session(session_id, _username) when session_id in [nil, ""], do: :ok
+
+  def registration_session(session_id, username) when is_binary(username) do
+    case Federated.fetch(session_id) do
+      nil ->
+        {:error, :bad_request, "Application login session has expired. Start again from the app."}
+
+      %{username: expected} ->
+        if expected in [nil, Accounts.normalize_username(username || "")],
+          do: :ok,
+          else: {:error, :bad_request, "Register the username requested by this application."}
+    end
+  end
+
+  def registration_session(_, _), do: {:error, :bad_request, "username is required"}
 
   defp skip_consent?(nil, _), do: false
 

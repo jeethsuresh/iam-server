@@ -8,7 +8,7 @@ defmodule LakehouseWeb.IamBackendController do
           sessionID: session_id,
           username: canonical_username,
           domain: LakehouseIam.Identifier.domain(),
-          userID: LakehouseIam.Identifier.format(canonical_username),
+          userID: if(canonical_username, do: LakehouseIam.Identifier.format(canonical_username)),
           authorizationURL:
             LakehouseIam.Discovery.public_url() <> "/oauth/authorize?sessionID=" <> session_id
         })

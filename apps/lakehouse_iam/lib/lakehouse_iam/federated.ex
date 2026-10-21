@@ -17,7 +17,10 @@ defmodule LakehouseIam.Federated do
   end
 
   def register(attrs) when is_map(attrs) do
-    with {:ok, username} <- Identifier.local_username(attr(attrs, :username, "username")),
+    state = attr(attrs, :state, "state")
+
+    with {:ok, username} <- optional_username(attr(attrs, :username, "username")),
+         :ok <- validate_state(state, username),
          {:ok, scopes} <- Scopes.parse(attr(attrs, :scope, "scope") || ""),
          caller_url <- attr(attrs, :caller_url, "callerURL"),
          redirect_url <- attr(attrs, :redirect_url, "redirectURL"),
@@ -40,7 +43,7 @@ defmodule LakehouseIam.Federated do
         code_challenge: challenge,
         code_challenge_method: "S256",
         scopes: scopes,
-        state: attr(attrs, :state, "state")
+        state: state
       }
 
       with :ok <- put_entry(id, :session, session, @session_ttl_ms), do: {:ok, id, username}
@@ -68,6 +71,29 @@ defmodule LakehouseIam.Federated do
   end
 
   def fetch(_), do: nil
+
+  @doc "Bind an unclaimed request once to a verified local principal."
+  def bind_user(id, username) when is_binary(id) and is_binary(username) do
+    Repo.transaction(fn ->
+      entry =
+        Repo.one(from e in FederatedEntry, where: e.key == ^key(:session, id), lock: "FOR UPDATE")
+
+      cond do
+        is_nil(entry) or entry.expires_at <= now() ->
+          Repo.rollback(:invalid_session)
+
+        entry.data["username"] not in [nil, username] ->
+          Repo.rollback(:username_mismatch)
+
+        true ->
+          data = Map.put(entry.data, "username", username)
+          entry |> Ecto.Changeset.change(data: data) |> Repo.update!()
+          decode(data)
+      end
+    end)
+  end
+
+  def bind_user(_, _), do: {:error, :invalid_session}
 
   def delete(id) do
     Repo.delete_all(from e in FederatedEntry, where: e.key == ^key(:session, id))
@@ -118,6 +144,15 @@ defmodule LakehouseIam.Federated do
     do: CallbackURL.validate(url, name)
 
   defp validate_url(_, name), do: {:error, "#{name} required"}
+  defp optional_username(nil), do: {:ok, nil}
+  defp optional_username(""), do: {:ok, nil}
+  defp optional_username(username), do: Identifier.local_username(username)
+
+  defp validate_state(state, _username) when is_binary(state) and byte_size(state) in 1..1024,
+    do: :ok
+
+  defp validate_state(nil, username) when is_binary(username), do: :ok
+  defp validate_state(_, _), do: {:error, "state must be a nonempty string of at most 1024 bytes"}
   defp attr(attrs, atom, string), do: Map.get(attrs, atom) || Map.get(attrs, string)
   defp key(kind, id), do: :crypto.hash(:sha256, "#{kind}:#{id}") |> Base.encode16(case: :lower)
   defp now, do: System.system_time(:millisecond)

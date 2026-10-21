@@ -26,7 +26,12 @@ defmodule LakehouseIam.Auth.OAuth do
           })
 
         uri = URI.parse(session.redirect_url)
-        q = URI.decode_query(uri.query || "")
+
+        q =
+          URI.decode_query(uri.query || "")
+          |> Map.delete("error")
+          |> Map.delete("error_description")
+
         q = Map.put(q, "code", code)
         q = if session.state, do: Map.put(q, "state", session.state), else: q
         redirect = %URI{uri | query: URI.encode_query(q)} |> URI.to_string()
@@ -52,6 +57,14 @@ defmodule LakehouseIam.Auth.OAuth do
       {:error, _} -> {:error, :invalid_grant}
       _ -> {:error, :invalid_grant}
     end
+  end
+
+  def error_redirect(session, error)
+      when error in ["login_required", "consent_required", "access_denied"] do
+    uri = URI.parse(session.redirect_url)
+    query = URI.decode_query(uri.query || "") |> Map.delete("code") |> Map.put("error", error)
+    query = if session.state, do: Map.put(query, "state", session.state), else: query
+    %URI{uri | query: URI.encode_query(query)} |> URI.to_string()
   end
 
   defp match_redirect(stored, provided) when stored == provided, do: :ok

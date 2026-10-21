@@ -52,6 +52,7 @@ defmodule LakehouseWeb.Router do
   scope "/", LakehouseWeb do
     pipe_through :browser
 
+    get "/oauth/start", OAuthController, :start
     get "/oauth/authorize", OAuthController, :authorize
   end
 
