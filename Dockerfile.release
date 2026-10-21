@@ -13,7 +13,9 @@ RUN apk add --no-cache libstdc++ openssl ncurses-libs ca-certificates imagemagic
     && addgroup -S -g 1000 lakehouse && adduser -S -u 1000 -G lakehouse lakehouse
 WORKDIR /app
 COPY --from=build --chown=lakehouse:lakehouse /app/_build/prod/rel/lakehouse ./
+COPY --chmod=755 scripts/container-entrypoint.sh /usr/local/bin/iam-entrypoint
 ENV PHX_SERVER=true PORT=4000 RELEASE_DISTRIBUTION=none RELEASE_TMP=/tmp HOME=/tmp ERL_CRASH_DUMP=/tmp/erl_crash.dump
 USER lakehouse
 EXPOSE 4000
+ENTRYPOINT ["/usr/local/bin/iam-entrypoint"]
 CMD ["/app/bin/lakehouse", "start"]

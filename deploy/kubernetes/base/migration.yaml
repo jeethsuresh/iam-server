@@ -62,7 +62,7 @@ spec:
                 - name: postgres-ca
                   mountPath: /etc/postgres-ca
                   readOnly: true
-              command: [/app/bin/lakehouse, eval, "LakehouseIam.Release.migrate()"]
+              command: [/usr/local/bin/iam-entrypoint, /app/bin/lakehouse, eval, "LakehouseIam.Release.migrate()"]
           volumes:
             - name: tmp
               emptyDir:

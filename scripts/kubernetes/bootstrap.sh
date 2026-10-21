@@ -12,7 +12,7 @@ import json, sys
 from pathlib import Path
 path = Path(sys.argv[1])
 job = json.loads(path.read_text())
-job['spec']['template']['spec']['containers'][0]['command'] = ['/app/bin/lakehouse', 'eval', 'LakehouseIam.Release.bootstrap()']
+job['spec']['template']['spec']['containers'][0]['command'] = ['/usr/local/bin/iam-entrypoint', '/app/bin/lakehouse', 'eval', 'LakehouseIam.Release.bootstrap()']
 path.write_text(json.dumps(job))
 PY
 "${kube[@]}" create -f "$work/job.json"
