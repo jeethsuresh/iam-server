@@ -28,7 +28,8 @@
     }
 
     const liveSocket = new LiveView.LiveSocket("/live", Phoenix.Socket, {
-      longPollFallbackMs: 2500,
+      // The endpoint enables WebSockets only. Keep reconnecting after restarts
+      // instead of switching to an unsupported polling transport.
       params: {_csrf_token: csrfToken},
       hooks: Hooks
     })
