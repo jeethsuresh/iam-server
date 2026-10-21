@@ -284,6 +284,7 @@ defmodule LakehouseWeb.Bdd.BrowserSteps do
   step "I should see the Lakehouse consent page with caller and callback URLs", context do
     # May land on login first
     session = context.session
+    assert_has(session, Query.css(".auth-page h1, .oauth-consent h1"))
 
     session =
       if has?(session, Query.button("Sign in")) do
