@@ -10,6 +10,8 @@ All application, database and migration-job CPU/memory requests equal their limi
 
 GitHub Actions publishes an AMD64 image from `Dockerfile.release` on the deployment branch and main, with immutable commit tags and an image digest. Deploy the selected digest explicitly:
 
+The release also copies Phoenix and LiveView browser assets from the locked dependencies, keeping the browser and server protocols at the same version.
+
 ```sh
 IAM_KUSTOMIZE_OVERLAY=gravitas KUBE_CONTEXT=do-tor1-gravitas-k8s-services ./scripts/kubernetes/deploy.sh ghcr.io/jeethsuresh/iam-server@sha256:YOUR_DIGEST
 ```

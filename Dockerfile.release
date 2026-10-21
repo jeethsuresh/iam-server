@@ -7,6 +7,9 @@ COPY mix.exs mix.lock .formatter.exs ./
 COPY config config
 COPY apps apps
 RUN mix deps.get --only prod && mix deps.compile && mix compile && mix release lakehouse
+# LiveView's browser protocol must match the locked server dependency.
+RUN cp deps/phoenix/priv/static/phoenix.min.js _build/prod/rel/lakehouse/lib/lakehouse_web-*/priv/static/ \
+    && cp deps/phoenix_live_view/priv/static/phoenix_live_view.min.js _build/prod/rel/lakehouse/lib/lakehouse_web-*/priv/static/
 
 FROM alpine:3.21
 RUN apk add --no-cache libstdc++ openssl ncurses-libs ca-certificates imagemagick imagemagick-jpeg \
