@@ -2,6 +2,11 @@
 Feature: Browser chat and settings
   Interactive users sign in and use the LiveView rooms UI.
 
+  Scenario: Sign-in explains both local usernames and full addresses
+    Given the identity domain "example.com" uses IAM at "https://iam.example.com"
+    When I open the sign-in page
+    Then the sign-in page explains both username formats for "example.com"
+
   Scenario: Sign in lands on services
     When I sign in through the browser as "alice" with password "password123"
     Then I should see my services dashboard

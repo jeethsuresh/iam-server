@@ -17,6 +17,12 @@ defmodule LakehouseIam.IdentifierTest do
     assert :ok = Accounts.validate_signup_username("@alice:example.com")
   end
 
+  test "bare usernames identify the same local account as a full address" do
+    assert Identifier.local_username(" JeEtH ") == Identifier.local_username("@jeeth:example.com")
+    assert {:ok, "jeeth"} = Identifier.local_username("jeeth")
+    assert Identifier.format(Accounts.normalize_username("jeeth")) == "@jeeth:example.com"
+  end
+
   test "a foreign domain cannot authenticate a local account with the same name" do
     assert {:error, _} = Identifier.local_username("@alice:evil.example")
     assert {:error, _} = Accounts.validate_login_form("@alice:evil.example", "secret")

@@ -12,6 +12,13 @@ defmodule LakehouseWeb.Bdd.BrowserSteps do
     {:ok, Map.put(context, :session, session)}
   end
 
+  step "the sign-in page explains both username formats for {string}",
+       %{args: [domain]} = context do
+    assert_has(context.session, Query.css("#username-help", text: domain))
+    assert_has(context.session, Query.css("#username-help", text: "@user:#{domain}"))
+    :ok
+  end
+
   step "I sign up in the browser as {string} with key {string}",
        %{args: [username, key]} = context do
     session =

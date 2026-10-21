@@ -34,6 +34,16 @@ Feature: IAM registration and login
     Then the API response status should be 200
     And the API response should include a token
 
+  Scenario: Local usernames and full addresses both sign in to the local account
+    Given the identity domain "example.com" uses IAM at "https://iam.example.com"
+    And an approved user "localname" with password "password123"
+    When I log in via API as "localname" with password "password123"
+    Then the API response status should be 200
+    And the API response should include a token
+    When I log in via API as "@localname:example.com" with password "password123"
+    Then the API response status should be 200
+    And the API response should include a token
+
   @negative
   Scenario: Invalid login is rejected
     Given an approved user "dave" with password "password123"

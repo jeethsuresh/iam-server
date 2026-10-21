@@ -12,7 +12,11 @@
 <form action={~p"/web/login"} method="post">
   <input type="hidden" name="_csrf_token" value={get_csrf_token()} />
   <label for="username">Username</label>
-  <input id="username" name="username" type="text" autocomplete="username" placeholder={LakehouseIam.Identifier.format("user")} required value={@username} />
+  <input id="username" name="username" type="text" autocomplete="username" placeholder="user" aria-describedby="username-help" required value={@username} />
+  <p id="username-help">
+    A username without a domain signs in to <strong><%= LakehouseIam.Identifier.domain() %></strong>.
+    You can also use your full address, such as <strong><%= LakehouseIam.Identifier.format("user") %></strong>.
+  </p>
 
   <label for="password">Password</label>
   <input id="password" name="password" type="password" autocomplete="current-password" required />
