@@ -58,6 +58,26 @@ defmodule LakehouseWeb.Bdd.IamSteps do
     :ok
   end
 
+  step "I submit overlapping API registrations for {string} with key {string}",
+       %{args: [username, key]} = context do
+    responses =
+      1..2
+      |> Task.async_stream(fn _ -> IamClient.register(username, "password123", key) end,
+        max_concurrency: 2,
+        timeout: 15_000
+      )
+      |> Enum.map(fn {:ok, conn} -> conn end)
+
+    {:ok, Map.put(context, :registration_responses, responses)}
+  end
+
+  step "one registration succeeds and the other reports a duplicate username", context do
+    assert Enum.sort(Enum.map(context.registration_responses, & &1.status)) == [200, 400]
+    duplicate = Enum.find(context.registration_responses, &(&1.status == 400))
+    assert json_response(duplicate, 400) == "username already taken"
+    :ok
+  end
+
   step "account {string} should await approval", %{args: [username]} do
     assert {:ok, %{active: false}} = Accounts.fetch_user(username)
     :ok

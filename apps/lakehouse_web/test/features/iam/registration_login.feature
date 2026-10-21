@@ -13,6 +13,12 @@ Feature: IAM registration and login
     Then the API response status should be 403
     And account "uninvited" should not exist
 
+  @negative @concurrency
+  Scenario: Overlapping registrations create one pending account without a server error
+    When I submit overlapping API registrations for "racesignup" with key "test-invitation-key"
+    Then one registration succeeds and the other reports a duplicate username
+    And account "racesignup" should await approval
+
   @negative
   Scenario: Wrong invitation key blocks signup
     When I register via API as "uninvited" with password "password123" and key "wrong"

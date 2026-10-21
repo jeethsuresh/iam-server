@@ -41,6 +41,11 @@ defmodule LakehouseWeb.Bdd.BrowserSteps do
     :ok
   end
 
+  step "I should see a duplicate username error", context do
+    assert_has(context.session, Query.css(".flash--error", text: "username already taken"))
+    :ok
+  end
+
   step "I sign in through the browser as {string} with password {string}",
        %{args: [username, password]} = context do
     ensure_approved_user(username, password)
