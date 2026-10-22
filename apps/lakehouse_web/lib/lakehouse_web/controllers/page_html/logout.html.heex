@@ -1,0 +1,9 @@
+<div class="auth-page">
+  <h1>Sign out</h1>
+  <p>Sign out of Gravitas and connected services in this browser?</p>
+  <form action={~p"/web/logout"} method="post">
+    <input type="hidden" name="_csrf_token" value={get_csrf_token()} />
+    <button type="submit">Sign out</button>
+  </form>
+  <p><a href={~p"/dashboard"}>Cancel</a></p>
+</div>

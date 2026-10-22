@@ -66,7 +66,10 @@ defmodule LakehouseWeb.OAuthController do
   defp authorize_session(conn, session_id, sess, silent) do
     case current_principal(conn) do
       {:ok, principal} ->
-        case IamAuth.continue_federated(principal, session_id, silent: silent) do
+        case IamAuth.continue_federated(principal, session_id,
+               silent: silent,
+               session_id: family_id(conn)
+             ) do
           {:ok, %{redirect: url}} ->
             maybe_external_redirect(conn, url)
 
@@ -127,7 +130,9 @@ defmodule LakehouseWeb.OAuthController do
           _ -> []
         end
 
-      case OAuth.issue_code_redirect(sess, principal.id, room_mode, room_ids) do
+      case OAuth.issue_code_redirect(sess, principal.id, room_mode, room_ids,
+             session_id: family_id(conn)
+           ) do
         {:ok, url} ->
           _ = Federated.delete(session_id)
           redirect(conn, external: url)
@@ -142,6 +147,34 @@ defmodule LakehouseWeb.OAuthController do
         conn
         |> put_flash(:error, "Session expired.")
         |> redirect(to: ~p"/")
+    end
+  end
+
+  def session_check(conn, _params) do
+    result =
+      case get_req_header(conn, "authorization") do
+        ["Bearer " <> raw] -> LakehouseIam.Apps.Tokens.check_session(raw)
+        _ -> {:error, :invalid}
+      end
+
+    conn = put_resp_header(conn, "cache-control", "no-store")
+
+    case result do
+      {:ok, status} -> json(conn, status)
+      _ -> conn |> put_status(401) |> json(%{active: false, error: "invalid_token"})
+    end
+  rescue
+    _error in [DBConnection.ConnectionError, Postgrex.Error] ->
+      conn
+      |> put_resp_header("cache-control", "no-store")
+      |> put_status(503)
+      |> json(%{error: "temporarily_unavailable"})
+  end
+
+  defp family_id(conn) do
+    case Token.verify(get_session(conn, :user_jwt)) do
+      {:ok, %{"sid" => id}} -> id
+      _ -> nil
     end
   end
 

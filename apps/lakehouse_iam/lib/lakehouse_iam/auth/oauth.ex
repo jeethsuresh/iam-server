@@ -8,7 +8,7 @@ defmodule LakehouseIam.Auth.OAuth do
   @doc """
   After login+consent: mint auth code and build redirect URL.
   """
-  def issue_code_redirect(session, principal_id, room_mode, room_ids) do
+  def issue_code_redirect(session, principal_id, room_mode, room_ids, opts \\ []) do
     case Grants.upsert(principal_id, session.app_origin, session.scopes, room_mode, room_ids) do
       {:ok, grant} ->
         code =
@@ -18,6 +18,7 @@ defmodule LakehouseIam.Auth.OAuth do
         :ok =
           Federated.put_code(code, %{
             grant_id: grant.id,
+            session_id: Keyword.get(opts, :session_id),
             redirect_url: session.redirect_url,
             app_origin: session.app_origin,
             code_challenge: session.code_challenge,
@@ -48,7 +49,7 @@ defmodule LakehouseIam.Auth.OAuth do
          :ok <- match_redirect(payload.redirect_url, redirect_uri),
          grant when not is_nil(grant) <-
            LakehouseIam.Repo.get(LakehouseIam.Schema.AppGrant, payload.grant_id),
-         {:ok, tokens} <- Tokens.issue(grant) do
+         {:ok, tokens} <- Tokens.issue(grant, payload.session_id) do
       {:ok, tokens}
     else
       nil -> {:error, :invalid_grant}

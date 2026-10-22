@@ -9,7 +9,7 @@ defmodule LakehouseIam.Federated do
 
   @session_ttl_ms 10 * 60 * 1000
   @code_ttl_ms 5 * 60 * 1000
-  @payload_keys ~w(username domain caller_url redirect_url app_origin code_challenge code_challenge_method scopes state expires_at grant_id)a
+  @payload_keys ~w(username domain caller_url redirect_url app_origin code_challenge code_challenge_method scopes state expires_at grant_id session_id)a
 
   def reset! do
     Repo.delete_all(FederatedEntry)

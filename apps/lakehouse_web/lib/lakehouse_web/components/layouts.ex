@@ -31,7 +31,7 @@ defmodule LakehouseWeb.Layouts do
           <div class="workspace-label admin-label">ADMINISTRATION</div>
           <nav aria-label="Administration" class="main-nav"><a href={~p"/services/manage"} class={@active == :catalog && "is-active"}><span aria-hidden="true">⊞</span> Service catalog</a></nav>
         <% end %>
-        <div class="sidebar-bottom"><div class="account-avatar"><%= String.upcase(String.first(@username)) %></div><div class="account-copy"><strong><%= @username %></strong><span title={@identifier}><%= @identifier %></span></div><a href={~p"/logout"} aria-label="Sign out" title="Sign out">↗</a></div>
+        <div class="sidebar-bottom"><div class="account-avatar"><%= String.upcase(String.first(@username)) %></div><div class="account-copy"><strong><%= @username %></strong><span title={@identifier}><%= @identifier %></span></div><form action={~p"/web/logout"} method="post" class="sidebar-signout"><input type="hidden" name="_csrf_token" value={get_csrf_token()} /><button type="submit" aria-label="Sign out" title="Sign out of Gravitas and connected services">↗</button></form></div>
       </aside>
       <main class={["workspace", @active == :groups && "workspace--groups"]} id="main-content"><%= render_slot(@inner_block) %></main>
     </div>

@@ -179,7 +179,7 @@ defmodule LakehouseWeb.RenewableSessionTest do
     initial = login_browser()
     raw = initial.resp_cookies[BrowserSession.refresh_cookie_name()].value
     jwt = get_session(initial, :user_jwt)
-    conn = initial |> recycle() |> get("/logout")
+    conn = initial |> recycle() |> post("/web/logout")
     assert redirected_to(conn) == "/"
     assert conn.resp_cookies[BrowserSession.refresh_cookie_name()].max_age == 0
     refute Map.has_key?(conn.resp_cookies[BrowserSession.refresh_cookie_name()], :domain)

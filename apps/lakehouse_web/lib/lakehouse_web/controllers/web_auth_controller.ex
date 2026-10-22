@@ -10,7 +10,7 @@ defmodule LakehouseWeb.WebAuthController do
 
     result =
       if session_id not in [nil, ""] do
-        IamAuth.federated_login(username, password, session_id)
+        IamAuth.federated_login(username, password, session_id, session_kind: :browser)
       else
         IamAuth.standard_login(username, password)
       end
@@ -21,11 +21,11 @@ defmodule LakehouseWeb.WebAuthController do
 
         finish_browser_login(conn, token, destination, false)
 
-      {:ok, %{redirect: "/" <> _ = path, user_jwt: jwt}} ->
-        finish_browser_login(conn, jwt, path, false)
+      {:ok, %{redirect: "/" <> _ = path, user_jwt: jwt} = payload} ->
+        finish_browser_login(conn, jwt, path, false, payload[:session_bundle])
 
-      {:ok, %{redirect: url, user_jwt: jwt}} ->
-        finish_browser_login(conn, jwt, url, true)
+      {:ok, %{redirect: url, user_jwt: jwt} = payload} ->
+        finish_browser_login(conn, jwt, url, true, payload[:session_bundle])
 
       {:ok, %{redirect: url}} ->
         conn |> delete_session(:return_to) |> redirect(external: url)
@@ -37,8 +37,13 @@ defmodule LakehouseWeb.WebAuthController do
     end
   end
 
-  defp finish_browser_login(conn, jwt, destination, external?) do
-    case LakehouseWeb.BrowserSession.sign_in(conn, jwt) do
+  defp finish_browser_login(conn, jwt, destination, external?, bundle \\ nil) do
+    result =
+      if bundle,
+        do: LakehouseWeb.BrowserSession.accept_login(conn, bundle),
+        else: LakehouseWeb.BrowserSession.sign_in(conn, jwt)
+
+    case result do
       {:ok, conn} ->
         conn = conn |> delete_session(:return_to) |> put_flash(:info, "Signed in.")
 

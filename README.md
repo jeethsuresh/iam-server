@@ -100,7 +100,7 @@ docker compose build --no-cache lakehouse && docker compose up
 - `POST /web/profile/password` — submit password change (`current_password`, `new_password`, `new_password_confirm`). Bootstrap admin cannot use this when `IAM_ADMIN_PASSWORD` is set (same as iam-server); change the env and restart instead.
 - `GET /admin` — **admin only** (`IAM_ADMIN_USERNAME`): lists users with `active: false` and approve buttons
 - `POST /web/admin/approve` — **admin only**, form field `username` to activate an account
-- `GET /logout` — clears session; HTML redirects home, JSON returns `"Logged out"`
+- `POST /web/logout` — CSRF-protected browser logout; revokes this Gravitas login and connected service sessions, keeping saved consent. `GET /logout` shows a confirmation form.
 
 JSON **iam-server**-compatible endpoints retain their existing fields (no CSRF). `POST /login` also returns a rotating refresh token; use body-only `POST /refresh` and `POST /revoke`. Browser refresh sessions last at most 30 days. Integrated subdomains use the shared non-credential sign-in cookie to start silent PKCE login; see [session and service integration](docs/kubernetes.md#dashboard-and-service-integration).
 

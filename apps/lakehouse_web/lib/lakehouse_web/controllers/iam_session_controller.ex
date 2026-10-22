@@ -11,7 +11,7 @@ defmodule LakehouseWeb.IamSessionController do
 
     result =
       if session_id not in [nil, ""] do
-        IamAuth.federated_login(username, password, session_id)
+        IamAuth.federated_login(username, password, session_id, session_kind: :api)
       else
         IamAuth.standard_login(username, password)
       end
@@ -21,9 +21,18 @@ defmodule LakehouseWeb.IamSessionController do
         issue_session(conn, token)
 
       {:ok, %{redirect: url} = payload} ->
-        if Map.has_key?(payload, :user_jwt),
-          do: issue_session(conn, payload.user_jwt, %{redirect: url}),
-          else: json(conn, %{redirect: url})
+        cond do
+          payload[:session_bundle] ->
+            conn
+            |> put_resp_header("cache-control", "no-store")
+            |> json(Map.put(payload.session_bundle, :redirect, url))
+
+          payload[:user_jwt] ->
+            issue_session(conn, payload.user_jwt, %{redirect: url})
+
+          true ->
+            json(conn, %{redirect: url})
+        end
 
       {:error, status, body} ->
         conn
@@ -38,12 +47,19 @@ defmodule LakehouseWeb.IamSessionController do
     case get_format(conn) do
       "html" ->
         conn
-        |> put_flash(:info, "Signed out.")
+        |> put_flash(:info, "Signed out of Gravitas and connected services.")
         |> redirect(to: ~p"/")
 
       _ ->
         json(conn, "Logged out")
     end
+  end
+
+  def confirm_logout(conn, _params) do
+    conn
+    |> put_resp_header("cache-control", "no-store")
+    |> put_view(LakehouseWeb.PageHTML)
+    |> render(:logout)
   end
 
   def refresh(conn, _params) do

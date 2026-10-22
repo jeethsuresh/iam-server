@@ -20,6 +20,7 @@ defmodule LakehouseIam.Discovery do
       "registration_endpoint" => base <> "/register",
       "session_refresh_endpoint" => base <> "/refresh",
       "session_revocation_endpoint" => base <> "/revoke",
+      "session_check_endpoint" => base <> "/oauth/session",
       "prompt_values_supported" => ["none"],
       "token_endpoint" => base <> "/oauth/token",
       "userinfo_endpoint" => base <> "/app/v1/me",

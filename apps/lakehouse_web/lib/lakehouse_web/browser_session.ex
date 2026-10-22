@@ -21,6 +21,17 @@ defmodule LakehouseWeb.BrowserSession do
     end
   end
 
+  def accept_login(conn, bundle) do
+    conn = fetch_cookies(conn)
+
+    with {:ok, _} <- Token.verify(bundle.token) do
+      Sessions.revoke(conn.req_cookies[refresh_cookie_name()], :browser)
+      {:ok, install(conn, bundle)}
+    else
+      _ -> {:error, conn}
+    end
+  end
+
   def renew(conn) do
     conn = fetch_cookies(conn)
     raw = conn.req_cookies[refresh_cookie_name()]
@@ -32,10 +43,18 @@ defmodule LakehouseWeb.BrowserSession do
         window =
           min(300, max(div(Application.fetch_env!(:lakehouse_iam, :token_ttl_seconds), 10), 0))
 
-        if is_binary(raw) and ttl <= window do
-          rotate(conn, raw)
-        else
-          marker(conn, max((claims["rfe"] || claims["exp"]) - System.system_time(:second), 0))
+        cond do
+          is_nil(claims["sid"]) ->
+            case Sessions.issue(claims["username"], :browser) do
+              {:ok, bundle} -> install(conn, bundle)
+              _ -> conn
+            end
+
+          is_binary(raw) and ttl <= window ->
+            rotate(conn, raw)
+
+          true ->
+            marker(conn, max((claims["rfe"] || claims["exp"]) - System.system_time(:second), 0))
         end
 
       _ ->

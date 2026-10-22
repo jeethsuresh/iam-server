@@ -4,7 +4,7 @@ defmodule LakehouseWeb.IamAuth do
   """
   alias LakehouseIam.Accounts
   alias LakehouseIam.Apps.{Grants, Scopes}
-  alias LakehouseIam.Auth.{OAuth, Token}
+  alias LakehouseIam.Auth.{OAuth, Sessions, Token}
   alias LakehouseIam.Federated
 
   @type error :: {:error, Plug.Conn.status(), term()}
@@ -44,7 +44,7 @@ defmodule LakehouseWeb.IamAuth do
   """
   @spec federated_login(String.t(), String.t(), String.t()) ::
           {:ok, %{redirect: String.t(), user_jwt: String.t()}} | error()
-  def federated_login(username, password, session_id)
+  def federated_login(username, password, session_id, opts \\ [])
       when is_binary(session_id) and session_id != "" do
     with :ok <- Accounts.validate_login_form(username, password) do
       u = Accounts.normalize_username(username)
@@ -61,7 +61,7 @@ defmodule LakehouseWeb.IamAuth do
 
         true ->
           case Accounts.fetch_user(u) do
-            {:ok, principal} -> continue_federated(principal, session_id)
+            {:ok, principal} -> authenticated_federated(principal, session_id, opts)
             :error -> {:error, :not_found, %{error: "user_not_found"}}
           end
       end
@@ -70,11 +70,38 @@ defmodule LakehouseWeb.IamAuth do
     end
   end
 
+  defp authenticated_federated(principal, session_id, opts) do
+    case Keyword.get(opts, :session_kind) do
+      kind when kind in [:browser, :api] ->
+        with {:ok, _} <- Federated.bind_user(session_id, principal.username),
+             {:ok, bundle} <- Sessions.issue(principal.username, kind) do
+          {:ok, claims} = Token.verify(bundle.token)
+
+          case continue_federated(principal, session_id,
+                 session_id: claims["sid"],
+                 user_jwt: bundle.token
+               ) do
+            {:ok, payload} ->
+              {:ok, Map.put(payload, :session_bundle, bundle)}
+
+            error ->
+              Sessions.revoke(bundle.refresh_token, kind)
+              error
+          end
+        else
+          _ -> {:error, :bad_request, "Session ID does not exist or has expired."}
+        end
+
+      _ ->
+        continue_federated(principal, session_id)
+    end
+  end
+
   @doc "Continue federated flow for an already-authenticated principal."
   def continue_federated(principal, session_id, opts \\ []) do
     case Federated.bind_user(session_id, principal.username) do
       {:ok, sess} ->
-        user_jwt = Token.issue(principal.username)
+        user_jwt = Keyword.get(opts, :user_jwt) || Token.issue(principal.username)
         grant = Grants.get(principal.id, sess.app_origin)
 
         cond do
@@ -85,7 +112,8 @@ defmodule LakehouseWeb.IamAuth do
               session_id,
               grant.room_mode,
               grant.room_ids,
-              user_jwt
+              user_jwt,
+              Keyword.get(opts, :session_id)
             )
 
           Keyword.get(opts, :silent, false) ->
@@ -153,8 +181,8 @@ defmodule LakehouseWeb.IamAuth do
 
   defp needs_rooms?(scopes), do: "chats.read" in scopes or "chats.write" in scopes
 
-  defp finish_with_code(sess, principal, session_id, room_mode, room_ids, user_jwt) do
-    case OAuth.issue_code_redirect(sess, principal.id, room_mode, room_ids) do
+  defp finish_with_code(sess, principal, session_id, room_mode, room_ids, user_jwt, family_id) do
+    case OAuth.issue_code_redirect(sess, principal.id, room_mode, room_ids, session_id: family_id) do
       {:ok, redirect} ->
         _ = Federated.delete(session_id)
         {:ok, %{redirect: redirect, user_jwt: user_jwt}}

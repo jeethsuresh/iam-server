@@ -803,9 +803,16 @@ a:focus-visible,button:focus-visible,input:focus-visible,textarea:focus-visible 
   text-overflow:ellipsis;
   white-space:nowrap;
 }
-.sidebar-bottom>a {
+.sidebar-signout {
+  margin:0;
+}
+.sidebar-signout button {
+  border:0;
+  padding:0;
+  background:transparent;
   color:#7c8980;
   font-size:21px;
+  cursor:pointer;
 }
 .workspace {
   min-width:0;

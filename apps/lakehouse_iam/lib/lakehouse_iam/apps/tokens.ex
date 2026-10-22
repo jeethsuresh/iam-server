@@ -6,7 +6,7 @@ defmodule LakehouseIam.Apps.Tokens do
 
   alias LakehouseIam.Apps.Grants
   alias LakehouseIam.Repo
-  alias LakehouseIam.Schema.{AppGrant, AppToken}
+  alias LakehouseIam.Schema.{AppGrant, AppToken, Principal, Session}
 
   @access_ttl_sec 3600
   @refresh_ttl_sec 30 * 24 * 3600
@@ -14,36 +14,66 @@ defmodule LakehouseIam.Apps.Tokens do
   @spec issue(AppGrant.t()) ::
           {:ok, %{access_token: String.t(), refresh_token: String.t(), expires_in: pos_integer()}}
           | {:error, term()}
-  def issue(%AppGrant{} = grant) do
-    access_raw = raw_token()
-    refresh_raw = raw_token()
-    now = DateTime.utc_now() |> DateTime.truncate(:microsecond)
+  def issue(grant, session_id \\ nil)
 
+  def issue(%AppGrant{} = grant, session_id) do
     Repo.transaction(fn ->
-      {:ok, _} =
-        insert_token(grant.id, access_raw, :access, DateTime.add(now, @access_ttl_sec, :second))
+      now = DateTime.utc_now() |> DateTime.truncate(:microsecond)
 
-      {:ok, _} =
-        insert_token(
-          grant.id,
-          refresh_raw,
-          :refresh,
-          DateTime.add(now, @refresh_ttl_sec, :second)
-        )
+      family =
+        if session_id do
+          Repo.one(
+            from s in Session,
+              where:
+                s.id == ^session_id and s.principal_id == ^grant.principal_id and
+                  is_nil(s.revoked_at) and s.expires_at > ^now,
+              lock: "FOR UPDATE"
+          ) || Repo.rollback(:invalid_session)
+        end
 
-      %{
+      principal = Repo.get(Principal, grant.principal_id)
+      unless principal && principal.active, do: Repo.rollback(:invalid_session)
+      access_raw = raw_token()
+      refresh_raw = raw_token()
+      access_expiry = bounded_expiry(now, @access_ttl_sec, family)
+      refresh_expiry = bounded_expiry(now, @refresh_ttl_sec, family)
+      {:ok, _} = insert_token(grant.id, access_raw, :access, access_expiry, session_id)
+      {:ok, _} = insert_token(grant.id, refresh_raw, :refresh, refresh_expiry, session_id)
+
+      result = %{
         access_token: access_raw,
         refresh_token: refresh_raw,
-        expires_in: @access_ttl_sec,
+        expires_in: max(DateTime.diff(access_expiry, now, :second), 0),
         token_type: "Bearer"
       }
+
+      if family do
+        raw = raw_token()
+        {:ok, _} = insert_token(grant.id, raw, :session_check, family.expires_at, family.id)
+
+        Map.merge(result, %{
+          session_check_token: raw,
+          session_check_expires_in: max(DateTime.diff(family.expires_at, now, :second), 0),
+          session_id: family.id
+        })
+      else
+        result
+      end
     end)
   end
 
-  defp insert_token(grant_id, raw, kind, expires_at) do
+  defp bounded_expiry(now, seconds, nil), do: DateTime.add(now, seconds, :second)
+
+  defp bounded_expiry(now, seconds, family) do
+    expiry = DateTime.add(now, seconds, :second)
+    if DateTime.compare(expiry, family.expires_at) == :lt, do: expiry, else: family.expires_at
+  end
+
+  defp insert_token(grant_id, raw, kind, expires_at, session_id) do
     %AppToken{}
     |> AppToken.changeset(%{
       grant_id: grant_id,
+      session_id: session_id,
       token_hash: hash(raw),
       kind: kind,
       expires_at: expires_at
@@ -64,12 +94,17 @@ defmodule LakehouseIam.Apps.Tokens do
         {:error, :revoked}
 
       %{expires_at: exp} = token ->
-        if DateTime.compare(exp, now) == :lt do
+        if DateTime.compare(exp, now) != :gt do
           {:error, :expired}
         else
           case Repo.get(AppGrant, token.grant_id) do
-            nil -> {:error, :invalid}
-            grant -> {:ok, %{grant: grant, token: token}}
+            nil ->
+              {:error, :invalid}
+
+            grant ->
+              if valid_family?(token, grant),
+                do: {:ok, %{grant: grant, token: token}},
+                else: {:error, :revoked}
           end
         end
     end
@@ -101,7 +136,7 @@ defmodule LakehouseIam.Apps.Tokens do
           grant = Repo.get(AppGrant, token.grant_id) || Repo.rollback(:invalid)
           {:ok, _} = revoke_token(token)
 
-          case issue(grant) do
+          case issue(grant, token.session_id) do
             {:ok, bundle} -> bundle
             {:error, reason} -> Repo.rollback(reason)
           end
@@ -110,6 +145,59 @@ defmodule LakehouseIam.Apps.Tokens do
   end
 
   def refresh(_), do: {:error, :invalid}
+
+  @doc "A status-only credential; it never grants profile or application data access."
+  def check_session(raw) when is_binary(raw) and byte_size(raw) in 32..256 do
+    now = DateTime.utc_now()
+
+    result =
+      Repo.one(
+        from t in AppToken,
+          join: g in AppGrant,
+          on: g.id == t.grant_id,
+          join: s in Session,
+          on: s.id == t.session_id and s.principal_id == g.principal_id,
+          join: p in Principal,
+          on: p.id == g.principal_id,
+          where:
+            t.kind == :session_check and t.token_hash == ^hash(raw) and is_nil(t.revoked_at) and
+              t.expires_at > ^now and is_nil(s.revoked_at) and s.expires_at > ^now and
+              p.active == true,
+          select: %{
+            sub: p.id,
+            app_origin: g.app_origin,
+            session_id: s.id,
+            expires_at: s.expires_at
+          }
+      )
+
+    case result do
+      nil ->
+        {:error, :invalid}
+
+      %{expires_at: expiry} = status ->
+        {:ok,
+         status
+         |> Map.delete(:expires_at)
+         |> Map.merge(%{
+           active: true,
+           iss: LakehouseIam.Discovery.public_url(),
+           exp: DateTime.to_unix(expiry)
+         })}
+    end
+  end
+
+  def check_session(_), do: {:error, :invalid}
+
+  defp valid_family?(token, grant) do
+    case Repo.get(Principal, grant.principal_id) do
+      %{active: true, username: username} ->
+        is_nil(token.session_id) or LakehouseIam.Auth.Sessions.active?(token.session_id, username)
+
+      _ ->
+        false
+    end
+  end
 
   @spec revoke_grant_tokens(Ecto.UUID.t()) :: :ok
   def revoke_grant_tokens(grant_id) do

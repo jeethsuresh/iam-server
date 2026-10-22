@@ -44,12 +44,7 @@ defmodule LakehouseWeb.Router do
     post "/web/login", WebAuthController, :login
     post "/web/register", WebAuthController, :register
     post "/web/logout", IamSessionController, :delete
-  end
-
-  scope "/", LakehouseWeb do
-    pipe_through :browser_session
-
-    get "/logout", IamSessionController, :delete
+    get "/logout", IamSessionController, :confirm_logout
   end
 
   scope "/web", LakehouseWeb do
@@ -113,6 +108,7 @@ defmodule LakehouseWeb.Router do
     post "/revoke", IamSessionController, :revoke
     post "/register", IamRegistrationController, :create
     post "/oauth/token", OAuthController, :token
+    get "/oauth/session", OAuthController, :session_check
   end
 
   scope "/app/v1", LakehouseWeb.App, as: :app_v1 do
