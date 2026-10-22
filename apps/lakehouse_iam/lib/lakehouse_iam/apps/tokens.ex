@@ -4,7 +4,7 @@ defmodule LakehouseIam.Apps.Tokens do
   """
   import Ecto.Query
 
-  alias LakehouseIam.Apps.Grants
+  alias LakehouseIam.Apps.{Grants, Scopes}
   alias LakehouseIam.Repo
   alias LakehouseIam.Schema.{AppGrant, AppToken, Principal, Session}
 
@@ -14,11 +14,16 @@ defmodule LakehouseIam.Apps.Tokens do
   @spec issue(AppGrant.t()) ::
           {:ok, %{access_token: String.t(), refresh_token: String.t(), expires_in: pos_integer()}}
           | {:error, term()}
-  def issue(grant, session_id \\ nil)
+  def issue(grant, session_id \\ nil, opts \\ [])
 
-  def issue(%AppGrant{} = grant, session_id) do
+  def issue(%AppGrant{} = grant, session_id, opts) do
     Repo.transaction(fn ->
       now = DateTime.utc_now() |> DateTime.truncate(:microsecond)
+
+      scopes = Keyword.get(opts, :scopes, grant.scopes)
+
+      unless is_list(scopes) and Scopes.covers?(grant.scopes, scopes),
+        do: Repo.rollback(:invalid_scope)
 
       family =
         if session_id do
@@ -37,19 +42,20 @@ defmodule LakehouseIam.Apps.Tokens do
       refresh_raw = raw_token()
       access_expiry = bounded_expiry(now, @access_ttl_sec, family)
       refresh_expiry = bounded_expiry(now, @refresh_ttl_sec, family)
-      {:ok, _} = insert_token(grant.id, access_raw, :access, access_expiry, session_id)
-      {:ok, _} = insert_token(grant.id, refresh_raw, :refresh, refresh_expiry, session_id)
+      {:ok, _} = insert_token(grant.id, access_raw, :access, access_expiry, session_id, scopes)
+      {:ok, _} = insert_token(grant.id, refresh_raw, :refresh, refresh_expiry, session_id, scopes)
 
       result = %{
         access_token: access_raw,
         refresh_token: refresh_raw,
         expires_in: max(DateTime.diff(access_expiry, now, :second), 0),
-        token_type: "Bearer"
+        token_type: "Bearer",
+        scope: Enum.join(scopes, " ")
       }
 
       if family do
         raw = raw_token()
-        {:ok, _} = insert_token(grant.id, raw, :session_check, family.expires_at, family.id)
+        {:ok, _} = insert_token(grant.id, raw, :session_check, family.expires_at, family.id, [])
 
         Map.merge(result, %{
           session_check_token: raw,
@@ -69,14 +75,15 @@ defmodule LakehouseIam.Apps.Tokens do
     if DateTime.compare(expiry, family.expires_at) == :lt, do: expiry, else: family.expires_at
   end
 
-  defp insert_token(grant_id, raw, kind, expires_at, session_id) do
+  defp insert_token(grant_id, raw, kind, expires_at, session_id, scopes) do
     %AppToken{}
     |> AppToken.changeset(%{
       grant_id: grant_id,
       session_id: session_id,
       token_hash: hash(raw),
       kind: kind,
-      expires_at: expires_at
+      expires_at: expires_at,
+      scopes: scopes
     })
     |> Repo.insert()
   end
@@ -136,7 +143,7 @@ defmodule LakehouseIam.Apps.Tokens do
           grant = Repo.get(AppGrant, token.grant_id) || Repo.rollback(:invalid)
           {:ok, _} = revoke_token(token)
 
-          case issue(grant, token.session_id) do
+          case issue(grant, token.session_id, scopes: effective_scopes(token, grant)) do
             {:ok, bundle} -> bundle
             {:error, reason} -> Repo.rollback(reason)
           end
@@ -145,6 +152,13 @@ defmodule LakehouseIam.Apps.Tokens do
   end
 
   def refresh(_), do: {:error, :invalid}
+
+  @doc "Legacy credentials cannot inherit delegation when a consent grant is upgraded."
+  def effective_scopes(%AppToken{scopes: nil}, grant),
+    do: Enum.reject(grant.scopes, &(&1 == "native.broker"))
+
+  def effective_scopes(%AppToken{scopes: scopes}, grant),
+    do: Enum.filter(scopes, &(&1 in grant.scopes))
 
   @doc "A status-only credential; it never grants profile or application data access."
   def check_session(raw) when is_binary(raw) and byte_size(raw) in 32..256 do

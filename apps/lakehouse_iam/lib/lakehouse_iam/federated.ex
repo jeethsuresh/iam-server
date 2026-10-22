@@ -17,6 +17,15 @@ defmodule LakehouseIam.Federated do
   end
 
   def register(attrs) when is_map(attrs) do
+    with {:ok, session} <- validate_request(attrs) do
+      id = Ecto.UUID.generate()
+      with :ok <- put_entry(id, :session, session, @session_ttl_ms),
+        do: {:ok, id, session.username}
+    end
+  end
+
+  @doc "Validate a request without creating a pending browser session."
+  def validate_request(attrs) when is_map(attrs) do
     state = attr(attrs, :state, "state")
 
     with {:ok, username} <- optional_username(attr(attrs, :username, "username")),
@@ -31,9 +40,8 @@ defmodule LakehouseIam.Federated do
          "S256" <- attr(attrs, :code_challenge_method, "codeChallengeMethod") || "S256",
          challenge when is_binary(challenge) <- attr(attrs, :code_challenge, "codeChallenge"),
          true <- Regex.match?(~r/\A[A-Za-z0-9_-]{43}\z/, challenge),
+         :ok <- LakehouseIam.NativeBroker.validate_scope_origin(app_origin, redirect_url, scopes),
          :ok <- VerifiedDomain.verify(%{origin: app_origin}) do
-      id = Ecto.UUID.generate()
-
       session = %{
         username: username,
         domain: Identifier.domain(),
@@ -46,7 +54,7 @@ defmodule LakehouseIam.Federated do
         state: state
       }
 
-      with :ok <- put_entry(id, :session, session, @session_ttl_ms), do: {:ok, id, username}
+      {:ok, session}
     else
       false ->
         {:error,
@@ -100,7 +108,8 @@ defmodule LakehouseIam.Federated do
     :ok
   end
 
-  def put_code(code, payload), do: put_entry(code, :code, payload, @code_ttl_ms)
+  def put_code(code, payload, ttl_ms \\ @code_ttl_ms),
+    do: put_entry(code, :code, payload, ttl_ms)
 
   def take_code(code) when is_binary(code) do
     cutoff = now()

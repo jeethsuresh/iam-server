@@ -21,12 +21,13 @@ defmodule LakehouseIam.Discovery do
       "session_refresh_endpoint" => base <> "/refresh",
       "session_revocation_endpoint" => base <> "/revoke",
       "session_check_endpoint" => base <> "/oauth/session",
+      "native_broker_authorization_endpoint" => base <> "/oauth/broker/authorize",
       "prompt_values_supported" => ["none"],
       "token_endpoint" => base <> "/oauth/token",
       "userinfo_endpoint" => base <> "/app/v1/me",
       "grant_types_supported" => ["authorization_code", "refresh_token"],
       "code_challenge_methods_supported" => ["S256"],
-      "scopes_supported" => ["profile.name", "chats.list", "chats.read", "chats.write"]
+      "scopes_supported" => ["profile.name", "chats.list", "chats.read", "chats.write", "native.broker"]
     }
   end
 

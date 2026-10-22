@@ -14,6 +14,7 @@ config :lakehouse_iam,
   admin_username: System.get_env("IAM_ADMIN_USERNAME", "admin"),
   admin_password: System.get_env("IAM_ADMIN_PASSWORD", ""),
   registration_key: System.get_env("IAM_REGISTRATION_KEY"),
+  native_broker_origin: System.get_env("IAM_NATIVE_BROKER_ORIGIN"),
   relaxed_callback_urls: System.get_env("IAM_RELAXED_CALLBACK_URLS") not in [nil, ""]
 
 config :lakehouse_web, :session_options,
@@ -46,7 +47,10 @@ config :phoenix, :filter_parameters, [
   "refresh_token",
   "access_token",
   "code_verifier",
-  "token"
+  "token",
+  "code",
+  "session_check_token",
+  "codeVerifier"
 ]
 
 config :lakehouse_matrix, :pubsub, LakehouseWeb.PubSub

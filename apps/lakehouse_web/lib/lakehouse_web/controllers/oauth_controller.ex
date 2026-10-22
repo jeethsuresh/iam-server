@@ -179,6 +179,7 @@ defmodule LakehouseWeb.OAuthController do
   end
 
   def token(conn, params) do
+    conn = put_resp_header(conn, "cache-control", "no-store")
     grant_type = params["grant_type"]
 
     case grant_type do
@@ -217,6 +218,12 @@ defmodule LakehouseWeb.OAuthController do
       _ ->
         conn |> put_status(400) |> json(%{error: "unsupported_grant_type"})
     end
+  rescue
+    _error in [DBConnection.ConnectionError, Postgrex.Error] ->
+      conn
+      |> put_resp_header("cache-control", "no-store")
+      |> put_status(503)
+      |> json(%{error: "temporarily_unavailable"})
   end
 
   defp current_principal(conn) do

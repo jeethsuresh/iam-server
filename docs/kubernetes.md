@@ -58,7 +58,7 @@ The release uses one BEAM scheduler, one dirty CPU/IO scheduler each, two async 
 
 ## Secrets and media
 
-Copy `deploy/kubernetes/iam-secrets.env.example` to a private file outside Git and fill it in. Generate strong signing secrets and the administrator password; set `IAM_REGISTRATION_KEY` to the registration key agreed for this installation. The key is required by browser and API registration; accounts still require administrator approval. Existing accounts are unaffected. Import without putting values on command lines:
+Copy `deploy/kubernetes/iam-secrets.env.example` to a private file outside Git and fill it in. Generate strong signing secrets and the administrator password; set `IAM_REGISTRATION_KEY` to the registration key agreed for this installation. The key is required by browser and API registration; accounts still require administrator approval. Existing accounts are unaffected. The Gravitas overlay explicitly enables the Android account broker with `IAM_NATIVE_BROKER_ORIGIN=https://apps.gravitas.cool`; other installations leave delegation disabled unless they configure a trusted origin. See [the native broker contract](native-login-broker.md). Import secrets without putting values on command lines:
 
 ```sh
 kubectl --context YOUR_DOKS_CONTEXT -n iam create secret generic iam-secrets --from-env-file=/PRIVATE/PATH/iam-secrets.env

@@ -12,7 +12,11 @@
     <h2>Permissions requested</h2>
     <ul>
       <%= for scope <- @sess.scopes do %>
-        <li><code><%= scope %></code></li>
+        <%= if scope == "native.broker" do %>
+          <li>Let Private Store sign you into apps you have already approved on this device.</li>
+        <% else %>
+          <li><code><%= scope %></code></li>
+        <% end %>
       <% end %>
     </ul>
   </section>

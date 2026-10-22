@@ -21,6 +21,7 @@ defmodule LakehouseIam.Auth.OAuth do
             session_id: Keyword.get(opts, :session_id),
             redirect_url: session.redirect_url,
             app_origin: session.app_origin,
+            scopes: session.scopes,
             code_challenge: session.code_challenge,
             code_challenge_method: session.code_challenge_method,
             state: session.state
@@ -49,7 +50,8 @@ defmodule LakehouseIam.Auth.OAuth do
          :ok <- match_redirect(payload.redirect_url, redirect_uri),
          grant when not is_nil(grant) <-
            LakehouseIam.Repo.get(LakehouseIam.Schema.AppGrant, payload.grant_id),
-         {:ok, tokens} <- Tokens.issue(grant, payload.session_id) do
+         scopes <- payload.scopes || Enum.reject(grant.scopes, &(&1 == "native.broker")),
+         {:ok, tokens} <- Tokens.issue(grant, payload.session_id, scopes: scopes) do
       {:ok, tokens}
     else
       nil -> {:error, :invalid_grant}
