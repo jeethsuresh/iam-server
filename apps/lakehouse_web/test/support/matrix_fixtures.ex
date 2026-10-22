@@ -68,4 +68,9 @@ defmodule LakehouseWeb.MatrixFixtures do
   def auth_header(token) do
     {"authorization", "Bearer #{token}"}
   end
+
+  def browser_token(username) do
+    {:ok, bundle} = LakehouseIam.Auth.Sessions.issue(username, :browser)
+    bundle.token
+  end
 end

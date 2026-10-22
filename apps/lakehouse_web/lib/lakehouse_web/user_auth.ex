@@ -14,7 +14,7 @@ defmodule LakehouseWeb.UserAuth do
     case session["user_jwt"] do
       token when is_binary(token) and token != "" ->
         case LakehouseIam.Auth.Token.verify(token) do
-          {:ok, claims} ->
+          {:ok, %{"sid" => sid} = claims} when is_binary(sid) ->
             username = claims["username"]
 
             case LakehouseIam.Accounts.fetch_user(username) do
@@ -30,7 +30,7 @@ defmodule LakehouseWeb.UserAuth do
                 {:halt, redirect(socket, to: ~p"/")}
             end
 
-          :error ->
+          _ ->
             {:halt, redirect(socket, to: ~p"/")}
         end
 

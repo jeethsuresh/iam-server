@@ -103,6 +103,23 @@ defmodule LakehouseWeb.SingleLogoutTest do
     assert {:ok, _} = Token.verify(jwt)
   end
 
+  test "an old unbound browser credential cannot recreate a login after logout", %{user: user} do
+    legacy = Token.issue(user.username)
+    conn = login()
+    conn |> recycle() |> post("/web/logout")
+    for header <- [nil, "Basic bogus", "Bearer "] do
+      replay = build_conn() |> init_test_session(user_jwt: legacy)
+      replay = if header, do: put_req_header(replay, "authorization", header), else: replay
+      replay = get(replay, "/dashboard")
+      assert redirected_to(replay) == "/"
+      refute get_session(replay, :user_jwt)
+    end
+    assert get(build_conn() |> init_test_session(user_jwt: legacy), "/oauth/start", %{
+      callerURL: "http://127.0.0.1:4102", redirectURL: "http://127.0.0.1:4102/callback",
+      codeChallenge: Pkce.challenge(Pkce.generate_verifier()), scope: "profile.name", state: "legacy", prompt: "none"
+    }) |> redirected_to() |> String.contains?("login_required")
+  end
+
   test "proof is unavailable to bearer data tokens or query strings", %{user: user} do
     {_conn, code} = start(login(), user, "http://127.0.0.1:4102")
     pair = OAuthClient.token(code) |> json_response(200)

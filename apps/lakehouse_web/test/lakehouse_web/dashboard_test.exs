@@ -4,7 +4,7 @@ defmodule LakehouseWeb.DashboardTest do
   alias LakehouseWeb.MatrixFixtures
 
   defp signed_in(user) do
-    token = LakehouseIam.Auth.Token.issue(user.username)
+    token = MatrixFixtures.browser_token(user.username)
     build_conn() |> init_test_session(user_jwt: token)
   end
 

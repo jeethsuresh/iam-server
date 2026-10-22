@@ -223,7 +223,7 @@ defmodule LakehouseWeb.OAuthController do
     case get_session(conn, :user_jwt) do
       token when is_binary(token) and token != "" ->
         case Token.verify(token) do
-          {:ok, %{"username" => username}} ->
+          {:ok, %{"username" => username, "sid" => sid}} when is_binary(sid) ->
             case Accounts.fetch_user(username) do
               {:ok, %{active: true} = principal} -> {:ok, principal}
               _ -> :error

@@ -3,7 +3,6 @@ defmodule LakehouseWeb.OAuthBrowserStartTest do
 
   alias LakehouseIam.{Accounts, Federated, Identifier}
   alias LakehouseIam.Apps.{Grants, Pkce}
-  alias LakehouseIam.Auth.Token
   alias LakehouseWeb.MatrixFixtures
 
   setup do
@@ -26,7 +25,7 @@ defmodule LakehouseWeb.OAuthBrowserStartTest do
   end
 
   defp signed_in(user),
-    do: build_conn() |> init_test_session(user_jwt: Token.issue(user.username))
+    do: build_conn() |> init_test_session(user_jwt: MatrixFixtures.browser_token(user.username))
 
   defp callback(conn, params) do
     uri = conn |> redirected_to() |> URI.parse()
