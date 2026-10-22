@@ -69,7 +69,7 @@ defmodule LakehouseMatrix.Matrix do
     with {:ok, room} <- resolve_room(room_id_or_alias),
          {:ok, principal} <- fetch_principal(principal_id) do
       invited = Memberships.invited?(room.id, principal_id)
-      allowed = invited or can_join?(principal_id, room.id)
+      allowed = if delegated?(room.id), do: invited, else: invited or can_join?(principal_id, room.id)
 
       if allowed do
         with :ok <- ensure_room_started(room),
@@ -95,6 +95,9 @@ defmodule LakehouseMatrix.Matrix do
          {:ok, target} <- fetch_active_user(canonical) do
       cond do
         not Memberships.joined?(room.id, actor_principal_id) ->
+          {:error, :forbidden}
+
+        delegated?(room.id) and not creator?(room.id, actor_principal_id) ->
           {:error, :forbidden}
 
         target.id == actor.id ->
@@ -177,6 +180,9 @@ defmodule LakehouseMatrix.Matrix do
     with {:ok, room} <- resolve_room(room_id_or_alias),
          {:ok, principal} <- fetch_principal(principal_id) do
       cond do
+        delegated?(room.id) and not creator?(room.id, principal_id) ->
+          {:error, :not_member}
+
         name == "" ->
           {:error, :invalid_name}
 
@@ -205,7 +211,7 @@ defmodule LakehouseMatrix.Matrix do
       when is_binary(content_uri) do
     with {:ok, room} <- resolve_room(room_id_or_alias),
          {:ok, principal} <- fetch_principal(principal_id) do
-      if Memberships.joined?(room.id, principal_id) do
+      if Memberships.joined?(room.id, principal_id) and (not delegated?(room.id) or creator?(room.id, principal_id)) do
         content =
           %{"url" => content_uri}
           |> then(fn c -> if map_size(info) > 0, do: Map.put(c, "info", info), else: c end)
@@ -231,7 +237,7 @@ defmodule LakehouseMatrix.Matrix do
   def list_room_files(principal_id, room_id_or_alias, opts \\ []) do
     case resolve_room(room_id_or_alias) do
       {:ok, room} ->
-        if Memberships.joined?(room.id, principal_id) do
+        if Memberships.joined?(room.id, principal_id) and (not delegated?(room.id) or creator?(room.id, principal_id)) do
           Events.list_file_messages(room.id, opts)
         else
           []
@@ -257,7 +263,7 @@ defmodule LakehouseMatrix.Matrix do
   def set_topic(principal_id, room_id_or_alias, topic) when is_binary(topic) do
     with {:ok, room} <- resolve_room(room_id_or_alias),
          {:ok, principal} <- fetch_principal(principal_id) do
-      if Memberships.joined?(room.id, principal_id) do
+      if Memberships.joined?(room.id, principal_id) and (not delegated?(room.id) or creator?(room.id, principal_id)) do
         ctx =
           build_context(
             room.id,
@@ -481,6 +487,8 @@ defmodule LakehouseMatrix.Matrix do
       p -> {:ok, p}
     end
   end
+
+  defp delegated?(id), do: State.get(id, "cool.gravitas.river.group.v1") != nil
 
   defp can_create?(principal_id) do
     IAM.can?(principal_id, "matrix.room.create", nil)
