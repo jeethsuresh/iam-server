@@ -109,6 +109,7 @@ defmodule LakehouseWeb.Router do
     post "/register", IamRegistrationController, :create
     post "/oauth/token", OAuthController, :token
     get "/oauth/session", OAuthController, :session_check
+    post "/oauth/broker/authorize", NativeBrokerController, :authorize
   end
 
   scope "/app/v1", LakehouseWeb.App, as: :app_v1 do

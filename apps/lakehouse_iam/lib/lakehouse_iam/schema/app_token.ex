@@ -10,6 +10,7 @@ defmodule LakehouseIam.Schema.AppToken do
     field :kind, Ecto.Enum, values: [:access, :refresh, :session_check]
     field :expires_at, :utc_datetime_usec
     field :revoked_at, :utc_datetime_usec
+    field :scopes, {:array, :string}
 
     belongs_to :grant, LakehouseIam.Schema.AppGrant
     belongs_to :session, LakehouseIam.Schema.Session
@@ -19,7 +20,7 @@ defmodule LakehouseIam.Schema.AppToken do
 
   def changeset(token, attrs) do
     token
-    |> cast(attrs, [:grant_id, :session_id, :token_hash, :kind, :expires_at, :revoked_at])
+    |> cast(attrs, [:grant_id, :session_id, :token_hash, :kind, :expires_at, :revoked_at, :scopes])
     |> validate_required([:grant_id, :token_hash, :kind, :expires_at])
     |> validate_inclusion(:kind, [:access, :refresh, :session_check])
     |> unique_constraint(:token_hash)

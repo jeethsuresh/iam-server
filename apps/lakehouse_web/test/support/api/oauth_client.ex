@@ -14,6 +14,12 @@ defmodule LakehouseWeb.Test.Api.OAuthClient do
   def session_check(raw),
     do: build_conn() |> put_req_header("authorization", "Bearer " <> raw) |> get("/oauth/session")
 
+  def broker_authorize(raw, params),
+    do:
+      build_conn()
+      |> put_req_header("authorization", "Bearer " <> raw)
+      |> post("/oauth/broker/authorize", params)
+
   def backend_register(attrs) do
     build_conn()
     |> put_req_header("content-type", "application/json")

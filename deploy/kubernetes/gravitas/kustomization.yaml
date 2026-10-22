@@ -18,3 +18,6 @@ patches:
       - op: add
         path: /data/LAKEHOUSE_MEDIA_ROOT
         value: /var/lib/iam/media
+      - op: add
+        path: /data/IAM_NATIVE_BROKER_ORIGIN
+        value: https://apps.gravitas.cool

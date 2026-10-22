@@ -12,13 +12,17 @@
     <h2>Permissions requested</h2>
     <ul>
       <%= for scope <- @sess.scopes do %>
-        <li><code><%= scope %></code>
-          <%= case scope do %>
-            <% "groups.create" -> %> — Create new groups as you. Only new groups are added to selected access.
-            <% "groups.manage" -> %> — Rename groups you own, invite or remove members, accept invitations and leave.
-            <% _ -> %>
-          <% end %>
-        </li>
+        <%= if scope == "native.broker" do %>
+          <li>Let Private Store sign you into apps you have already approved on this device.</li>
+        <% else %>
+          <li><code><%= scope %></code>
+            <%= case scope do %>
+              <% "groups.create" -> %> — Create new groups as you. Only new groups are added to selected access.
+              <% "groups.manage" -> %> — Rename groups you own, invite or remove members, accept invitations and leave.
+              <% _ -> %>
+            <% end %>
+          </li>
+        <% end %>
       <% end %>
     </ul>
   </section>

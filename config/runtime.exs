@@ -65,6 +65,19 @@ if config_env() == :prod do
   jwt_secret = require_secret.("JWT_SECRET", 32)
   admin_password = require_secret.("IAM_ADMIN_PASSWORD", 12)
   registration_key = require_secret.("IAM_REGISTRATION_KEY", 1)
+  broker_origin = System.get_env("IAM_NATIVE_BROKER_ORIGIN")
+
+  if broker_origin do
+    broker_uri = URI.parse(broker_origin)
+
+    unless broker_uri.scheme == "https" and is_binary(broker_uri.host) and
+             broker_uri.path in [nil, ""] and is_nil(broker_uri.query) and
+             is_nil(broker_uri.fragment) and is_nil(broker_uri.userinfo) and
+             broker_uri.port == 443 and broker_origin == "https://" <> broker_uri.host and
+             String.downcase(broker_origin) == broker_origin do
+      raise "IAM_NATIVE_BROKER_ORIGIN must be a canonical HTTPS origin"
+    end
+  end
   host = System.get_env("PHX_HOST") || public_uri.host
 
   if host == "" or host == "example.com" or host != public_uri.host,
@@ -84,6 +97,7 @@ if config_env() == :prod do
     admin_username: System.get_env("IAM_ADMIN_USERNAME", "admin"),
     admin_password: admin_password,
     registration_key: registration_key,
+    native_broker_origin: broker_origin,
     relaxed_callback_urls: false,
     bootstrap_on_start: false
 
