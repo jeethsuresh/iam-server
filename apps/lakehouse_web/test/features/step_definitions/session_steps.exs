@@ -49,6 +49,73 @@ defmodule LakehouseWeb.Bdd.SessionSteps do
     :ok
   end
 
+  step "I request the service API with an expired token for {string}",
+       %{args: [username]} = context do
+    token = with_expired_tokens(fn -> LakehouseIam.Auth.Token.issue(username) end)
+
+    conn =
+      build_conn()
+      |> Plug.Conn.put_req_header("authorization", "Bearer " <> token)
+      |> get("/api/v1/services")
+
+    {:ok, Map.put(context, :last_conn, conn)}
+  end
+
+  step "the expired API request is rejected without a browser redirect", context do
+    assert json_response(context.last_conn, 401) == "Invalid token"
+    assert Plug.Conn.get_resp_header(context.last_conn, "location") == []
+    :ok
+  end
+
+  step "I open the groups page while signed out", context do
+    session = visit(context.session, "/groups")
+    assert_has(session, Query.button("Sign in"))
+    {:ok, Map.put(context, :session, session)}
+  end
+
+  step "I sign in again on the current form as {string}", %{args: [username]} = context do
+    session = submit_login(context.session, username)
+    {:ok, Map.put(context, :session, session)}
+  end
+
+  step "I sign in with an already expired session as {string}", %{args: [username]} = context do
+    session =
+      with_expired_tokens(fn ->
+        session = submit_login(context.session, username)
+        assert_has(session, Query.css(".flash--error", text: "Please sign in again to continue."))
+        session
+      end)
+
+    {:ok, Map.put(context, :session, session)}
+  end
+
+  step "I should see the friendly expired-session prompt", context do
+    assert_has(
+      context.session,
+      Query.css(".flash--error", text: "Please sign in again to continue.")
+    )
+
+    :ok
+  end
+
+  defp submit_login(session, username) do
+    session
+    |> fill_in(Query.text_field("Username"), with: username)
+    |> fill_in(Query.text_field("Password"), with: "password123")
+    |> click(Query.button("Sign in"))
+  end
+
+  defp with_expired_tokens(fun) do
+    previous = Application.fetch_env!(:lakehouse_iam, :token_ttl_seconds)
+    Application.put_env(:lakehouse_iam, :token_ttl_seconds, -1)
+
+    try do
+      fun.()
+    after
+      Application.put_env(:lakehouse_iam, :token_ttl_seconds, previous)
+    end
+  end
+
   step "I open a username-free application login", context do
     session = visit(context.session, "/oauth/start?" <> URI.encode_query(request_params()))
     assert_has(session, Query.css(".oauth-consent h1"))

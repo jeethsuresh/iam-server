@@ -184,4 +184,19 @@ defmodule LakehouseWeb.OAuthBrowserStartTest do
 
     assert redirected_to(success) == "/oauth/consent?sessionID=#{sid}"
   end
+
+  test "federated sign-in takes precedence over a pending dashboard destination", %{
+    user: user,
+    params: params
+  } do
+    {:ok, sid, _} = Federated.register(params)
+
+    conn =
+      build_conn()
+      |> init_test_session(return_to: "/settings")
+      |> post("/web/login", %{username: user.username, password: "password123", sessionID: sid})
+
+    assert redirected_to(conn) == "/oauth/consent?sessionID=#{sid}"
+    refute get_session(conn, :return_to)
+  end
 end

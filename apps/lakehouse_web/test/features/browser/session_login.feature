@@ -5,6 +5,20 @@ Feature: Application login through the existing Gravitas session
     And I open a username-free application login
     Then I should see the Lakehouse consent page with caller and callback URLs
 
+  Scenario: Signing in resumes the protected page the visitor opened
+    Given an approved user "browserreturn" with password "password123"
+    When I open the groups page while signed out
+    And I sign in again on the current form as "browserreturn"
+    Then I should be on the rooms page
+
+  Scenario: An expired session gives a clear sign-in prompt and keeps the destination
+    Given an approved user "browserexpiry" with password "password123"
+    When I open the groups page while signed out
+    And I sign in with an already expired session as "browserexpiry"
+    Then I should see the friendly expired-session prompt
+    When I sign in again on the current form as "browserexpiry"
+    Then I should be on the rooms page
+
   Scenario: Application registration retains the return flow through approval
     Given the bootstrap admin is available
     When I open application registration

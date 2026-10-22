@@ -55,7 +55,15 @@ defmodule LakehouseWeb.Plugs.SessionOrBearerAuth do
   defp maybe_halt_unauthorized(conn, msg) do
     if html_request?(conn) do
       conn
-      |> put_flash(:error, msg)
+      |> delete_session(@session_key)
+      |> LakehouseWeb.SessionReturn.remember()
+      |> put_flash(
+        if(msg == "Missing token", do: :info, else: :error),
+        if(msg == "Missing token",
+          do: "Sign in to continue.",
+          else: "Please sign in again to continue."
+        )
+      )
       |> redirect(to: "/")
       |> halt()
     else

@@ -11,6 +11,12 @@ defmodule LakehouseWeb.PageController do
               _ -> conn |> delete_session(:user_jwt) |> render_home(params)
             end
 
+          :error ->
+            conn
+            |> delete_session(:user_jwt)
+            |> put_flash(:error, "Please sign in again to continue.")
+            |> render_home(params)
+
           _ ->
             render_home(conn, params)
         end

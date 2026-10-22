@@ -17,23 +17,27 @@ defmodule LakehouseWeb.WebAuthController do
 
     case result do
       {:ok, token} when is_binary(token) ->
+        {conn, destination} = LakehouseWeb.SessionReturn.consume(conn)
+
         conn
         |> put_session(:user_jwt, token)
         |> put_flash(:info, "Signed in.")
-        |> redirect(to: ~p"/dashboard")
+        |> redirect(to: destination)
 
       {:ok, %{redirect: "/" <> _ = path, user_jwt: jwt}} ->
         conn
         |> put_session(:user_jwt, jwt)
+        |> delete_session(:return_to)
         |> redirect(to: path)
 
       {:ok, %{redirect: url, user_jwt: jwt}} ->
         conn
         |> put_session(:user_jwt, jwt)
+        |> delete_session(:return_to)
         |> redirect(external: url)
 
       {:ok, %{redirect: url}} ->
-        redirect(conn, external: url)
+        conn |> delete_session(:return_to) |> redirect(external: url)
 
       {:error, _status, body} ->
         conn
