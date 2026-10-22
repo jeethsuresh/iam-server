@@ -32,18 +32,30 @@ defmodule LakehouseWeb.RoomChannel do
 
   @impl true
   def handle_info({:room_event, _room_id, msg}, socket) do
-    push(socket, "event", msg)
-    {:noreply, socket}
+    if Memberships.joined?(socket.assigns.room_db_id, socket.assigns.principal_id) do
+      push(socket, "event", msg)
+      {:noreply, socket}
+    else
+      {:stop, :normal, socket}
+    end
   end
 
   def handle_info({:room_ephemeral, _room_id, msg}, socket) do
-    push(socket, "ephemeral", msg)
-    {:noreply, socket}
+    if Memberships.joined?(socket.assigns.room_db_id, socket.assigns.principal_id) do
+      push(socket, "ephemeral", msg)
+      {:noreply, socket}
+    else
+      {:stop, :normal, socket}
+    end
   end
 
   def handle_info({:room_presence, _room_id, presence}, socket) do
-    push(socket, "presence_state", presence)
-    {:noreply, socket}
+    if Memberships.joined?(socket.assigns.room_db_id, socket.assigns.principal_id) do
+      push(socket, "presence_state", presence)
+      {:noreply, socket}
+    else
+      {:stop, :normal, socket}
+    end
   end
 
   def handle_info(:after_join, socket) do
@@ -63,6 +75,7 @@ defmodule LakehouseWeb.RoomChannel do
   end
 
   def handle_in("typing", %{"typing" => typing?}, socket) do
+    if Memberships.joined?(socket.assigns.room_db_id, socket.assigns.principal_id) do
     _ =
       RoomServer.set_typing(
         socket.assigns.room_db_id,
@@ -72,6 +85,9 @@ defmodule LakehouseWeb.RoomChannel do
       )
 
     {:noreply, socket}
+    else
+      {:stop, :normal, socket}
+    end
   end
 
   def handle_in("event", %{"type" => "m.room.message"} = payload, socket) do

@@ -72,4 +72,17 @@ defmodule LakehouseWeb.DelegatedGroupsTest do
     assert get(c, "/app/v1/groups").status == 401
     refute is_nil(group.id)
   end
+  test "removed members cannot receive events on an existing legacy socket", %{grant: g, bob: b} do
+    {:ok, group} = create(g)
+    g = fresh(g)
+    {:ok, bg} = Grants.upsert(b.id, "https://chat.gravitas.cool", @scopes, :all, [])
+    {:ok, _} = DelegatedGroups.membership(g, group.id, %{"action" => "invite", "user_id" => Identity.user_id(b.username)})
+    {:ok, _} = DelegatedGroups.membership(bg, group.id, %{"action" => "accept"})
+    socket = %Phoenix.Socket{assigns: %{room_db_id: group.id, principal_id: b.id}}
+    {:ok, _} = DelegatedGroups.membership(g, group.id, %{"action" => "remove", "user_id" => Identity.user_id(b.username)})
+    assert {:stop, :normal, ^socket} = LakehouseWeb.RoomChannel.handle_info({:room_event, group.id, %{"content" => %{"body" => "private"}}}, socket)
+    assert {:stop, :normal, ^socket} = LakehouseWeb.RoomChannel.handle_info({:room_ephemeral, group.id, %{}}, socket)
+    assert {:stop, :normal, ^socket} = LakehouseWeb.RoomChannel.handle_info({:room_presence, group.id, %{}}, socket)
+  end
+
 end

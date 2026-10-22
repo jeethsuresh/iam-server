@@ -26,7 +26,7 @@ defmodule LakehouseMatrix.DelegatedGroups do
          true <- IAM.can?(grant.principal_id, "matrix.room.create", nil) do
       transact(fn ->
         locked = Repo.one!(from g in AppGrant, where: g.id == ^grant.id, lock: "FOR UPDATE")
-        id = uuid("#{grant.principal_id}|#{grant.app_origin}|#{params["txn_id"]}")
+        id = uuid("#{grant.id}|#{grant.principal_id}|#{grant.app_origin}|#{params["txn_id"]}")
         case Rooms.get_room(id) do
           nil ->
             {:ok, room} = Repo.insert(Room.changeset(%Room{id: id}, %{name: String.trim(params["name"])}))

@@ -255,6 +255,7 @@ defmodule LakehouseWeb.RoomLive do
 
   @impl true
   def handle_info({:room_event, room_id, msg}, socket) do
+    socket = revalidate_room_membership(socket)
     socket =
       if socket.assigns.room && socket.assigns.room.id == room_id do
         case msg["type"] do
@@ -288,6 +289,7 @@ defmodule LakehouseWeb.RoomLive do
   end
 
   def handle_info({:room_ephemeral, room_id, %{"type" => "m.typing"} = event}, socket) do
+    socket = revalidate_room_membership(socket)
     socket =
       if socket.assigns.room && socket.assigns.room.id == room_id do
         users =
@@ -435,6 +437,14 @@ defmodule LakehouseWeb.RoomLive do
           |> assign(:rooms, Rooms.list_rooms_for(socket.assigns.principal_id))
           |> put_flash(:info, "Room photo updated.")
       end
+    end
+  end
+
+  defp revalidate_room_membership(socket) do
+    if socket.assigns.room && not Memberships.joined?(socket.assigns.room.id, socket.assigns.principal_id) do
+      socket |> apply_room_param(nil) |> assign(:rooms, Rooms.list_rooms_for(socket.assigns.principal_id))
+    else
+      socket
     end
   end
 
