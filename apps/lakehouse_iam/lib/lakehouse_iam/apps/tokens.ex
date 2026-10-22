@@ -79,29 +79,34 @@ defmodule LakehouseIam.Apps.Tokens do
           {:ok, %{access_token: String.t(), refresh_token: String.t(), expires_in: pos_integer()}}
           | {:error, atom()}
   def refresh(raw_refresh) when is_binary(raw_refresh) do
-    now = DateTime.utc_now()
+    Repo.transaction(fn ->
+      token =
+        Repo.one(
+          from t in AppToken,
+            where: t.token_hash == ^hash(raw_refresh) and t.kind == :refresh,
+            lock: "FOR UPDATE"
+        )
 
-    case Repo.get_by(AppToken, token_hash: hash(raw_refresh), kind: :refresh) do
-      nil ->
-        {:error, :invalid}
+      case token do
+        nil ->
+          Repo.rollback(:invalid)
 
-      %{revoked_at: rev} when not is_nil(rev) ->
-        {:error, :revoked}
+        %{revoked_at: rev} when not is_nil(rev) ->
+          Repo.rollback(:revoked)
 
-      %{expires_at: exp} = token ->
-        if DateTime.compare(exp, now) == :lt do
-          {:error, :expired}
-        else
-          case Repo.get(AppGrant, token.grant_id) do
-            nil ->
-              {:error, :invalid}
+        token ->
+          if DateTime.compare(token.expires_at, DateTime.utc_now()) != :gt,
+            do: Repo.rollback(:expired)
 
-            grant ->
-              _ = revoke_token(token)
-              issue(grant)
+          grant = Repo.get(AppGrant, token.grant_id) || Repo.rollback(:invalid)
+          {:ok, _} = revoke_token(token)
+
+          case issue(grant) do
+            {:ok, bundle} -> bundle
+            {:error, reason} -> Repo.rollback(reason)
           end
-        end
-    end
+      end
+    end)
   end
 
   def refresh(_), do: {:error, :invalid}

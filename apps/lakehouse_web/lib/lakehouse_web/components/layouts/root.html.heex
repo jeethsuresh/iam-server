@@ -13,7 +13,7 @@
     <script defer src={~p"/lakehouse.js"}>
     </script>
   </head>
-  <body>
+  <body data-gravitas-authenticated={to_string(is_binary(Plug.Conn.get_session(@conn, :user_jwt)))}>
     <%= @inner_content %>
   </body>
 </html>

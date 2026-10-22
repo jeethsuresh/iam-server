@@ -26,4 +26,12 @@ defmodule LakehouseIam.Apps.TokensTest do
     assert :ok = Tokens.revoke_app(p.id, grant.app_origin)
     assert {:error, _} = Tokens.verify_access(access)
   end
+
+  test "a refresh credential can only be consumed once", %{grant: grant} do
+    {:ok, first} = Tokens.issue(grant)
+    assert {:ok, next} = Tokens.refresh(first.refresh_token)
+    assert next.refresh_token != first.refresh_token
+    assert {:error, :revoked} = Tokens.refresh(first.refresh_token)
+    assert {:ok, _} = Tokens.verify_access(next.access_token)
+  end
 end

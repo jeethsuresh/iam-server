@@ -11,6 +11,7 @@ defmodule LakehouseIam.ProductionConfigTest do
     "PHX_HOST" => "iam.jeeth.dev",
     "IAM_PUBLIC_URL" => "https://iam.jeeth.dev",
     "IAM_DOMAIN" => "jeeth.dev",
+    "IAM_SSO_COOKIE_DOMAIN" => "jeeth.dev",
     "IAM_RELAXED_CALLBACK_URLS" => "false"
   }
 
@@ -79,6 +80,17 @@ defmodule LakehouseIam.ProductionConfigTest do
     assert_raise RuntimeError, ~r/IAM_REGISTRATION_KEY must be/, &runtime/0
     System.delete_env("IAM_REGISTRATION_KEY")
     assert_raise System.EnvError, &runtime/0
+  end
+
+  test "refresh cookies are secure and a shared hint is scoped to the configured parent" do
+    prod = Config.Reader.read!(Path.join(@root, "config/prod.exs"), env: :prod)
+    assert prod[:lakehouse_web][:secure_auth_cookies]
+    assert runtime()[:lakehouse_web][:sso_cookie_domain] == "jeeth.dev"
+
+    for domain <- ["evil.example", ".jeeth.dev", "*.jeeth.dev", "https://jeeth.dev", "dev"] do
+      System.put_env("IAM_SSO_COOKIE_DOMAIN", domain)
+      assert_raise RuntimeError, ~r/IAM_SSO_COOKIE_DOMAIN/, &runtime/0
+    end
   end
 
   test "an existing Matrix namespace can be retained when moving its database" do

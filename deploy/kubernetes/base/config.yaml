@@ -8,6 +8,7 @@ metadata:
 data:
   IAM_PUBLIC_URL: https://gravitas.cool
   IAM_DOMAIN: gravitas.cool
+  IAM_SSO_COOKIE_DOMAIN: gravitas.cool
   PHX_HOST: gravitas.cool
   PORT: "4000"
   POOL_SIZE: "3"

@@ -39,7 +39,15 @@ config :logger, :console,
   metadata: [:request_id]
 
 config :phoenix, :json_library, Jason
-config :phoenix, :filter_parameters, ["password", "registration_key"]
+
+config :phoenix, :filter_parameters, [
+  "password",
+  "registration_key",
+  "refresh_token",
+  "access_token",
+  "code_verifier",
+  "token"
+]
 
 config :lakehouse_matrix, :pubsub, LakehouseWeb.PubSub
 

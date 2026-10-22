@@ -18,6 +18,18 @@ if config_env() == :prod do
     raise "IAM_DOMAIN must be a DNS name"
   end
 
+  cookie_domain =
+    (System.get_env("IAM_SSO_COOKIE_DOMAIN") || identity_domain) |> String.downcase()
+
+  unless String.contains?(cookie_domain, ".") and
+           Regex.match?(~r/\A[a-z0-9]+(?:[.-][a-z0-9]+)*\z/, cookie_domain) and
+           (public_uri.host == cookie_domain or
+              String.ends_with?(public_uri.host, "." <> cookie_domain)) do
+    raise "IAM_SSO_COOKIE_DOMAIN must be the IAM hostname or its parent DNS domain"
+  end
+
+  config :lakehouse_web, :sso_cookie_domain, cookie_domain
+
   database_url = System.fetch_env!("DATABASE_URL")
 
   db_ssl =

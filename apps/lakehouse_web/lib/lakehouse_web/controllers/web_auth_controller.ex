@@ -19,22 +19,13 @@ defmodule LakehouseWeb.WebAuthController do
       {:ok, token} when is_binary(token) ->
         {conn, destination} = LakehouseWeb.SessionReturn.consume(conn)
 
-        conn
-        |> put_session(:user_jwt, token)
-        |> put_flash(:info, "Signed in.")
-        |> redirect(to: destination)
+        finish_browser_login(conn, token, destination, false)
 
       {:ok, %{redirect: "/" <> _ = path, user_jwt: jwt}} ->
-        conn
-        |> put_session(:user_jwt, jwt)
-        |> delete_session(:return_to)
-        |> redirect(to: path)
+        finish_browser_login(conn, jwt, path, false)
 
       {:ok, %{redirect: url, user_jwt: jwt}} ->
-        conn
-        |> put_session(:user_jwt, jwt)
-        |> delete_session(:return_to)
-        |> redirect(external: url)
+        finish_browser_login(conn, jwt, url, true)
 
       {:ok, %{redirect: url}} ->
         conn |> delete_session(:return_to) |> redirect(external: url)
@@ -43,6 +34,22 @@ defmodule LakehouseWeb.WebAuthController do
         conn
         |> put_flash(:error, humanize_error(body))
         |> redirect(to: IamAuth.login_path(username, session_id))
+    end
+  end
+
+  defp finish_browser_login(conn, jwt, destination, external?) do
+    case LakehouseWeb.BrowserSession.sign_in(conn, jwt) do
+      {:ok, conn} ->
+        conn = conn |> delete_session(:return_to) |> put_flash(:info, "Signed in.")
+
+        if external?,
+          do: redirect(conn, external: destination),
+          else: redirect(conn, to: destination)
+
+      {:error, conn} ->
+        conn
+        |> put_flash(:error, "Could not create your session. Please sign in again.")
+        |> redirect(to: ~p"/")
     end
   end
 

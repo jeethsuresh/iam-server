@@ -11,9 +11,12 @@ defmodule LakehouseWeb.ProfilePasswordController do
 
   def update_browser(conn, params) do
     apply_change(conn, params, fn conn, msg ->
-      conn
-      |> put_flash(:info, msg)
-      |> redirect(to: ~p"/settings")
+      jwt = LakehouseIam.Auth.Token.issue(conn.assigns.username)
+
+      case LakehouseWeb.BrowserSession.sign_in(conn, jwt) do
+        {:ok, conn} -> conn |> put_flash(:info, msg) |> redirect(to: ~p"/settings")
+        {:error, conn} -> conn |> LakehouseWeb.BrowserSession.logout() |> redirect(to: ~p"/")
+      end
     end)
   end
 

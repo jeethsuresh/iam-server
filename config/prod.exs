@@ -1,5 +1,7 @@
 import Config
 
+config :lakehouse_web, :secure_auth_cookies, true
+
 config :lakehouse_web, LakehouseWeb.Endpoint,
   server: true,
   code_reloader: false,

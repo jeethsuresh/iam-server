@@ -2,6 +2,7 @@ defmodule LakehouseWeb.IamSessionController do
   use LakehouseWeb, :controller
 
   alias LakehouseWeb.IamAuth
+  alias LakehouseIam.Auth.{Sessions, Token}
 
   def create(conn, params) do
     username = params["username"]
@@ -17,17 +18,12 @@ defmodule LakehouseWeb.IamSessionController do
 
     case result do
       {:ok, token} when is_binary(token) ->
-        json(conn, %{token: token})
+        issue_session(conn, token)
 
       {:ok, %{redirect: url} = payload} ->
-        body =
-          if Map.has_key?(payload, :user_jwt) do
-            %{redirect: url, token: payload.user_jwt}
-          else
-            %{redirect: url}
-          end
-
-        json(conn, body)
+        if Map.has_key?(payload, :user_jwt),
+          do: issue_session(conn, payload.user_jwt, %{redirect: url}),
+          else: json(conn, %{redirect: url})
 
       {:error, status, body} ->
         conn
@@ -37,7 +33,7 @@ defmodule LakehouseWeb.IamSessionController do
   end
 
   def delete(conn, _params) do
-    conn = configure_session(conn, drop: true)
+    conn = LakehouseWeb.BrowserSession.logout(conn)
 
     case get_format(conn) do
       "html" ->
@@ -47,6 +43,40 @@ defmodule LakehouseWeb.IamSessionController do
 
       _ ->
         json(conn, "Logged out")
+    end
+  end
+
+  def refresh(conn, _params) do
+    conn = put_resp_header(conn, "cache-control", "no-store")
+
+    case Sessions.rotate(conn.body_params["refresh_token"], :api) do
+      {:ok, bundle} -> json(conn, bundle)
+      _ -> conn |> put_status(401) |> json(%{error: "invalid_grant"})
+    end
+  end
+
+  def revoke(conn, _params) do
+    Sessions.revoke(conn.body_params["refresh_token"], :api)
+    conn |> put_resp_header("cache-control", "no-store") |> send_resp(204, "")
+  end
+
+  def show(conn, _params) do
+    claims = conn.assigns.jwt_claims
+
+    conn
+    |> put_resp_header("cache-control", "no-store")
+    |> json(%{
+      authenticated: true,
+      expires_in: max(claims["exp"] - System.system_time(:second), 0)
+    })
+  end
+
+  defp issue_session(conn, jwt, extra \\ %{}) do
+    with {:ok, %{"username" => username}} <- Token.verify(jwt),
+         {:ok, bundle} <- Sessions.issue(username, :api) do
+      conn |> put_resp_header("cache-control", "no-store") |> json(Map.merge(bundle, extra))
+    else
+      _ -> conn |> put_status(401) |> json(%{error: "invalid_grant"})
     end
   end
 

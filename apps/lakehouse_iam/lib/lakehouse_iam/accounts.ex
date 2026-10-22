@@ -274,23 +274,35 @@ defmodule LakehouseIam.Accounts do
   def set_password(principal_id, password) when is_binary(password) do
     hash = Argon2.hash_pwd_salt(password)
 
-    case Repo.one(
-           from c in Credential,
-             where: c.principal_id == ^principal_id and c.kind == :password
-         ) do
-      nil ->
-        %Credential{}
-        |> Credential.changeset(%{kind: :password, secret_hash: hash, principal_id: principal_id})
-        |> Repo.insert()
+    Repo.transaction(fn ->
+      result =
+        case Repo.one(
+               from c in Credential,
+                 where: c.principal_id == ^principal_id and c.kind == :password
+             ) do
+          nil ->
+            %Credential{}
+            |> Credential.changeset(%{
+              kind: :password,
+              secret_hash: hash,
+              principal_id: principal_id
+            })
+            |> Repo.insert()
 
-      cred ->
-        cred
-        |> Credential.changeset(%{secret_hash: hash})
-        |> Repo.update()
-    end
+          cred ->
+            cred
+            |> Credential.changeset(%{secret_hash: hash})
+            |> Repo.update()
+        end
+
+      case result do
+        {:ok, _} -> LakehouseIam.Auth.Sessions.revoke_for_principal(principal_id)
+        {:error, cs} -> Repo.rollback(cs)
+      end
+    end)
     |> case do
-      {:ok, _} -> :ok
-      {:error, cs} -> {:error, cs}
+      {:ok, :ok} -> :ok
+      {:error, reason} -> {:error, reason}
     end
   end
 
@@ -302,9 +314,18 @@ defmodule LakehouseIam.Accounts do
         {:error, %Ecto.Changeset{}}
 
       p ->
-        p
-        |> Ecto.Changeset.change(active: active)
-        |> Repo.update()
+        Repo.transaction(fn ->
+          result = p |> Ecto.Changeset.change(active: active) |> Repo.update()
+
+          case result do
+            {:ok, principal} ->
+              if not active, do: LakehouseIam.Auth.Sessions.revoke_for_principal(principal_id)
+              principal
+
+            {:error, cs} ->
+              Repo.rollback(cs)
+          end
+        end)
     end
   end
 end

@@ -1,4 +1,25 @@
 (function () {
+  function initSessionRenewal() {
+    if (document.body.dataset.gravitasAuthenticated !== "true") return
+    let pending = false
+    async function renew() {
+      if (pending || document.visibilityState !== "visible") return
+      pending = true
+      try {
+        const response = await fetch("/web/session", {
+          credentials: "same-origin", cache: "no-store", headers: {Accept: "application/json"}
+        })
+        if (response.status === 401) window.location.reload()
+      } catch (_) {
+        // Offline or temporarily unavailable: preserve the current page.
+      } finally {
+        pending = false
+      }
+    }
+    document.addEventListener("visibilitychange", renew)
+    window.setInterval(renew, 5 * 60 * 1000)
+  }
+
   function initLiveSocket() {
     const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribute("content")
 
@@ -39,8 +60,9 @@
   }
 
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", initLiveSocket)
+    document.addEventListener("DOMContentLoaded", () => { initLiveSocket(); initSessionRenewal() })
   } else {
     initLiveSocket()
+    initSessionRenewal()
   }
 })()

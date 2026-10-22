@@ -28,6 +28,18 @@ defmodule LakehouseWeb.Test.Api.IamClient do
     |> post("/admin/approve", %{"username" => username})
   end
 
+  def refresh(token) do
+    build_conn()
+    |> put_req_header("content-type", "application/json")
+    |> post("/refresh", %{"refresh_token" => token})
+  end
+
+  def revoke(token) do
+    build_conn()
+    |> put_req_header("content-type", "application/json")
+    |> post("/revoke", %{"refresh_token" => token})
+  end
+
   def change_password(token, current, new_password, confirm \\ nil) do
     confirm = confirm || new_password
 

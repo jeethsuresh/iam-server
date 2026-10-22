@@ -1,5 +1,12 @@
 @browser
 Feature: Application login through the existing Gravitas session
+  Scenario: Browser access renews without asking for the password again
+    Given an approved user "browserrenew" with password "password123"
+    When I open the groups page while signed out
+    And my browser access expires but its refresh session remains valid
+    And I reopen the groups page without signing in again
+    Then I should be on the rooms page
+
   Scenario: An app reuses the base login without asking for a username
     When I sign in through the browser as "sessionreuse" with password "password123"
     And I open a username-free application login
@@ -11,7 +18,7 @@ Feature: Application login through the existing Gravitas session
     And I sign in again on the current form as "browserreturn"
     Then I should be on the rooms page
 
-  Scenario: An expired session gives a clear sign-in prompt and keeps the destination
+  Scenario: A revoked session gives a clear sign-in prompt and keeps the destination
     Given an approved user "browserexpiry" with password "password123"
     When I open the groups page while signed out
     And I sign in with an already expired session as "browserexpiry"

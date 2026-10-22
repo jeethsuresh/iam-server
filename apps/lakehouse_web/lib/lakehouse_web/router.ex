@@ -7,6 +7,7 @@ defmodule LakehouseWeb.Router do
     plug :accepts, ["html"]
     plug :fetch_session
     plug :fetch_live_flash
+    plug LakehouseWeb.Plugs.RenewBrowserSession
     plug :put_root_layout, html: {LakehouseWeb.Layouts, :root}
     plug :protect_from_forgery
     plug :put_secure_browser_headers
@@ -16,6 +17,7 @@ defmodule LakehouseWeb.Router do
     plug :accepts, ["html", "json"]
     plug :fetch_session
     plug :fetch_live_flash
+    plug LakehouseWeb.Plugs.RenewBrowserSession
   end
 
   pipeline :api do
@@ -41,12 +43,18 @@ defmodule LakehouseWeb.Router do
     get "/register", PageController, :register
     post "/web/login", WebAuthController, :login
     post "/web/register", WebAuthController, :register
+    post "/web/logout", IamSessionController, :delete
   end
 
   scope "/", LakehouseWeb do
     pipe_through :browser_session
 
     get "/logout", IamSessionController, :delete
+  end
+
+  scope "/web", LakehouseWeb do
+    pipe_through [:browser_session, :session_authenticated]
+    get "/session", IamSessionController, :show
   end
 
   scope "/", LakehouseWeb do
@@ -101,6 +109,8 @@ defmodule LakehouseWeb.Router do
 
     post "/backend/register", IamBackendController, :create
     post "/login", IamSessionController, :create
+    post "/refresh", IamSessionController, :refresh
+    post "/revoke", IamSessionController, :revoke
     post "/register", IamRegistrationController, :create
     post "/oauth/token", OAuthController, :token
   end

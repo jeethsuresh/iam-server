@@ -79,14 +79,58 @@ defmodule LakehouseWeb.Bdd.SessionSteps do
   end
 
   step "I sign in with an already expired session as {string}", %{args: [username]} = context do
-    session =
-      with_expired_tokens(fn ->
-        session = submit_login(context.session, username)
-        assert_has(session, Query.css(".flash--error", text: "Please sign in again to continue."))
-        session
-      end)
+    session = submit_login(context.session, username)
+    assert_has(session, Query.css(".chat-master__title", text: "Groups"))
+    {:ok, user} = LakehouseIam.Accounts.fetch_user(username)
+    LakehouseIam.Auth.Sessions.revoke_for_principal(user.id)
+    session = visit(session, "/groups")
 
     {:ok, Map.put(context, :session, session)}
+  end
+
+  step "I refresh the API session", context do
+    original = json_response(context.last_conn, 200)["refresh_token"]
+    conn = LakehouseWeb.Test.Api.IamClient.refresh(original)
+    {:ok, Map.merge(context, %{last_conn: conn, original_refresh: original})}
+  end
+
+  step "the API returns a rotated refresh token", context do
+    body = json_response(context.last_conn, 200)
+    assert body["refresh_token"] != context.original_refresh
+    assert {:ok, _} = LakehouseIam.Auth.Token.verify(body["token"])
+    {:ok, Map.put(context, :refreshed_pair, body)}
+  end
+
+  step "I reuse the original refresh token", context do
+    {:ok,
+     Map.put(
+       context,
+       :last_conn,
+       LakehouseWeb.Test.Api.IamClient.refresh(context.original_refresh)
+     )}
+  end
+
+  step "the renewed API access is revoked", context do
+    assert :error = LakehouseIam.Auth.Token.verify(context.refreshed_pair["token"])
+    :ok
+  end
+
+  step "my browser access expires but its refresh session remains valid", context do
+    previous = Application.fetch_env!(:lakehouse_iam, :token_ttl_seconds)
+    Application.put_env(:lakehouse_iam, :token_ttl_seconds, 3)
+
+    try do
+      session = submit_login(context.session, "browserrenew")
+      assert_has(session, Query.css(".chat-master__title", text: "Groups"))
+      Process.sleep(3100)
+      {:ok, Map.put(context, :session, session)}
+    after
+      Application.put_env(:lakehouse_iam, :token_ttl_seconds, previous)
+    end
+  end
+
+  step "I reopen the groups page without signing in again", context do
+    {:ok, Map.put(context, :session, visit(context.session, "/groups"))}
   end
 
   step "I should see the friendly expired-session prompt", context do

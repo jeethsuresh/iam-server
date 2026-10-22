@@ -1,5 +1,14 @@
 @api
 Feature: Silent application sign-in
+  Scenario: API credentials rotate and a replay revokes the renewed access
+    Given an approved user "apirenew" with password "password123"
+    When I log in via API as "apirenew" with password "password123"
+    And I refresh the API session
+    Then the API returns a rotated refresh token
+    When I reuse the original refresh token
+    Then the API response status should be 401
+    And the renewed API access is revoked
+
   Scenario: A signed-out browser returns to the app without showing login
     When I request silent application login without a base session
     Then the app callback reports "login_required" with its original state
