@@ -100,9 +100,9 @@ defmodule LakehouseMatrix.DelegatedGroups do
             if target == actor || current not in ~w(join invite), do: Repo.rollback(:invalid_membership)
             "leave"
         end
-        member!(grant, id, target, membership)
+        event = member!(grant, id, target, membership)
         audit!(grant, id, action, user_id(target))
-        %{membership: membership}
+        %{"event_id" => event["event_id"], "membership" => membership}
       end)
     else
       {:error, e} -> {:error, e}

@@ -64,8 +64,62 @@ defmodule LakehouseMatrix.Matrix do
     end
   end
 
+  # First-party Matrix membership mutations use the same row-locked policy as apps.
+  def join_room(principal_id, room_ref) do
+    with {:ok, room} <- resolve_room(room_ref) do
+      if delegated?(room.id) do
+        with {:ok, _} <- delegated_membership(principal_id, room.id, "accept"),
+          do: {:ok, %{"room_id" => Identity.room_id(room.id)}}
+      else
+        legacy_join_room(principal_id, room_ref)
+      end
+    end
+  end
+
+  def leave_room(principal_id, room_ref) do
+    with {:ok, room} <- resolve_room(room_ref) do
+      if delegated?(room.id),
+        do: delegated_membership(principal_id, room.id, "leave"),
+        else: legacy_leave_room(principal_id, room_ref)
+    end
+  end
+
+  def invite(actor, room_ref, username) when is_binary(username) do
+    with {:ok, room} <- resolve_room(room_ref) do
+      if delegated?(room.id),
+        do: delegated_membership(actor, room.id, "invite", username),
+        else: legacy_invite(actor, room_ref, username)
+    end
+  end
+
+  def remove_member(actor, room_ref, username) when is_binary(username) do
+    with {:ok, room} <- resolve_room(room_ref) do
+      if delegated?(room.id),
+        do: delegated_membership(actor, room.id, "remove", username),
+        else: legacy_remove_member(actor, room_ref, username)
+    end
+  end
+
+  def add_member(room_id, actor, username) when is_binary(username) do
+    if delegated?(room_id) do
+      # River requires the invitee to accept. The legacy add operation auto-joins.
+      {:error, :forbidden}
+    else
+      legacy_add_member(room_id, actor, username)
+    end
+  end
+
+  defp delegated_membership(principal, id, action, username \\ nil) do
+    grant = %LakehouseIam.Schema.AppGrant{principal_id: principal,
+      app_origin: "https://" <> Identity.homeserver_domain(),
+      scopes: ["groups.manage"], room_mode: :all}
+    params = %{"action" => action}
+    params = if username, do: Map.put(params, "user_id", Identity.user_id(Accounts.normalize_username(username))), else: params
+    LakehouseMatrix.DelegatedGroups.membership(grant, id, params)
+  end
+
   @spec join_room(Ecto.UUID.t(), Ecto.UUID.t() | String.t()) :: {:ok, map()} | {:error, term()}
-  def join_room(principal_id, room_id_or_alias) do
+  defp legacy_join_room(principal_id, room_id_or_alias) do
     with {:ok, room} <- resolve_room(room_id_or_alias),
          {:ok, principal} <- fetch_principal(principal_id) do
       invited = Memberships.invited?(room.id, principal_id)
@@ -87,7 +141,7 @@ defmodule LakehouseMatrix.Matrix do
   """
   @spec invite(Ecto.UUID.t(), Ecto.UUID.t() | String.t(), String.t()) ::
           {:ok, map()} | {:error, term()}
-  def invite(actor_principal_id, room_id_or_alias, username) when is_binary(username) do
+  defp legacy_invite(actor_principal_id, room_id_or_alias, username) when is_binary(username) do
     canonical = Accounts.normalize_username(username)
 
     with {:ok, room} <- resolve_room(room_id_or_alias),
@@ -120,7 +174,7 @@ defmodule LakehouseMatrix.Matrix do
   end
 
   @spec add_member(Ecto.UUID.t(), Ecto.UUID.t(), String.t()) :: {:ok, map()} | {:error, term()}
-  def add_member(room_id, actor_principal_id, username) when is_binary(username) do
+  defp legacy_add_member(room_id, actor_principal_id, username) when is_binary(username) do
     canonical = Accounts.normalize_username(username)
 
     cond do
@@ -147,7 +201,7 @@ defmodule LakehouseMatrix.Matrix do
 
   @spec remove_member(Ecto.UUID.t(), Ecto.UUID.t() | String.t(), String.t()) ::
           {:ok, map()} | {:error, term()}
-  def remove_member(actor_principal_id, room_id_or_alias, username) when is_binary(username) do
+  defp legacy_remove_member(actor_principal_id, room_id_or_alias, username) when is_binary(username) do
     canonical = Accounts.normalize_username(username)
 
     with {:ok, room} <- resolve_room(room_id_or_alias),
@@ -282,7 +336,7 @@ defmodule LakehouseMatrix.Matrix do
   end
 
   @spec leave_room(Ecto.UUID.t(), Ecto.UUID.t() | String.t()) :: {:ok, map()} | {:error, term()}
-  def leave_room(principal_id, room_id_or_alias) do
+  defp legacy_leave_room(principal_id, room_id_or_alias) do
     with {:ok, room} <- resolve_room(room_id_or_alias),
          true <- Memberships.joined?(room.id, principal_id),
          {:ok, principal} <- fetch_principal(principal_id),

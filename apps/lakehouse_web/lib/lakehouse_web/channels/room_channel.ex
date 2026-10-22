@@ -59,6 +59,7 @@ defmodule LakehouseWeb.RoomChannel do
   end
 
   def handle_info(:after_join, socket) do
+    if Memberships.joined?(socket.assigns.room_db_id, socket.assigns.principal_id) do
     meta = %{
       username: socket.assigns.username,
       online_at: System.system_time(:second)
@@ -67,6 +68,9 @@ defmodule LakehouseWeb.RoomChannel do
     _ = RoomServer.track_presence(socket.assigns.room_db_id, socket.assigns.principal_id, meta)
     push(socket, "presence_state", RoomServer.presence_list(socket.assigns.room_db_id))
     {:noreply, socket}
+    else
+      {:stop, :normal, socket}
+    end
   end
 
   @impl true
