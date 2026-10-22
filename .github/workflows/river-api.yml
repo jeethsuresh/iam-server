@@ -27,7 +27,7 @@ jobs:
             -e MIX_ENV=test -e WALLABY_SKIP=1 -e POSTGRES_HOST=127.0.0.1 \
             -e ERL_FLAGS='+S 2:2 +SDcpu 1 +SDio 1 +A 2' \
             hexpm/elixir:1.18.5-erlang-27.3.4.17-alpine-3.21.7 \
-            sh -ec 'apk add --no-cache build-base git; mix local.hex --force; mix local.rebar --force; mix deps.get; mix ecto.create -r LakehouseIam.Repo; mix ecto.migrate -r LakehouseIam.Repo; mix test'
+            sh -ec 'apk add --no-cache build-base git imagemagick imagemagick-jpeg; mix local.hex --force; mix local.rebar --force; mix deps.get; mix ecto.create -r LakehouseIam.Repo; mix ecto.migrate -r LakehouseIam.Repo; mix test'
   image:
     needs: test
     if: github.event_name == 'push'

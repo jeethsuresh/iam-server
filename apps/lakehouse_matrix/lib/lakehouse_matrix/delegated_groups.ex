@@ -36,7 +36,7 @@ defmodule LakehouseMatrix.DelegatedGroups do
             event!(grant, id, "m.room.create", content, "")
             event!(grant, id, "m.room.name", %{"name" => room.name}, "")
             event!(grant, id, "m.room.join_rules", %{"join_rule" => "invite"}, "")
-            event!(grant, id, "m.room.history_visibility", %{"history_visibility" => "joined"}, "")
+            event!(grant, id, "m.room.history_visibility", %{"history_visibility" => "shared"}, "")
             event!(grant, id, "m.room.power_levels", %{"users" => %{creator => 100}, "users_default" => 0,
               "events_default" => 0, "state_default" => 100, "invite" => 100, "kick" => 100, "ban" => 100}, "")
             event!(grant, id, @group, %{"version" => 1, "kind" => params["kind"], "request_id" => params["txn_id"]}, "")

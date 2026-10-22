@@ -30,7 +30,7 @@ defmodule LakehouseMatrix.Schema.RoomEvent do
       :principal_id,
       :origin_server_ts,
       :state_key
-    ])
+    ], empty_values: [])
     |> validate_required([:room_id, :event_id, :type, :content, :sender, :origin_server_ts])
     |> unique_constraint(:event_id)
   end
