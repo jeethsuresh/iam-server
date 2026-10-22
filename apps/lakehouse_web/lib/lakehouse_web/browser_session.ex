@@ -45,10 +45,9 @@ defmodule LakehouseWeb.BrowserSession do
 
         cond do
           is_nil(claims["sid"]) ->
-            case Sessions.issue(claims["username"], :browser) do
-              {:ok, bundle} -> install(conn, bundle)
-              _ -> conn
-            end
+            # Unbound legacy cookies cannot recreate a family after logout.
+            # A durable refresh credential can still recover its existing family.
+            if is_binary(raw), do: rotate(conn, raw), else: conn |> delete_session(:user_jwt) |> clear_hint()
 
           is_binary(raw) and ttl <= window ->
             rotate(conn, raw)

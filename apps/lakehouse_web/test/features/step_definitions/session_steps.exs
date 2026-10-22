@@ -33,7 +33,7 @@ defmodule LakehouseWeb.Bdd.SessionSteps do
        %{args: [username]} = context do
     conn =
       build_conn()
-      |> init_test_session(user_jwt: LakehouseIam.Auth.Token.issue(username))
+      |> init_test_session(user_jwt: LakehouseWeb.MatrixFixtures.browser_token(username))
       |> get("/oauth/start", Map.put(request_params(), "prompt", "none"))
 
     {:ok, Map.put(context, :last_conn, conn)}

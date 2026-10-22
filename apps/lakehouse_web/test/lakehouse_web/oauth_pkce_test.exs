@@ -2,7 +2,6 @@ defmodule LakehouseWeb.OAuthPkceTest do
   use LakehouseWeb.ConnCase
 
   alias LakehouseIam.Apps.Pkce
-  alias LakehouseIam.Auth.Token
   alias LakehouseMatrix.Matrix
   alias LakehouseWeb.MatrixFixtures
   alias LakehouseWeb.Test.Api.OAuthClient
@@ -109,7 +108,7 @@ defmodule LakehouseWeb.OAuthPkceTest do
 
     conn =
       build_conn()
-      |> Plug.Test.init_test_session(%{user_jwt: Token.issue(user.username)})
+      |> Plug.Test.init_test_session(%{user_jwt: MatrixFixtures.browser_token(user.username)})
       |> get("/oauth/authorize", sessionID: sid)
 
     assert redirected_to(conn, 302) == "/oauth/consent?sessionID=#{sid}"
@@ -196,7 +195,7 @@ defmodule LakehouseWeb.OAuthPkceTest do
   end
 
   defp consent_code(username, sid, extra) do
-    jwt = Token.issue(username)
+    jwt = MatrixFixtures.browser_token(username)
 
     conn =
       build_conn()
