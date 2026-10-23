@@ -26,6 +26,7 @@ defmodule LakehouseWeb.App.V1Controller do
     with :ok <- require_scope(conn, "chats.list") do
       rooms =
         Memberships.list_joined_rooms(conn.assigns.principal_id)
+        |> Enum.filter(&Grants.room_allowed?(conn.assigns.app_grant, &1.id))
         |> Enum.map(fn r -> %{id: r.id, name: r.name} end)
 
       json(conn, %{chats: rooms})
