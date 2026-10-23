@@ -3,7 +3,7 @@ defmodule LakehouseMatrix.RiverPublishing do
   import Ecto.Query
   alias LakehouseIam.{Repo, Contacts}
   alias LakehouseIam.Schema.AppGrant
-  alias LakehouseMatrix.{DelegatedGroups, Memberships, State, Identity, RiverContent}
+  alias LakehouseMatrix.{DelegatedGroups, Memberships, Identity, RiverContent}
   alias LakehouseMatrix.Schema.{RiverPublication, RoomEvent, Room}
   @post "cool.gravitas.river.post.v1"
   @policy "cool.gravitas.river.publication.v1"
@@ -127,8 +127,8 @@ defmodule LakehouseMatrix.RiverPublishing do
         unless is_binary(p["body"]) and String.trim(p["body"]) != "" and byte_size(p["body"]) <= 16_000 and txn?(p["txn_id"]), do: Repo.rollback(:invalid_request)
         if Contacts.blocked?(original.principal_id, g.principal_id), do: Repo.rollback(:forbidden)
         parent = if is_binary(p["parent_id"]), do: Repo.get_by(RoomEvent, event_id: p["parent_id"])
-        private_parent = parent && parent.room_id == original.room_id
-        public = publication && publication.thread_id && policy["comments_policy"] == "public" && not private_parent
+        private_parent = not is_nil(parent) and parent.room_id == original.room_id
+        public = not is_nil(publication) and not is_nil(publication.thread_id) and policy["comments_policy"] == "public" and not private_parent
         room = if public, do: publication.thread_id, else: original.room_id
         root = if public, do: publication.anchor_id, else: original.event_id
         if parent && (parent.room_id != room or (parent.event_id != root and get_in(parent.content, ["m.relates_to", "event_id"]) != root)), do: Repo.rollback(:invalid_relation)
@@ -150,18 +150,28 @@ defmodule LakehouseMatrix.RiverPublishing do
       if Contacts.blocked?(original.principal_id, g.principal_id), do: Repo.rollback(:forbidden)
       room = if p && p.thread_id && p.visibility == "public", do: p.thread_id, else: original.room_id
       target = if p && p.thread_id && p.visibility == "public", do: p.anchor_id, else: event
-      if p && p.visibility == "public" and not Memberships.joined?(room, g.principal_id), do: unwrap!(DelegatedGroups.membership(g, room, %{"action" => "public_join"}))
+      if not is_nil(p) and p.visibility == "public" and not Memberships.joined?(room, g.principal_id), do: unwrap!(DelegatedGroups.membership(g, room, %{"action" => "public_join"}))
       refreshed = if p && p.visibility == "public", do: %{g | room_ids: Enum.uniq(g.room_ids ++ [room])}, else: g
       unwrap!(RiverContent.reaction(refreshed, room, Map.put(params, "event_id", target)))
     end)
   end
   def blog(g, space, params) do
     with {:ok, _} <- Ecto.UUID.cast(space) do
+      Repo.transaction(fn ->
+        Repo.one(from r in Room, where: r.id == ^space, lock: "FOR SHARE") || Repo.rollback(:not_found)
+        unwrap!(blog_query(g, space, params))
+      end)
+    else
+      _ -> {:error, :not_found}
+    end
+  end
+  defp blog_query(g, space, params) do
+    with {:ok, _} <- Ecto.UUID.cast(space) do
       member = member?(g, space)
       query = from e in RoomEvent, left_join: p in RiverPublication, on: p.id == e.event_id,
         where: e.room_id == ^space and e.type == ^@post and (^member or p.visibility == "public"), order_by: [desc: e.inserted_at, desc: e.id], limit: 51
       query = if is_binary(params["before"]) do
-        case Repo.get_by(RoomEvent, room_id: space, event_id: params["before"]) do
+        case Repo.one(from e in query, where: e.event_id == ^params["before"]) do
           nil -> from e in query, where: false
           cursor -> from e in query, where: e.inserted_at < ^cursor.inserted_at or (e.inserted_at == ^cursor.inserted_at and e.id < ^cursor.id)
         end
