@@ -348,6 +348,16 @@ defmodule LakehouseMatrix.Matrix do
   @spec send_message(Ecto.UUID.t(), Ecto.UUID.t(), String.t(), map()) ::
           {:ok, map()} | {:error, term()}
   def send_message(principal_id, room_id, txn_id, content) do
+    if delegated?(room_id) do
+      grant = %LakehouseIam.Schema.AppGrant{principal_id: principal_id,
+        app_origin: "https://" <> Identity.homeserver_domain(), scopes: ["chats.write"], room_mode: :all}
+      LakehouseMatrix.DelegatedGroups.send(grant, room_id, "m.room.message", txn_id, content)
+    else
+      legacy_send_message(principal_id, room_id, txn_id, content)
+    end
+  end
+
+  defp legacy_send_message(principal_id, room_id, txn_id, content) do
     joined = Memberships.joined?(room_id, principal_id)
     can_send = can_send?(principal_id, room_id)
 

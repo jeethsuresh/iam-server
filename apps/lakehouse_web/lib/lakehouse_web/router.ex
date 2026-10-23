@@ -117,8 +117,15 @@ defmodule LakehouseWeb.Router do
 
     get "/groups", GroupController, :index
     post "/groups", GroupController, :create
+    post "/direct", GroupController, :direct
     post "/groups/:id/membership", GroupController, :membership
     patch "/groups/:id", GroupController, :update
+    get "/groups/:id/channels", GroupController, :channels
+    post "/groups/:id/channels", GroupController, :create_channel
+    post "/groups/:id/read", GroupController, :mark_read
+    get "/friends", SocialController, :index
+    post "/friends", SocialController, :mutate
+    get "/friends/events", SocialController, :events
     get "/groups/:id/events", GroupController, :events
     put "/groups/:id/events/:type/:txn_id", GroupController, :send_event
     get "/me", V1Controller, :me
