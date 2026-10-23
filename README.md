@@ -98,7 +98,7 @@ docker compose build --no-cache lakehouse && docker compose up
 - `GET /profile` — HTML when opened in a browser if you are logged in via session, or JSON with `Accept: application/json` / API clients using Bearer token
 - `GET /profile/password` — change password form (session or Bearer)
 - `POST /web/profile/password` — submit password change (`current_password`, `new_password`, `new_password_confirm`). Bootstrap admin cannot use this when `IAM_ADMIN_PASSWORD` is set (same as iam-server); change the env and restart instead.
-- `GET /admin` — **admin only** (`IAM_ADMIN_USERNAME`): lists users with `active: false` and approve buttons
+- `GET /admin` — **admin only** (bootstrap account or an active user with a global `admin` role): redirects to settings with pending users and approve buttons
 - `POST /web/admin/approve` — **admin only**, form field `username` to activate an account
 - `POST /web/logout` — CSRF-protected browser logout; revokes this Gravitas login and connected service sessions, keeping saved consent. `GET /logout` shows a confirmation form.
 
@@ -108,6 +108,8 @@ Additional JSON (Bearer required):
 
 - `POST /profile/password` — body/urlencoded `current_password`, `new_password`, `new_password_confirm` → `{"message":"Password updated."}` or error JSON with `message` (403 for env-backed admin password)
 - `POST /admin/approve` — **admin** Bearer only; JSON body `{"username":"..."}` to approve a pending user
+
+Additional administrators keep their existing passwords and may change them normally. A trusted database operator can grant an existing active account the global `admin` role with `scripts/kubernetes/grant-admin.sql`; see [the Kubernetes operator procedure](docs/kubernetes.md#additional-administrators). Resource-scoped `admin` grants do not grant IAM administration, and revoking the global grant takes effect on the next request.
 
 ## IAM routes (compatible with `iam-server`)
 

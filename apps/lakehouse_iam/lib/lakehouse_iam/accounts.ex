@@ -5,7 +5,7 @@ defmodule LakehouseIam.Accounts do
   import Ecto.Query
 
   alias LakehouseIam.{Identifier, Repo}
-  alias LakehouseIam.Schema.{Credential, Principal}
+  alias LakehouseIam.Schema.{Credential, Grant, Principal, Role}
 
   @max_username 20
   @max_password 1024
@@ -103,11 +103,23 @@ defmodule LakehouseIam.Accounts do
   end
 
   @doc """
-  True when `username` is the configured bootstrap admin (`IAM_ADMIN_USERNAME`), case-insensitive.
+  True for the configured bootstrap admin or an active user with a global `admin` grant.
   """
   @spec admin?(String.t()) :: boolean()
   def admin?(username) when is_binary(username) do
-    admin_username?(normalize_username(username))
+    canonical = normalize_username(username)
+
+    admin_username?(canonical) or
+      Repo.exists?(
+        from p in Principal,
+          join: g in Grant,
+          on: g.principal_id == p.id,
+          join: r in Role,
+          on: r.id == g.role_id,
+          where:
+            p.username == ^canonical and p.type == :user and p.active == true and
+              r.name == "admin" and is_nil(g.resource_id)
+      )
   end
 
   @doc """
@@ -123,7 +135,7 @@ defmodule LakehouseIam.Accounts do
   end
 
   @doc """
-  Activates a user account. Only the configured admin may call this successfully.
+  Activates a user account. Only an administrator may call this successfully.
   """
   @spec approve_user(String.t(), String.t()) ::
           {:ok, Principal.t()} | {:error, :forbidden | :not_found}
@@ -171,7 +183,7 @@ defmodule LakehouseIam.Accounts do
 
     with :ok <-
            validate_password_change_form(current_password, new_password, new_password_confirm) do
-      if admin?(canonical) and bootstrap_admin_password_set?() do
+      if admin_username?(canonical) and bootstrap_admin_password_set?() do
         {:error, :forbidden,
          "The admin password is set with IAM_ADMIN_PASSWORD when the server starts. Restart with a new value to change it."}
       else

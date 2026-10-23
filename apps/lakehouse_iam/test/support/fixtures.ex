@@ -7,6 +7,7 @@ defmodule LakehouseIam.Fixtures do
 
   def ensure_rbac! do
     for {name, desc} <- [
+          {"admin", "Global IAM administration"},
           {"member", "Default interactive user"},
           {"room_admin", "Room administration"}
         ] do

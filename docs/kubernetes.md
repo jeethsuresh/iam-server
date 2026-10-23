@@ -103,6 +103,18 @@ The application currently runs **one active pod**, with `Recreate` deployments. 
 
 For rollback, redeploy a previous immutable image only if it is compatible with the current schema; do not automatically reverse migrations or delete volumes. Delete failed migration jobs only after saving diagnostics.
 
+## Additional administrators
+
+After deploying a release that supports the global `admin` role, a trusted Gravitas operator can promote one existing active user without resetting credentials or running bootstrap:
+
+```bash
+kubectl --context do-tor1-gravitas-k8s-services -n iam exec -i statefulset/iam-db -- \
+  psql -X -v ON_ERROR_STOP=1 -U postgres -d iam -v username=TARGET_USERNAME \
+  < scripts/kubernetes/grant-admin.sql
+```
+
+The bounded transaction fails if the user is missing or inactive and is safe to repeat. It adds only the global role grant; passwords, existing grants and the bootstrap administrator are preserved. The account gains the same settings, service catalog and approval access as the bootstrap administrator on its next request. To revoke this additional access, remove only that user's `admin` grant whose `resource_id` is NULL through the trusted operator path (`LakehouseIam.IAM.revoke_role(principal_id, "admin")`). Scoped `admin` grants and inactive users never authorize global administration. There is no public role-assignment endpoint.
+
 ## Dashboard and service integration
 
 Administrators add services at `/services/manage` or via authenticated `POST /api/v1/services` with a `service` object (`name`, optional `description`, `home_url`, `login_url`). `GET /api/v1/services` lists the shared directory; DELETE removes an entry. Removal does not revoke existing user consent; each user can revoke connections in Settings.
