@@ -1,0 +1,205 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: iam-db
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: iam
+    app.kubernetes.io/component: database
+  ports:
+    - name: postgres
+      port: 5432
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: iam-db-rw
+spec:
+  selector:
+    app.kubernetes.io/name: iam
+    app.kubernetes.io/component: database
+  ports:
+    - name: postgres
+      port: 5432
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: iam-postgres-init
+data:
+  pg_hba.conf: |
+    local all all trust
+    hostssl all all 0.0.0.0/0 scram-sha-256
+    hostssl all all ::/0 scram-sha-256
+    hostnossl all all 0.0.0.0/0 reject
+    hostnossl all all ::/0 reject
+  10-create-iam.sh: |
+    #!/bin/sh
+    set -eu
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --set=app_password="$IAM_DATABASE_PASSWORD" <<'SQL'
+    CREATE USER iam WITH LOGIN PASSWORD :'app_password';
+    ALTER DATABASE iam OWNER TO iam;
+    GRANT ALL ON SCHEMA public TO iam;
+    SQL
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: iam-db
+spec:
+  serviceName: iam-db
+  replicas: 1
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: iam
+      app.kubernetes.io/component: database
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: iam
+        app.kubernetes.io/component: database
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70
+        runAsGroup: 70
+        fsGroup: 70
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: postgres
+          image: docker.io/library/postgres@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+          args:
+            - -c
+            - ssl=on
+            - -c
+            - ssl_cert_file=/etc/postgres-tls/tls.crt
+            - -c
+            - ssl_key_file=/etc/postgres-tls/tls.key
+            - -c
+            - ssl_min_protocol_version=TLSv1.2
+            - -c
+            - hba_file=/etc/postgres-config/pg_hba.conf
+            - -c
+            - shared_buffers=32MB
+            - -c
+            - work_mem=2MB
+            - -c
+            - maintenance_work_mem=16MB
+            - -c
+            - max_connections=30
+          env:
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+            - name: POSTGRES_USER
+              value: postgres
+            - name: POSTGRES_DB
+              value: iam
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: iam-db-admin
+                  key: password
+            - name: IAM_DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: iam-db-app
+                  key: password
+            - name: POSTGRES_HOST_AUTH_METHOD
+              value: scram-sha-256
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 100m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          ports:
+            - name: postgres
+              containerPort: 5432
+          startupProbe:
+            exec:
+              command: [pg_isready, -U, postgres, -d, iam]
+            periodSeconds: 5
+            failureThreshold: 60
+            timeoutSeconds: 5
+          readinessProbe:
+            exec:
+              command: [pg_isready, -U, postgres, -d, iam]
+            periodSeconds: 10
+            timeoutSeconds: 5
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: runtime
+              mountPath: /var/run/postgresql
+            - name: tmp
+              mountPath: /tmp
+            - name: tls
+              mountPath: /etc/postgres-tls
+              readOnly: true
+            - name: init
+              mountPath: /docker-entrypoint-initdb.d/10-create-iam.sh
+              subPath: 10-create-iam.sh
+              readOnly: true
+            - name: init
+              mountPath: /etc/postgres-config/pg_hba.conf
+              subPath: pg_hba.conf
+              readOnly: true
+      volumes:
+        - name: runtime
+          emptyDir: {}
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+        - name: tls
+          secret:
+            secretName: iam-db-server-tls
+            defaultMode: 0440
+        - name: init
+          configMap:
+            name: iam-postgres-init
+            defaultMode: 0555
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: do-block-storage-retain
+        resources:
+          requests:
+            storage: 10Gi
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: iam-database
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: iam
+      app.kubernetes.io/component: database
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: iam
+            matchExpressions:
+              - key: app.kubernetes.io/component
+                operator: In
+                values: [server, migration]
+      ports:
+        - protocol: TCP
+          port: 5432

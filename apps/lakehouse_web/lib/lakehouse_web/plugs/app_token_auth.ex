@@ -10,7 +10,8 @@ defmodule LakehouseWeb.Plugs.AppTokenAuth do
     case get_req_header(conn, "authorization") do
       ["Bearer " <> token] ->
         case Tokens.verify_access(token) do
-          {:ok, %{grant: grant}} ->
+          {:ok, %{grant: grant, token: token}} ->
+            grant = %{grant | scopes: Tokens.effective_scopes(token, grant)}
             conn
             |> assign(:app_grant, grant)
             |> assign(:principal_id, grant.principal_id)

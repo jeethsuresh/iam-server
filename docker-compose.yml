@@ -16,7 +16,10 @@ services:
       retries: 15
       start_period: 5s
 
-  lakehouse:
+  app:
+    # Explicit image name so Forge can tag/release the compose build artifact.
+    # Forge release tagging reads services.app.image and `compose images -q app`.
+    image: iam-server:latest
     build:
       context: .
       dockerfile: Dockerfile
@@ -24,7 +27,16 @@ services:
       - "${HOST_PORT:-4000}:4000"
       - "${DEMO_HOST_PORT:-4100}:4100"
     environment:
-      MIX_ENV: dev
+      # Default to dev: the image is compiled for MIX_ENV=dev, and prod runtime
+      # rejects the docker-dev secret placeholders below. Set APP_MIX_ENV=prod only
+      # when injecting fresh SECRET_KEY_BASE / JWT_SECRET / IAM_ADMIN_PASSWORD.
+      MIX_ENV: ${APP_MIX_ENV:-dev}
+      DATABASE_URL: ${DATABASE_URL:-ecto://postgres:postgres@postgres/lakehouse_dev}
+      PHX_HOST: ${PHX_HOST:-iam.jeeth.dev}
+      IAM_PUBLIC_URL: ${IAM_PUBLIC_URL:-https://iam.jeeth.dev}
+      IAM_DOMAIN: ${IAM_DOMAIN:-jeeth.dev}
+      # The Compose database stays on its private network. Cloudflare uses verified TLS.
+      DATABASE_SSL: ${DATABASE_SSL:-disable}
       POSTGRES_HOST: postgres
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -35,7 +47,7 @@ services:
       SECRET_KEY_BASE: ${SECRET_KEY_BASE:-dEVDOCKERdEVDOCKERdEVDOCKERdEVDOCKERdEVDOCKERdEVDOCKERdEVDOCKERdEVDOCKERdEVDOCKERdEVDOCKER}
       IAM_ADMIN_USERNAME: ${IAM_ADMIN_USERNAME:-admin}
       IAM_ADMIN_PASSWORD: ${IAM_ADMIN_PASSWORD:-changeme}
-      IAM_RELAXED_CALLBACK_URLS: ${IAM_RELAXED_CALLBACK_URLS:-1}
+      IAM_RELAXED_CALLBACK_URLS: ${IAM_RELAXED_CALLBACK_URLS:-false}
       LAKEHOUSE_MEDIA_ROOT: ${LAKEHOUSE_MEDIA_ROOT:-/var/lib/lakehouse/media}
       # Test-only demo app (not part of default product deploy UX): set LAKEHOUSE_DEMO=1
       LAKEHOUSE_DEMO: ${LAKEHOUSE_DEMO:-}
@@ -49,6 +61,8 @@ services:
 
 volumes:
   lakehouse_pgdata:
-    name: ${COMPOSE_PROJECT_NAME:-lakehouse}_pgdata
+    # Bump suffix when init-user/role expectations change; legacy volumes may lack
+    # the configured POSTGRES_USER and break psql/ecto with "role does not exist".
+    name: ${COMPOSE_PROJECT_NAME:-lakehouse}_pgdata_v2
   lakehouse_media:
     name: ${COMPOSE_PROJECT_NAME:-lakehouse}_media

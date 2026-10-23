@@ -12,12 +12,13 @@ usage() {
 Usage: ./build.sh [options]
 
 Compile the Lakehouse umbrella (mix deps + compile).
+When mix is not on PATH, builds the compose image instead (Dockerfile compiles).
 
 EOF
   print_common_help
   cat <<EOF
 Build flags:
-  --skip-install   Skip mix deps.get
+  --skip-install   Skip mix deps.get (host mix only)
 EOF
 }
 
@@ -42,9 +43,19 @@ done
 
 export MIX_ENV="${MIX_ENV:-dev}"
 
-if [[ "$SKIP_INSTALL" -eq 0 ]]; then
-  mix deps.get
+if have_mix; then
+  if [[ "$SKIP_INSTALL" -eq 0 ]]; then
+    mix deps.get
+  fi
+  mix compile
+else
+  require_docker
+  echo "build.sh: mix not found; building via docker compose (project=$COMPOSE_PROJECT_NAME)"
+  # Classic builder emits "Successfully tagged" which Forge release tagging parses.
+  export DOCKER_BUILDKIT=0
+  export COMPOSE_DOCKER_CLI_BUILD=0
+  compose_cmd build --build-arg "FORGE_BUILD_ID=$(date -u +%Y%m%d%H%M%S)"
+  ensure_forge_app_image
 fi
 
-mix compile
 echo "build.sh: OK (project=$COMPOSE_PROJECT_NAME host_port=$HOST_PORT)"

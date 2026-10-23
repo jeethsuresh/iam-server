@@ -52,6 +52,12 @@ defmodule LakehouseMatrix.Events do
     |> Enum.map(&to_client_event/1)
   end
 
+  def list_all_timeline(room_id, limit \\ 100) do
+    Repo.all(from e in RoomEvent, where: e.room_id == ^room_id and is_nil(e.state_key),
+      order_by: [desc: e.inserted_at, desc: e.id], limit: ^limit)
+    |> Enum.reverse() |> Enum.map(&to_client_event/1)
+  end
+
   @doc """
   Timeline messages that are file or image attachments (newest first).
   """

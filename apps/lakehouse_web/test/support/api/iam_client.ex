@@ -5,10 +5,14 @@ defmodule LakehouseWeb.Test.Api.IamClient do
 
   @endpoint LakehouseWeb.Endpoint
 
-  def register(username, password) do
+  def register(username, password, registration_key \\ nil) do
     build_conn()
     |> put_req_header("content-type", "application/json")
-    |> post("/register", %{"username" => username, "password" => password})
+    |> post("/register", %{
+      "username" => username,
+      "password" => password,
+      "registration_key" => registration_key
+    })
   end
 
   def login(username, password) do
@@ -22,6 +26,18 @@ defmodule LakehouseWeb.Test.Api.IamClient do
     |> put_req_header("authorization", "Bearer #{admin_token}")
     |> put_req_header("content-type", "application/json")
     |> post("/admin/approve", %{"username" => username})
+  end
+
+  def refresh(token) do
+    build_conn()
+    |> put_req_header("content-type", "application/json")
+    |> post("/refresh", %{"refresh_token" => token})
+  end
+
+  def revoke(token) do
+    build_conn()
+    |> put_req_header("content-type", "application/json")
+    |> post("/revoke", %{"refresh_token" => token})
   end
 
   def change_password(token, current, new_password, confirm \\ nil) do

@@ -1,3 +1,4 @@
+<LakehouseWeb.Layouts.shell username={@username} admin={@current_user_is_admin} active={:groups}>
 <div class="chat-shell">
   <%= if msg = Phoenix.Flash.get(@flash, :error) do %>
     <div class="flash flash--error chat-flash" role="alert"><%= msg %></div>
@@ -8,15 +9,15 @@
 
   <aside class="chat-master">
     <div class="chat-master__header">
-      <h1 class="chat-master__title">Rooms</h1>
-      <.link navigate={~p"/settings"} class="chat-master__settings">Settings</.link>
+      <h1 class="chat-master__title">Groups</h1>
+
     </div>
 
     <form phx-submit="create_room" class="chat-master__create">
       <input
         type="text"
         name="name"
-        placeholder="New room name"
+        placeholder="New group name"
         autocomplete="off"
         class="chat-master__input"
       />
@@ -26,7 +27,7 @@
     <ul class="chat-room-list">
       <%= for room <- @rooms do %>
         <li class={["chat-room-list__item", @room && @room.id == room.id && "chat-room-list__item--active"]}>
-          <.link patch={~p"/rooms/#{room.id}"} class="chat-room-list__link">
+          <.link patch={~p"/groups/#{room.id}"} class="chat-room-list__link">
             <img
               src={room_avatar_src(room)}
               alt=""
@@ -46,7 +47,7 @@
     </ul>
 
     <%= if @rooms == [] do %>
-      <p class="chat-master__empty">No rooms yet. Create one above.</p>
+      <p class="chat-master__empty">No groups yet. Create one above.</p>
     <% end %>
   </aside>
 
@@ -236,3 +237,5 @@
     <% end %>
   </section>
 </div>
+
+</LakehouseWeb.Layouts.shell>

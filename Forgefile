@@ -1,0 +1,66 @@
+# Lakehouse / iam-server — Forge deploy contract
+# Patterns from docs/forgefile.template.yml (Forge docs); trimmed unused options.
+
+version: 1
+
+project:
+  name: iam-server
+  compose_slug: iam-server
+
+scripts:
+  kubernetes_render:
+    run: ./scripts/kubernetes/deploy.sh --render "$IAM_IMAGE"
+    description: Render the DOKS release for a configured immutable IAM_IMAGE
+  kubernetes_deploy:
+    run: ./scripts/kubernetes/deploy.sh "$IAM_IMAGE"
+    description: Migrate and release to the explicit KUBE_CONTEXT; requires registry image and cluster credentials
+  cloudflare_check:
+    run: ./scripts/cloudflare-check.sh
+    description: Install pinned Worker dependencies, type-check, and test discovery/proxy routing
+  build:
+    run: ./build.sh
+    description: Compile via mix, or docker compose build when mix is unavailable
+  test:
+    run: ./test.sh --exclude-browser
+    description: Run domain, HTTP and API BDD tests; browser tests run with Chrome locally
+  teardown:
+    run: ./teardown.sh
+    description: Stop the docker compose stack for this project
+  diagnose_image:
+    run: ./scripts/diagnose_forge_image.sh
+    description: Probe compose/docker image state Forge release tagging would see
+  probe_forge_tagging:
+    run: ./scripts/probe_forge_tagging.sh
+    description: Extract Forge release image-tagging logic from the Forge container
+  remove_orphan_web:
+    run: ./scripts/remove_orphan_web.sh
+    description: Remove leftover iam-server-web-1 after renaming compose service to app
+
+deployments:
+  cloudflare:
+    kind: cloudflare-workers
+    description: Launch the Phoenix IAM release through one Cloudflare Container
+    auto_deploy: false
+    credential: cloudflare-iam
+    cloudflare:
+      config: cloudflare/wrangler.jsonc
+    scripts:
+      build: cloudflare_check
+  web:
+    description: Lakehouse IAM + Matrix web app (postgres + lakehouse)
+    subdomain: iam
+    auto_deploy: false
+    scripts:
+      build: build
+      test: test
+      deploy: ./deploy.sh
+      teardown: teardown
+    ports:
+      - name: http
+        port: 4000
+        public: true
+
+artifacts: {}
+
+agent:
+  packages: []

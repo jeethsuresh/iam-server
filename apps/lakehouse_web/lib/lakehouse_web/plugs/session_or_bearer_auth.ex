@@ -10,15 +10,15 @@ defmodule LakehouseWeb.Plugs.SessionOrBearerAuth do
   def init(opts), do: opts
 
   def call(conn, _opts) do
-    token =
+    bearer =
       case get_req_header(conn, "authorization") do
         ["Bearer " <> t] -> String.trim(t)
         _ -> nil
       end
 
     token =
-      if token && token != "" do
-        token
+      if bearer && bearer != "" do
+        bearer
       else
         get_session(conn, @session_key)
       end
@@ -29,11 +29,11 @@ defmodule LakehouseWeb.Plugs.SessionOrBearerAuth do
 
       true ->
         case LakehouseIam.Auth.Token.verify(token) do
-          {:ok, claims} ->
+          {:ok, claims} when bearer not in [nil, ""] or is_map_key(claims, "sid") ->
             username = claims["username"]
 
             case LakehouseIam.Accounts.fetch_user(username) do
-              {:ok, principal} ->
+              {:ok, %{active: true} = principal} ->
                 conn
                 |> assign(:jwt_claims, claims)
                 |> assign(:username, username)
@@ -42,11 +42,11 @@ defmodule LakehouseWeb.Plugs.SessionOrBearerAuth do
                 |> assign(:auth_token, token)
                 |> assign(:current_user_is_admin, LakehouseIam.Accounts.admin?(username))
 
-              :error ->
+              _ ->
                 maybe_halt_unauthorized(conn, "Unknown user")
             end
 
-          :error ->
+          _ ->
             maybe_halt_unauthorized(conn, "Invalid token")
         end
     end
@@ -55,7 +55,15 @@ defmodule LakehouseWeb.Plugs.SessionOrBearerAuth do
   defp maybe_halt_unauthorized(conn, msg) do
     if html_request?(conn) do
       conn
-      |> put_flash(:error, msg)
+      |> delete_session(@session_key)
+      |> LakehouseWeb.SessionReturn.remember()
+      |> put_flash(
+        if(msg == "Missing token", do: :info, else: :error),
+        if(msg == "Missing token",
+          do: "Sign in to continue.",
+          else: "Please sign in again to continue."
+        )
+      )
       |> redirect(to: "/")
       |> halt()
     else

@@ -14,11 +14,11 @@ defmodule LakehouseWeb.UserAuth do
     case session["user_jwt"] do
       token when is_binary(token) and token != "" ->
         case LakehouseIam.Auth.Token.verify(token) do
-          {:ok, claims} ->
+          {:ok, %{"sid" => sid} = claims} when is_binary(sid) ->
             username = claims["username"]
 
             case LakehouseIam.Accounts.fetch_user(username) do
-              {:ok, principal} ->
+              {:ok, %{active: true} = principal} ->
                 {:cont,
                  assign(socket,
                    username: username,
@@ -26,11 +26,11 @@ defmodule LakehouseWeb.UserAuth do
                    current_user_is_admin: LakehouseIam.Accounts.admin?(username)
                  )}
 
-              :error ->
+              _ ->
                 {:halt, redirect(socket, to: ~p"/")}
             end
 
-          :error ->
+          _ ->
             {:halt, redirect(socket, to: ~p"/")}
         end
 

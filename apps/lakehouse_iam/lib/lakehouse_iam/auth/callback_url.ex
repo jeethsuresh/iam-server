@@ -12,13 +12,15 @@ defmodule LakehouseIam.Auth.CallbackURL do
     relaxed = Application.fetch_env!(:lakehouse_iam, :relaxed_callback_urls)
 
     case URI.parse(raw) do
+      %URI{userinfo: info, fragment: fragment} when not is_nil(info) or not is_nil(fragment) ->
+        {:error, "#{name} must not contain credentials or fragments"}
+
+      %URI{scheme: "http"} when not relaxed ->
+        {:error, "#{name} must use HTTPS"}
+
       %URI{scheme: scheme, host: host}
       when scheme in ["http", "https"] and is_binary(host) and host != "" ->
-        host_for_parse =
-          case String.contains?(host, ":") and not String.starts_with?(host, "[") do
-            true -> "[#{host}]"
-            false -> host
-          end
+        host_for_parse = host |> String.trim_leading("[") |> String.trim_trailing("]")
 
         case :inet.parse_address(String.to_charlist(host_for_parse)) do
           {:ok, ip} ->
@@ -47,6 +49,10 @@ defmodule LakehouseIam.Auth.CallbackURL do
           end
         end)
     end
+  end
+
+  defp validate_ip({0, 0, 0, 0, 0, 0xFFFF, hi, lo}, relaxed, name) do
+    validate_ip({div(hi, 256), rem(hi, 256), div(lo, 256), rem(lo, 256)}, relaxed, name)
   end
 
   defp validate_ip(ip, relaxed, name) do
@@ -93,10 +99,26 @@ defmodule LakehouseIam.Auth.CallbackURL do
   # IPv6 loopback ::1 and link-local fe80::/10 (simplified check on high segment).
   defp loopback_or_private_ipv6?(ip) when tuple_size(ip) == 8 do
     case ip do
-      {0, 0, 0, 0, 0, 0, 0, 1} -> true
-      {0xfe80, _, _, _, _, _, _, _} -> true
-      {0xFEC0, _, _, _, _, _, _, _} -> true
-      _ -> false
+      {0, 0, 0, 0, 0, 0, 0, 1} ->
+        true
+
+      {0, 0, 0, 0, 0, 0, 0, 0} ->
+        true
+
+      {a, _, _, _, _, _, _, _} when a in 0xFC00..0xFDFF ->
+        true
+
+      {a, _, _, _, _, _, _, _} when a in 0xFE80..0xFEBF ->
+        true
+
+      {a, _, _, _, _, _, _, _} when a in 0xFEC0..0xFEFF ->
+        true
+
+      {0, 0, 0, 0, 0, 0xFFFF, hi, lo} ->
+        loopback_or_private_ipv4?({div(hi, 256), rem(hi, 256), div(lo, 256), rem(lo, 256)})
+
+      _ ->
+        false
     end
   end
 

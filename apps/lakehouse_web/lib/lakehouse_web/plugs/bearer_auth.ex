@@ -19,8 +19,14 @@ defmodule LakehouseWeb.Plugs.BearerAuth do
               |> assign(:username, username)
 
             case LakehouseIam.Accounts.fetch_user(username) do
-              {:ok, principal} -> assign(conn, :principal_id, principal.id)
-              :error -> conn
+              {:ok, %{active: true} = principal} ->
+                assign(conn, :principal_id, principal.id)
+
+              _ ->
+                conn
+                |> put_resp_content_type("application/json")
+                |> send_resp(401, Jason.encode!("Inactive or unknown user"))
+                |> halt()
             end
 
           :error ->

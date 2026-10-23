@@ -1,6 +1,16 @@
+## Gravitas dashboard and Kubernetes
+
+The signed-in home now lists connected and available services. Administrators maintain the shared service catalog; Groups keeps the existing room experience. See [DigitalOcean Kubernetes deployment and service integration](docs/kubernetes.md) for release images, database storage, optional failover, wildcard TLS, secret configuration and the app-side PKCE login contract.
+
 # Lakehouse — IAM + Matrix-style rooms + WebRTC orchestration (Elixir umbrella)
 
 This repository implements the architecture described in `original-plan.md`:
+
+Cloudflare launch preparation is documented in [docs/cloudflare.md](docs/cloudflare.md):
+Workers launch the production Phoenix release in a Container, and `@user:domain`
+identities discover their IAM host through `/.well-known/webfinger`. The demo app
+uses discovery before starting the existing PKCE login flow. The Forgefile includes
+a separate `cloudflare` deployment target; the local `web` target stays available.
 
 - **OTP-first**: federated IAM sessions, supervised room actors, Registry-backed routing.
 - **iam-server compatible HTTP surface** for integrations that already speak that protocol.
@@ -10,7 +20,7 @@ This repository implements the architecture described in `original-plan.md`:
 
 | App | Responsibility |
 |-----|----------------|
-| `lakehouse_iam` | `LakehouseIam.Repo`, principals/credentials/RBAC, HS256 + federated ES256 JWT, in-memory federated sessions |
+| `lakehouse_iam` | `LakehouseIam.Repo`, principals/credentials/RBAC, HS256 JWT, persistent PKCE sessions and single-use codes |
 | `lakehouse_matrix` | Room persistence (shared Postgres schema), `LakehouseMatrix.RoomServer`, `DynamicSupervisor` |
 | `lakehouse_web` | Phoenix endpoint, iam-server routes, `/api/v1` REST, sockets |
 
@@ -83,16 +93,16 @@ docker compose build --no-cache lakehouse && docker compose up
 
 - `GET /` — sign-in form (supports federated return query params `username`, `sessionID`, same idea as iam-server `GET /?username&sessionID`)
 - `GET /register` — registration form
-- `POST /web/login` — browser login (CSRF-protected); sets session cookie and redirects to `/profile`
+- `POST /web/login` — browser login (CSRF-protected); sets host-only session/refresh cookies and redirects to `/dashboard`
 - `POST /web/register` — browser registration (CSRF-protected)
 - `GET /profile` — HTML when opened in a browser if you are logged in via session, or JSON with `Accept: application/json` / API clients using Bearer token
 - `GET /profile/password` — change password form (session or Bearer)
 - `POST /web/profile/password` — submit password change (`current_password`, `new_password`, `new_password_confirm`). Bootstrap admin cannot use this when `IAM_ADMIN_PASSWORD` is set (same as iam-server); change the env and restart instead.
 - `GET /admin` — **admin only** (`IAM_ADMIN_USERNAME`): lists users with `active: false` and approve buttons
 - `POST /web/admin/approve` — **admin only**, form field `username` to activate an account
-- `GET /logout` — clears session; HTML redirects home, JSON returns `"Logged out"`
+- `POST /web/logout` — CSRF-protected browser logout; revokes this Gravitas login and connected service sessions, keeping saved consent. `GET /logout` shows a confirmation form.
 
-JSON **iam-server**-compatible endpoints stay **unchanged** (no CSRF): `POST /login`, `POST /register`, etc.
+JSON **iam-server**-compatible endpoints retain their existing fields (no CSRF). `POST /login` also returns a rotating refresh token; use body-only `POST /refresh` and `POST /revoke`. Browser refresh sessions last at most 30 days. Integrated subdomains use the shared non-credential sign-in cookie to start silent PKCE login; see [session and service integration](docs/kubernetes.md#dashboard-and-service-integration).
 
 Additional JSON (Bearer required):
 

@@ -9,7 +9,13 @@ defmodule LakehouseWeb.App.V1Controller do
   def me(conn, _params) do
     with :ok <- require_scope(conn, "profile.name"),
          %Principal{} = p <- Repo.get(Principal, conn.assigns.principal_id) do
-      json(conn, %{username: p.username, name: p.username})
+      json(conn, %{
+        sub: p.id,
+        username: p.username,
+        domain: LakehouseIam.Identifier.domain(),
+        user_id: LakehouseIam.Identifier.format(p.username),
+        name: p.username
+      })
     else
       {:error, :forbidden} -> forbidden(conn, "profile.name")
       _ -> conn |> put_status(404) |> json(%{error: "not_found"})
@@ -20,6 +26,7 @@ defmodule LakehouseWeb.App.V1Controller do
     with :ok <- require_scope(conn, "chats.list") do
       rooms =
         Memberships.list_joined_rooms(conn.assigns.principal_id)
+        |> Enum.filter(&Grants.room_allowed?(conn.assigns.app_grant, &1.id))
         |> Enum.map(fn r -> %{id: r.id, name: r.name} end)
 
       json(conn, %{chats: rooms})
@@ -52,7 +59,8 @@ defmodule LakehouseWeb.App.V1Controller do
   def create_event(conn, %{"id" => room_id} = params) do
     with :ok <- require_scope(conn, "chats.write"),
          :ok <- require_room(conn, room_id),
-         body when is_binary(body) and body != "" <- params["body"] || get_in(params, ["content", "body"]),
+         body when is_binary(body) and body != "" <-
+           params["body"] || get_in(params, ["content", "body"]),
          txn_id <- params["txn_id"] || Ecto.UUID.generate(),
          {:ok, event} <-
            Matrix.send_message(conn.assigns.principal_id, room_id, txn_id, %{

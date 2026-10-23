@@ -31,6 +31,11 @@ defmodule LakehouseAppDemo.PageController do
     end
   end
 
+  def launch(conn, %{"login_hint" => username}) when is_binary(username),
+    do: start_login(conn, %{"username" => username})
+
+  def launch(conn, _params), do: redirect(conn, to: "/")
+
   def start_login(conn, %{"username" => username_at}) do
     with {:ok, local, iam_base} <- resolve_iam(username_at),
          caller <- public_url(conn, "/"),
@@ -52,7 +57,8 @@ defmodule LakehouseAppDemo.PageController do
   end
 
   def callback(conn, params) do
-    with true <- params["state"] == get_session(conn, :oauth_state),
+    with state when is_binary(state) and state != "" <- get_session(conn, :oauth_state),
+         true <- params["state"] == state,
          verifier when is_binary(verifier) <- get_session(conn, :pkce_verifier),
          iam_base when is_binary(iam_base) <- get_session(conn, :iam_base),
          redirect_uri when is_binary(redirect_uri) <- get_session(conn, :redirect_uri),
@@ -98,7 +104,9 @@ defmodule LakehouseAppDemo.PageController do
         end
 
       _ ->
-        OAuthClient.parse_username_at_host(username_at)
+        with {:ok, identity, metadata} <- LakehouseIam.Discovery.resolve(username_at) do
+          {:ok, identity.user_id, metadata}
+        end
     end
   end
 
@@ -123,8 +131,8 @@ defmodule LakehouseAppDemo.PageController do
     #{err}
     <form method="post" action="/login">
       <input type="hidden" name="_csrf_token" value="#{Plug.HTML.html_escape(csrf)}" />
-      <label>Lakehouse username@host
-        <input name="username" placeholder="alice@127.0.0.1:4002" required />
+      <label>Lakehouse @username:domain
+        <input name="username" placeholder="@alice:example.com" required />
       </label>
       <button type="submit">Continue</button>
     </form>

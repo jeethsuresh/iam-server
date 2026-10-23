@@ -28,6 +28,7 @@ defmodule LakehouseAppDemo.MixProject do
 
   defp deps do
     [
+      {:lakehouse_iam, in_umbrella: true},
       {:phoenix, "~> 1.7.14"},
       {:phoenix_html, "~> 4.1"},
       {:jason, "~> 1.2"},

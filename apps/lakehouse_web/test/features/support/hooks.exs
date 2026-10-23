@@ -40,7 +40,9 @@ defmodule LakehouseWeb.Bdd.Hooks do
     Enum.any?(tags, &(&1 == "browser"))
   end
 
-  defp normalize_tag(tag) when is_atom(tag), do: tag |> Atom.to_string() |> String.trim_leading("@")
+  defp normalize_tag(tag) when is_atom(tag),
+    do: tag |> Atom.to_string() |> String.trim_leading("@")
+
   defp normalize_tag(tag) when is_binary(tag), do: String.trim_leading(tag, "@")
   defp normalize_tag(_), do: ""
 end

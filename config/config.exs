@@ -7,10 +7,14 @@ config :lakehouse_iam, LakehouseIam.Repo,
 config :lakehouse_iam, ecto_repos: [LakehouseIam.Repo]
 
 config :lakehouse_iam,
+  identity_domain: System.get_env("IAM_DOMAIN", "localhost"),
+  public_url: System.get_env("IAM_PUBLIC_URL", "http://localhost:4000"),
   jwt_secret: System.get_env("JWT_SECRET", "dev-only-change-me-use-long-secret"),
   token_ttl_seconds: 3600,
   admin_username: System.get_env("IAM_ADMIN_USERNAME", "admin"),
   admin_password: System.get_env("IAM_ADMIN_PASSWORD", ""),
+  registration_key: System.get_env("IAM_REGISTRATION_KEY"),
+  native_broker_origin: System.get_env("IAM_NATIVE_BROKER_ORIGIN"),
   relaxed_callback_urls: System.get_env("IAM_RELAXED_CALLBACK_URLS") not in [nil, ""]
 
 config :lakehouse_web, :session_options,
@@ -36,6 +40,18 @@ config :logger, :console,
   metadata: [:request_id]
 
 config :phoenix, :json_library, Jason
+
+config :phoenix, :filter_parameters, [
+  "password",
+  "registration_key",
+  "refresh_token",
+  "access_token",
+  "code_verifier",
+  "token",
+  "code",
+  "session_check_token",
+  "codeVerifier"
+]
 
 config :lakehouse_matrix, :pubsub, LakehouseWeb.PubSub
 

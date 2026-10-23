@@ -1,0 +1,132 @@
+name: Gravitas IAM
+on:
+  push:
+    branches: [main, codex/gravitas-dashboard-kubernetes]
+  pull_request:
+    branches: [main, codex/gravitas-dashboard-kubernetes]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: gravitas-iam-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Install verified Kubernetes client
+        run: |
+          curl -fsSLo kubectl https://dl.k8s.io/release/v1.37.0/bin/linux/amd64/kubectl
+          curl -fsSLo kubectl.sha256 https://dl.k8s.io/release/v1.37.0/bin/linux/amd64/kubectl.sha256
+          echo "$(cat kubectl.sha256)  kubectl" | sha256sum --check
+          chmod +x kubectl
+          echo "$PWD" >> "$GITHUB_PATH"
+      - name: Verify migration ordering and failure recovery
+        run: bash scripts/kubernetes/deploy_test.sh
+      - name: Build isolated browser test environment
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: Dockerfile.tests
+          load: true
+          tags: iam-tests:ci
+          cache-from: type=gha,scope=iam-tests
+          cache-to: type=gha,mode=max,scope=iam-tests
+      - name: Run unit, API and real-browser tests
+        run: >-
+          docker run --rm --init --network host --shm-size=256m
+          --ulimit nofile=65536:65536
+          -e POSTGRES_HOST=127.0.0.1 -e POSTGRES_PORT=5432
+          -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres
+          iam-tests:ci
+  image:
+    needs: tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.image.outputs.digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        if: github.event_name != 'pull_request'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build immutable IAM release
+        id: image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: Dockerfile.release
+          platforms: linux/amd64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ghcr.io/jeethsuresh/iam-server:${{ github.sha }}
+          labels: org.opencontainers.image.source=https://github.com/jeethsuresh/iam-server
+          cache-from: type=gha,scope=iam-release
+          cache-to: type=gha,mode=max,scope=iam-release
+      - name: Record release image
+        env:
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+        run: |
+          printf 'IAM release image: ghcr.io/jeethsuresh/iam-server@%s\n' "$IMAGE_DIGEST" >> "$GITHUB_STEP_SUMMARY"
+  deploy:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.GRAVITAS_DEPLOY_ENABLED == 'true'
+    needs: image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment:
+      name: gravitas
+      url: https://gravitas.cool
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Install verified Kubernetes client
+        run: |
+          curl -fsSLo kubectl https://dl.k8s.io/release/v1.37.0/bin/linux/amd64/kubectl
+          curl -fsSLo kubectl.sha256 https://dl.k8s.io/release/v1.37.0/bin/linux/amd64/kubectl.sha256
+          echo "$(cat kubectl.sha256)  kubectl" | sha256sum --check
+          chmod +x kubectl
+          echo "$PWD" >> "$GITHUB_PATH"
+      - name: Configure IAM-only deployment credential
+        env:
+          GRAVITAS_KUBECONFIG: ${{ secrets.GRAVITAS_KUBECONFIG }}
+        run: |
+          test -n "$GRAVITAS_KUBECONFIG"
+          umask 077
+          printf '%s' "$GRAVITAS_KUBECONFIG" > "$RUNNER_TEMP/iam-kubeconfig"
+          echo "KUBECONFIG=$RUNNER_TEMP/iam-kubeconfig" >> "$GITHUB_ENV"
+      - name: Migrate, deploy and verify HTTPS
+        env:
+          KUBE_CONTEXT: gravitas
+          IAM_KUSTOMIZE_OVERLAY: gravitas
+          IAM_MAINTENANCE_RELEASE: '1'
+          RELEASE_IMAGE: ghcr.io/jeethsuresh/iam-server@${{ needs.image.outputs.digest }}
+        run: |
+          scripts/kubernetes/deploy.sh "$RELEASE_IMAGE"
+          actual="$(kubectl -n iam get deployment/iam -o jsonpath='{.spec.template.spec.containers[0].image}')"
+          test "$actual" = "$RELEASE_IMAGE"
+          curl --fail --silent --show-error --retry 5 --retry-delay 3 https://gravitas.cool/healthz
+          curl --fail --silent --show-error --retry 5 --retry-delay 3 https://gravitas.cool/readyz
+          curl --fail --silent --show-error --retry 5 --retry-delay 3 https://gravitas.cool/.well-known/iam-configuration
+      - name: Remove deployment credential
+        if: always()
+        run: rm -f "$RUNNER_TEMP/iam-kubeconfig"

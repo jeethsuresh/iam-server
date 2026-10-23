@@ -9,10 +9,13 @@ defmodule LakehouseMatrix.Identity do
   end
 
   @spec parse_user_id(String.t()) :: {:ok, String.t()} | :error
-  def parse_user_id("@" <> rest) do
-    case String.split(rest, ":", parts: 2) do
-      [user, _domain] when user != "" -> {:ok, String.downcase(user)}
-      _ -> :error
+  def parse_user_id("@" <> _ = input) do
+    case LakehouseIam.Identifier.parse(input) do
+      {:ok, %{username: username, domain: domain}} ->
+        if domain == homeserver_domain(), do: {:ok, username}, else: :error
+
+      _ ->
+        :error
     end
   end
 

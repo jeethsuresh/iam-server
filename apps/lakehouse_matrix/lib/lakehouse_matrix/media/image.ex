@@ -25,15 +25,17 @@ defmodule LakehouseMatrix.Media.Image do
             "-auto-orient",
             "-resize",
             "#{@max_edge}x#{@max_edge}>",
+            "-strip",
             "-quality",
             "82",
-            out_path
+            "jpeg:" <> out_path
           ]
 
           case System.cmd(bin, args, stderr_to_stdout: true) do
             {_, 0} ->
               case File.read(out_path) do
-                {:ok, data} when byte_size(data) > 0 -> {:ok, data}
+                {:ok, <<0xFF, 0xD8, 0xFF, _::binary>> = data} -> {:ok, data}
+                {:ok, data} when byte_size(data) > 0 -> {:error, :invalid_jpeg}
                 {:ok, _} -> {:error, :empty_output}
                 {:error, reason} -> {:error, reason}
               end

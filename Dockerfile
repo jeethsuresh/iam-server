@@ -1,6 +1,6 @@
-FROM hexpm/elixir:1.16.3-erlang-26.2.5-alpine-3.19.1
+FROM hexpm/elixir:1.18.5-erlang-27.3.4.17-alpine-3.21.7
 
-RUN apk add --no-cache build-base git postgresql-client imagemagick
+RUN apk add --no-cache bash build-base git postgresql-client imagemagick imagemagick-jpeg
 
 WORKDIR /app
 
@@ -16,7 +16,14 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh \
   && mix local.hex --force \
   && mix local.rebar --force \
   && mix deps.get \
-  && mix deps.compile
+  && mix deps.compile \
+  && mix compile \
+  && MIX_ENV=test mix deps.get \
+  && MIX_ENV=test mix deps.compile \
+  && MIX_ENV=test mix compile
+
+ARG FORGE_BUILD_ID=dev
+RUN echo "$FORGE_BUILD_ID" > /etc/forge-build-id
 
 EXPOSE 4000
 

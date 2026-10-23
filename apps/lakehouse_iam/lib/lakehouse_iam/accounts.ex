@@ -4,7 +4,7 @@ defmodule LakehouseIam.Accounts do
   """
   import Ecto.Query
 
-  alias LakehouseIam.Repo
+  alias LakehouseIam.{Identifier, Repo}
   alias LakehouseIam.Schema.{Credential, Principal}
 
   @max_username 20
@@ -12,12 +12,15 @@ defmodule LakehouseIam.Accounts do
 
   @spec normalize_username(String.t()) :: String.t()
   def normalize_username(username) when is_binary(username) do
-    username |> String.trim() |> String.downcase()
+    case Identifier.local_username(String.trim(username)) do
+      {:ok, local} -> local
+      {:error, _} -> username |> String.trim() |> String.downcase()
+    end
   end
 
   @spec validate_signup_username(String.t()) :: :ok | {:error, String.t()}
   def validate_signup_username(username) do
-    trimmed = String.trim(username)
+    trimmed = normalize_username(username)
 
     cond do
       trimmed == "" ->
@@ -39,17 +42,20 @@ defmodule LakehouseIam.Accounts do
     if String.trim(username) == "" or String.trim(password) == "" do
       {:error, "username and password are required"}
     else
-      if String.length(String.trim(username)) > @max_username or String.length(password) > @max_password do
-        {:error, "username or password too long"}
-      else
-        :ok
+      with {:ok, _local} <- Identifier.local_username(String.trim(username)) do
+        if String.length(password) > @max_password do
+          {:error, "username or password too long"}
+        else
+          :ok
+        end
       end
     end
   end
 
   @spec register_user(String.t(), String.t(), keyword()) ::
           {:ok, Principal.t()} | {:error, Ecto.Changeset.t() | String.t()}
-  def register_user(username, password, opts \\ []) when is_binary(username) and is_binary(password) do
+  def register_user(username, password, opts \\ [])
+      when is_binary(username) and is_binary(password) do
     approve = Keyword.get(opts, :approve, false)
     canonical = normalize_username(username)
 
@@ -120,7 +126,7 @@ defmodule LakehouseIam.Accounts do
   Activates a user account. Only the configured admin may call this successfully.
   """
   @spec approve_user(String.t(), String.t()) ::
-          {:ok, Principal.t()} | {:error, :forbidden | :not_found | :already_active}
+          {:ok, Principal.t()} | {:error, :forbidden | :not_found}
   def approve_user(actor_username, target_username)
       when is_binary(actor_username) and is_binary(target_username) do
     actor = normalize_username(actor_username)
@@ -154,7 +160,8 @@ defmodule LakehouseIam.Accounts do
   Change password for the signed-in user. Bootstrap admin cannot use this when
   `IAM_ADMIN_PASSWORD` is set (matches iam-server: restart with new env instead).
   """
-  @spec change_own_password(String.t(), String.t(), String.t(), String.t()) :: :ok | {:error, term()}
+  @spec change_own_password(String.t(), String.t(), String.t(), String.t()) ::
+          :ok | {:error, term()}
   def change_own_password(username, current_password, new_password, new_password_confirm)
       when is_binary(username) do
     canonical = normalize_username(username)
@@ -162,7 +169,8 @@ defmodule LakehouseIam.Accounts do
     new_password = new_password || ""
     new_password_confirm = new_password_confirm || ""
 
-    with :ok <- validate_password_change_form(current_password, new_password, new_password_confirm) do
+    with :ok <-
+           validate_password_change_form(current_password, new_password, new_password_confirm) do
       if admin?(canonical) and bootstrap_admin_password_set?() do
         {:error, :forbidden,
          "The admin password is set with IAM_ADMIN_PASSWORD when the server starts. Restart with a new value to change it."}
@@ -207,12 +215,16 @@ defmodule LakehouseIam.Accounts do
 
   @spec user_exists?(String.t()) :: boolean()
   def user_exists?(canonical_username) do
-    Repo.exists?(from p in Principal, where: p.username == ^canonical_username and p.type == :user)
+    Repo.exists?(
+      from p in Principal, where: p.username == ^canonical_username and p.type == :user
+    )
   end
 
   @spec fetch_user(String.t()) :: {:ok, Principal.t()} | :error
   def fetch_user(canonical_username) do
-    case Repo.one(from p in Principal, where: p.username == ^canonical_username and p.type == :user) do
+    case Repo.one(
+           from p in Principal, where: p.username == ^canonical_username and p.type == :user
+         ) do
       nil -> :error
       p -> {:ok, p}
     end
@@ -262,36 +274,58 @@ defmodule LakehouseIam.Accounts do
   def set_password(principal_id, password) when is_binary(password) do
     hash = Argon2.hash_pwd_salt(password)
 
-    case Repo.one(
-           from c in Credential,
-             where: c.principal_id == ^principal_id and c.kind == :password
-         ) do
-      nil ->
-        %Credential{}
-        |> Credential.changeset(%{kind: :password, secret_hash: hash, principal_id: principal_id})
-        |> Repo.insert()
+    Repo.transaction(fn ->
+      result =
+        case Repo.one(
+               from c in Credential,
+                 where: c.principal_id == ^principal_id and c.kind == :password
+             ) do
+          nil ->
+            %Credential{}
+            |> Credential.changeset(%{
+              kind: :password,
+              secret_hash: hash,
+              principal_id: principal_id
+            })
+            |> Repo.insert()
 
-      cred ->
-        cred
-        |> Credential.changeset(%{secret_hash: hash})
-        |> Repo.update()
-    end
+          cred ->
+            cred
+            |> Credential.changeset(%{secret_hash: hash})
+            |> Repo.update()
+        end
+
+      case result do
+        {:ok, _} -> LakehouseIam.Auth.Sessions.revoke_for_principal(principal_id)
+        {:error, cs} -> Repo.rollback(cs)
+      end
+    end)
     |> case do
-      {:ok, _} -> :ok
-      {:error, cs} -> {:error, cs}
+      {:ok, :ok} -> :ok
+      {:error, reason} -> {:error, reason}
     end
   end
 
-  @spec set_active(Ecto.UUID.t(), boolean()) :: {:ok, Principal.t()} | {:error, Ecto.Changeset.t()}
+  @spec set_active(Ecto.UUID.t(), boolean()) ::
+          {:ok, Principal.t()} | {:error, Ecto.Changeset.t()}
   def set_active(principal_id, active) do
     case Repo.get(Principal, principal_id) do
       nil ->
         {:error, %Ecto.Changeset{}}
 
       p ->
-        p
-        |> Ecto.Changeset.change(active: active)
-        |> Repo.update()
+        Repo.transaction(fn ->
+          result = p |> Ecto.Changeset.change(active: active) |> Repo.update()
+
+          case result do
+            {:ok, principal} ->
+              if not active, do: LakehouseIam.Auth.Sessions.revoke_for_principal(principal_id)
+              principal
+
+            {:error, cs} ->
+              Repo.rollback(cs)
+          end
+        end)
     end
   end
 end

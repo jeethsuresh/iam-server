@@ -59,6 +59,90 @@ done
 export MIX_ENV=test
 export PORT="${PORT:-4002}"
 
+# Forge deploy hosts often lack host Elixir; run the suite inside compose instead.
+run_tests_via_compose() {
+  require_docker
+  # Fast mocked checks for Forge compose helpers (network labels + app image tags).
+  bash "$SCRIPT_DIR/scripts/lib/common_network_test.sh"
+  bash "$SCRIPT_DIR/scripts/lib/forge_app_image_test.sh"
+  bash "$SCRIPT_DIR/scripts/lib/compose_app_service_test.sh"
+  echo "test.sh: mix not found; running tests via docker compose (project=$COMPOSE_PROJECT_NAME)" >&2
+
+  # Prefer the image from build.sh. A BuildKit rebuild here previously left Forge
+  # release tagging with image=(unknown) and dropped the created app container.
+  export DOCKER_BUILDKIT=0
+  export COMPOSE_DOCKER_CLI_BUILD=0
+  if docker image inspect iam-server:latest >/dev/null 2>&1 \
+    || docker image inspect localhost/iam-server:latest >/dev/null 2>&1; then
+    echo "test.sh: reusing existing app image (skip rebuild)" >&2
+  else
+    compose_cmd build app
+  fi
+
+  # Drop leftover test pgdata so each Forge run gets a clean POSTGRES_USER role.
+  docker volume rm "${COMPOSE_PROJECT_NAME}_pgdata_v2" >/dev/null 2>&1 || true
+
+  echo "test.sh: starting postgres..." >&2
+  compose_cmd up -d postgres
+
+  local i
+  for ((i = 1; i <= 60; i++)); do
+    if compose_cmd exec -T postgres pg_isready -U postgres -d postgres >/dev/null 2>&1 \
+      && compose_cmd exec -T postgres psql -U postgres -d postgres -c 'SELECT 1' >/dev/null 2>&1; then
+      echo "test.sh: postgres ready (attempt $i)" >&2
+      break
+    fi
+    if [[ "$i" -eq 60 ]]; then
+      echo "test.sh: Postgres did not become ready" >&2
+      compose_cmd logs postgres >&2 || true
+      exit 1
+    fi
+    sleep 1
+  done
+
+  # Create the test DB via psql. mix ecto.create under MIX_ENV=test can be OOM-killed
+  # while compiling the test env inside constrained Forge agents.
+  echo "test.sh: ensuring lakehouse_test database..." >&2
+  if ! compose_cmd exec -T postgres \
+    psql -U postgres -d postgres -v ON_ERROR_STOP=1 -tc "SELECT 1 FROM pg_database WHERE datname = 'lakehouse_test'" \
+    | grep -q 1; then
+    compose_cmd exec -T postgres \
+      psql -U postgres -d postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE lakehouse_test;"
+  fi
+
+  local mix_cmd=(mix test --exclude browser)
+  if [[ "$RUN_UNIT" -eq 1 && "$RUN_API" -eq 0 && "$RUN_BROWSER" -eq 0 ]]; then
+    # Matrix test_helper starts lakehouse_web (heavy); iam alone is the Forge gate.
+    mix_cmd=(mix test apps/lakehouse_iam/test)
+  elif [[ "$RUN_API" -eq 1 && "$RUN_UNIT" -eq 0 && "$RUN_BROWSER" -eq 0 ]]; then
+    mix_cmd=(mix test --only api apps/lakehouse_web/test)
+  elif [[ "$RUN_BROWSER" -eq 1 && "$RUN_UNIT" -eq 0 && "$RUN_API" -eq 0 ]]; then
+    echo "test.sh: browser-only suite requires host mix + Chrome; use --exclude-browser on Forge" >&2
+    exit 1
+  fi
+
+  echo "test.sh: running ${mix_cmd[*]} via compose..." >&2
+  # Keep the -c script on one line: Compose/Forge can drop multiline remote args.
+  # Avoid compose run --no-build: Podman compose rejects that flag.
+  compose_cmd run -T --rm --no-deps --entrypoint /bin/sh \
+    -e MIX_ENV=test \
+    -e POSTGRES_HOST=postgres \
+    -e POSTGRES_PORT=5432 \
+    -e POSTGRES_USER=postgres \
+    -e POSTGRES_PASSWORD=postgres \
+    -e WALLABY_SKIP=1 \
+    -e PORT=4002 \
+    -e ELIXIR_ERL_OPTIONS="+S 2 :microstate_accounting false" \
+    app \
+    -c "set -e; mix ecto.migrate -r LakehouseIam.Repo > /tmp/m.out 2>&1 || { cat /tmp/m.out; exit 1; }; cat /tmp/m.out; $(printf '%q ' "${mix_cmd[@]}") > /tmp/t.out 2>&1 || { echo mix test failed:; cat /tmp/t.out; exit 1; }; cat /tmp/t.out; echo test.sh: mix OK"
+
+  # Network cleanup / compose run --rm can leave Forge unable to resolve the app
+  # image (image=(unknown)). Recreate tags + app container before exit.
+  ensure_forge_app_image
+
+  echo "test.sh: OK"
+}
+
 cleanup() {
   if [[ "$STARTED_PG" -eq 1 ]]; then
     compose_cmd stop postgres >/dev/null 2>&1 || true
@@ -66,6 +150,15 @@ cleanup() {
   fi
 }
 trap cleanup EXIT
+
+# Always assert the Forge compose contract (service must be named app).
+bash "$SCRIPT_DIR/scripts/lib/compose_app_service_test.sh"
+bash "$SCRIPT_DIR/scripts/lib/diagnose_forge_image_test.sh"
+
+if ! have_mix; then
+  run_tests_via_compose
+  exit 0
+fi
 
 port_open() {
   local port="$1"
@@ -113,7 +206,7 @@ ensure_postgres() {
   STARTED_PG=1
 
   local i
-  for i in $(seq 1 60); do
+  for ((i = 1; i <= 60; i++)); do
     if compose_cmd exec -T postgres pg_isready -U postgres >/dev/null 2>&1; then
       return 0
     fi

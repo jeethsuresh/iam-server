@@ -5,15 +5,17 @@ defmodule LakehouseIam.Application do
   @impl true
   def start(_type, _args) do
     children = [
-      LakehouseIam.Repo,
-      LakehouseIam.Federated
+      LakehouseIam.Repo
     ]
 
     opts = [strategy: :one_for_one, name: LakehouseIam.Supervisor]
 
     case Supervisor.start_link(children, opts) do
       {:ok, pid} ->
-        _ = LakehouseIam.Bootstrap.run()
+        if Application.get_env(:lakehouse_iam, :bootstrap_on_start, true) do
+          _ = LakehouseIam.Bootstrap.run()
+        end
+
         {:ok, pid}
 
       err ->

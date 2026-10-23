@@ -5,3 +5,13 @@ deps
 *.md
 .elixir_ls
 .cursor
+.env
+.env.*
+.dev.vars*
+.tools
+tmp
+cloudflare/node_modules
+cloudflare/.wrangler
+apps/*/assets/node_modules
+
+.local

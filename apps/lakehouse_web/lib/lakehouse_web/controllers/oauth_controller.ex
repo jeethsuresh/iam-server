@@ -9,45 +9,90 @@ defmodule LakehouseWeb.OAuthController do
 
   plug :put_layout, html: {LakehouseWeb.Layouts, :root}
 
-  def authorize(conn, %{"sessionID" => session_id}) do
+  def start(conn, params) do
+    state = params["state"]
+
+    valid =
+      is_binary(state) and byte_size(state) in 1..1024 and
+        params["prompt"] in [nil, "", "none"] and params["screen"] in [nil, "", "register"] and
+        not (params["prompt"] == "none" and params["screen"] == "register")
+
+    attrs = Map.put(params, "username", params["login_hint"] || params["username"])
+
+    if valid do
+      case Federated.register(attrs) do
+        {:ok, session_id, _username} ->
+          if params["screen"] == "register",
+            do: redirect(conn, to: IamAuth.registration_path(session_id)),
+            else: authorize(conn, Map.put(params, "sessionID", session_id))
+
+        {:error, message} ->
+          conn |> put_status(400) |> text(message)
+      end
+    else
+      conn |> put_status(400) |> text("A valid state, prompt and screen are required.")
+    end
+  end
+
+  def authorize(conn, %{"sessionID" => session_id} = params) do
+    silent = params["prompt"] == "none"
+
     case Federated.fetch(session_id) do
       nil ->
-        conn
-        |> put_flash(:error, "Unknown or expired login session.")
-        |> redirect(to: ~p"/")
+        if silent do
+          conn |> put_status(400) |> text("Unknown or expired login session.")
+        else
+          conn |> put_flash(:error, "Unknown or expired login session.") |> redirect(to: ~p"/")
+        end
 
       sess ->
-        case current_principal(conn) do
-          {:ok, principal} ->
-            if principal.username == sess.username do
-              case IamAuth.continue_federated(principal, session_id) do
-                {:ok, %{redirect: url}} ->
-                  maybe_external_redirect(conn, url)
+        cond do
+          params["prompt"] not in [nil, "", "none"] ->
+            conn |> put_status(400) |> text("Unsupported prompt.")
 
-                {:error, _, body} ->
-                  conn
-                  |> put_flash(:error, to_string(body))
-                  |> redirect(to: ~p"/")
-              end
-            else
-              # Wrong user logged in — send to login for the expected username
-              redirect(conn,
-                to: ~p"/?username=#{URI.encode_www_form(sess.username)}&sessionID=#{URI.encode_www_form(session_id)}"
-              )
-            end
+          silent and (not is_binary(sess.state) or sess.state == "") ->
+            conn |> put_status(400) |> text("Silent login requires app-owned state.")
 
-          :error ->
-            redirect(conn,
-              to: ~p"/?username=#{URI.encode_www_form(sess.username)}&sessionID=#{URI.encode_www_form(session_id)}"
-            )
+          true ->
+            authorize_session(conn, session_id, sess, silent)
         end
     end
   end
 
   def authorize(conn, _params) do
-    conn
-    |> put_flash(:error, "sessionID required")
-    |> redirect(to: ~p"/")
+    conn |> put_flash(:error, "sessionID required") |> redirect(to: ~p"/")
+  end
+
+  defp authorize_session(conn, session_id, sess, silent) do
+    case current_principal(conn) do
+      {:ok, principal} ->
+        case IamAuth.continue_federated(principal, session_id,
+               silent: silent,
+               session_id: family_id(conn)
+             ) do
+          {:ok, %{redirect: url}} ->
+            maybe_external_redirect(conn, url)
+
+          {:error, :consent_required, _} ->
+            silent_error(conn, session_id, sess, "consent_required")
+
+          {:error, _, _} ->
+            if silent,
+              do: silent_error(conn, session_id, sess, "login_required"),
+              else: redirect(conn, to: IamAuth.login_path(sess.username, session_id))
+        end
+
+      :error ->
+        if silent,
+          do: silent_error(conn, session_id, sess, "login_required"),
+          else: redirect(conn, to: IamAuth.login_path(sess.username, session_id))
+    end
+  end
+
+  defp silent_error(conn, session_id, sess, error) do
+    url = OAuth.error_redirect(sess, error)
+    :ok = Federated.delete(session_id)
+    redirect(conn, external: url)
   end
 
   def consent_form(conn, %{"sessionID" => session_id}) do
@@ -85,7 +130,9 @@ defmodule LakehouseWeb.OAuthController do
           _ -> []
         end
 
-      case OAuth.issue_code_redirect(sess, principal.id, room_mode, room_ids) do
+      case OAuth.issue_code_redirect(sess, principal.id, room_mode, room_ids,
+             session_id: family_id(conn)
+           ) do
         {:ok, url} ->
           _ = Federated.delete(session_id)
           redirect(conn, external: url)
@@ -103,7 +150,36 @@ defmodule LakehouseWeb.OAuthController do
     end
   end
 
+  def session_check(conn, _params) do
+    result =
+      case get_req_header(conn, "authorization") do
+        ["Bearer " <> raw] -> LakehouseIam.Apps.Tokens.check_session(raw)
+        _ -> {:error, :invalid}
+      end
+
+    conn = put_resp_header(conn, "cache-control", "no-store")
+
+    case result do
+      {:ok, status} -> json(conn, status)
+      _ -> conn |> put_status(401) |> json(%{active: false, error: "invalid_token"})
+    end
+  rescue
+    _error in [DBConnection.ConnectionError, Postgrex.Error] ->
+      conn
+      |> put_resp_header("cache-control", "no-store")
+      |> put_status(503)
+      |> json(%{error: "temporarily_unavailable"})
+  end
+
+  defp family_id(conn) do
+    case Token.verify(get_session(conn, :user_jwt)) do
+      {:ok, %{"sid" => id}} -> id
+      _ -> nil
+    end
+  end
+
   def token(conn, params) do
+    conn = put_resp_header(conn, "cache-control", "no-store")
     grant_type = params["grant_type"]
 
     case grant_type do
@@ -117,10 +193,14 @@ defmodule LakehouseWeb.OAuthController do
             json(conn, tokens)
 
           {:error, :redirect_mismatch} ->
-            conn |> put_status(400) |> json(%{error: "invalid_grant", error_description: "redirect_uri mismatch"})
+            conn
+            |> put_status(400)
+            |> json(%{error: "invalid_grant", error_description: "redirect_uri mismatch"})
 
           {:error, :invalid_code_verifier} ->
-            conn |> put_status(400) |> json(%{error: "invalid_grant", error_description: "PKCE verification failed"})
+            conn
+            |> put_status(400)
+            |> json(%{error: "invalid_grant", error_description: "PKCE verification failed"})
 
           {:error, _} ->
             conn |> put_status(400) |> json(%{error: "invalid_grant"})
@@ -138,14 +218,26 @@ defmodule LakehouseWeb.OAuthController do
       _ ->
         conn |> put_status(400) |> json(%{error: "unsupported_grant_type"})
     end
+  rescue
+    _error in [DBConnection.ConnectionError, Postgrex.Error] ->
+      conn
+      |> put_resp_header("cache-control", "no-store")
+      |> put_status(503)
+      |> json(%{error: "temporarily_unavailable"})
   end
 
   defp current_principal(conn) do
     case get_session(conn, :user_jwt) do
       token when is_binary(token) and token != "" ->
         case Token.verify(token) do
-          {:ok, %{"username" => username}} -> Accounts.fetch_user(username)
-          _ -> :error
+          {:ok, %{"username" => username, "sid" => sid}} when is_binary(sid) ->
+            case Accounts.fetch_user(username) do
+              {:ok, %{active: true} = principal} -> {:ok, principal}
+              _ -> :error
+            end
+
+          _ ->
+            :error
         end
 
       _ ->

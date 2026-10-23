@@ -1,0 +1,11 @@
+# Optional merge patch for automatic DB failover; requires three workers.
+# kubectl -n iam patch cluster iam-db --type merge --patch-file deploy/kubernetes/platform/postgres-ha.patch.yaml
+spec:
+  instances: 3
+  affinity:
+    podAntiAffinityType: required
+  postgresql:
+    synchronous:
+      method: any
+      number: 1
+      dataDurability: required

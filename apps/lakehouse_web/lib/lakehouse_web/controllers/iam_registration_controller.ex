@@ -4,7 +4,7 @@ defmodule LakehouseWeb.IamRegistrationController do
   alias LakehouseWeb.IamAuth
 
   def create(conn, params) do
-    case IamAuth.register(params["username"], params["password"]) do
+    case IamAuth.register(params["username"], params["password"], params["registration_key"]) do
       {:ok, principal} ->
         msg =
           if principal.active do
@@ -15,9 +15,9 @@ defmodule LakehouseWeb.IamRegistrationController do
 
         json(conn, %{message: msg})
 
-      {:error, _st, body} ->
+      {:error, status, body} ->
         conn
-        |> put_status(:bad_request)
+        |> put_status(status)
         |> json(body)
     end
   end

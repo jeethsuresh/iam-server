@@ -10,40 +10,63 @@ defmodule LakehouseWeb.WebAuthController do
 
     result =
       if session_id not in [nil, ""] do
-        IamAuth.federated_login(username, password, session_id)
+        IamAuth.federated_login(username, password, session_id, session_kind: :browser)
       else
         IamAuth.standard_login(username, password)
       end
 
     case result do
       {:ok, token} when is_binary(token) ->
-        conn
-        |> put_session(:user_jwt, token)
-        |> put_flash(:info, "Signed in.")
-        |> redirect(to: ~p"/rooms")
+        {conn, destination} = LakehouseWeb.SessionReturn.consume(conn)
 
-      {:ok, %{redirect: "/" <> _ = path, user_jwt: jwt}} ->
-        conn
-        |> put_session(:user_jwt, jwt)
-        |> redirect(to: path)
+        finish_browser_login(conn, token, destination, false)
 
-      {:ok, %{redirect: url, user_jwt: jwt}} ->
-        conn
-        |> put_session(:user_jwt, jwt)
-        |> redirect(external: url)
+      {:ok, %{redirect: "/" <> _ = path, user_jwt: jwt} = payload} ->
+        finish_browser_login(conn, jwt, path, false, payload[:session_bundle])
+
+      {:ok, %{redirect: url, user_jwt: jwt} = payload} ->
+        finish_browser_login(conn, jwt, url, true, payload[:session_bundle])
 
       {:ok, %{redirect: url}} ->
-        redirect(conn, external: url)
+        conn |> delete_session(:return_to) |> redirect(external: url)
 
       {:error, _status, body} ->
         conn
         |> put_flash(:error, humanize_error(body))
+        |> redirect(to: IamAuth.login_path(username, session_id))
+    end
+  end
+
+  defp finish_browser_login(conn, jwt, destination, external?, bundle \\ nil) do
+    result =
+      if bundle,
+        do: LakehouseWeb.BrowserSession.accept_login(conn, bundle),
+        else: LakehouseWeb.BrowserSession.sign_in(conn, jwt)
+
+    case result do
+      {:ok, conn} ->
+        conn = conn |> delete_session(:return_to) |> put_flash(:info, "Signed in.")
+
+        if external?,
+          do: redirect(conn, external: destination),
+          else: redirect(conn, to: destination)
+
+      {:error, conn} ->
+        conn
+        |> put_flash(:error, "Could not create your session. Please sign in again.")
         |> redirect(to: ~p"/")
     end
   end
 
   def register(conn, params) do
-    case IamAuth.register(params["username"], params["password"]) do
+    session_id = params["sessionID"]
+
+    result =
+      with :ok <- IamAuth.registration_session(session_id, params["username"]) do
+        IamAuth.register(params["username"], params["password"], params["registration_key"])
+      end
+
+    case result do
       {:ok, principal} ->
         msg =
           if principal.active do
@@ -52,14 +75,26 @@ defmodule LakehouseWeb.WebAuthController do
             "Registration received. An administrator must approve your account before you can sign in."
           end
 
-        conn
-        |> put_flash(:info, msg)
-        |> redirect(to: ~p"/")
+        if session_id in [nil, ""] do
+          conn |> put_flash(:info, msg) |> redirect(to: ~p"/")
+        else
+          case LakehouseIam.Federated.bind_user(session_id, principal.username) do
+            {:ok, _} ->
+              conn
+              |> put_flash(:info, msg)
+              |> redirect(to: IamAuth.login_path(principal.username, session_id))
+
+            {:error, _} ->
+              conn
+              |> put_flash(:info, msg <> " Start sign-in again from your app.")
+              |> redirect(to: ~p"/")
+          end
+        end
 
       {:error, _status, body} ->
         conn
         |> put_flash(:error, humanize_error(body))
-        |> redirect(to: ~p"/register")
+        |> redirect(to: IamAuth.registration_path(session_id))
     end
   end
 

@@ -7,6 +7,7 @@ defmodule LakehouseWeb.Router do
     plug :accepts, ["html"]
     plug :fetch_session
     plug :fetch_live_flash
+    plug LakehouseWeb.Plugs.RenewBrowserSession
     plug :put_root_layout, html: {LakehouseWeb.Layouts, :root}
     plug :protect_from_forgery
     plug :put_secure_browser_headers
@@ -16,6 +17,7 @@ defmodule LakehouseWeb.Router do
     plug :accepts, ["html", "json"]
     plug :fetch_session
     plug :fetch_live_flash
+    plug LakehouseWeb.Plugs.RenewBrowserSession
   end
 
   pipeline :api do
@@ -41,17 +43,19 @@ defmodule LakehouseWeb.Router do
     get "/register", PageController, :register
     post "/web/login", WebAuthController, :login
     post "/web/register", WebAuthController, :register
+    post "/web/logout", IamSessionController, :delete
+    get "/logout", IamSessionController, :confirm_logout
   end
 
-  scope "/", LakehouseWeb do
-    pipe_through :browser_session
-
-    get "/logout", IamSessionController, :delete
+  scope "/web", LakehouseWeb do
+    pipe_through [:browser_session, :session_authenticated]
+    get "/session", IamSessionController, :show
   end
 
   scope "/", LakehouseWeb do
     pipe_through :browser
 
+    get "/oauth/start", OAuthController, :start
     get "/oauth/authorize", OAuthController, :authorize
   end
 
@@ -61,9 +65,17 @@ defmodule LakehouseWeb.Router do
     live_session :require_user,
       on_mount: [{LakehouseWeb.UserAuth, :require_user}],
       root_layout: {LakehouseWeb.Layouts, :root} do
+      live "/groups", RoomLive, :index
+      live "/groups/:id", RoomLive, :show
       live "/rooms", RoomLive, :index
       live "/rooms/:id", RoomLive, :show
     end
+
+    get "/dashboard", DashboardController, :index
+    get "/services/manage", DashboardController, :catalog
+    post "/services", DashboardController, :create
+    post "/services/:id/delete", DashboardController, :delete
+    get "/services/:id/launch", DashboardController, :launch
 
     get "/settings", SettingsController, :index
     get "/profile", IamProfileController, :show
@@ -84,15 +96,31 @@ defmodule LakehouseWeb.Router do
   scope "/", LakehouseWeb do
     pipe_through :api
 
+    get "/healthz", DiscoveryController, :health
+    get "/readyz", DiscoveryController, :ready
+    get "/.well-known/webfinger", DiscoveryController, :webfinger
+    get "/.well-known/iam-configuration", DiscoveryController, :configuration
+    get "/.well-known/matrix/client", DiscoveryController, :matrix_client
+
     post "/backend/register", IamBackendController, :create
     post "/login", IamSessionController, :create
+    post "/refresh", IamSessionController, :refresh
+    post "/revoke", IamSessionController, :revoke
     post "/register", IamRegistrationController, :create
     post "/oauth/token", OAuthController, :token
+    get "/oauth/session", OAuthController, :session_check
+    post "/oauth/broker/authorize", NativeBrokerController, :authorize
   end
 
   scope "/app/v1", LakehouseWeb.App, as: :app_v1 do
     pipe_through [:api, LakehouseWeb.Plugs.AppTokenAuth]
 
+    get "/groups", GroupController, :index
+    post "/groups", GroupController, :create
+    post "/groups/:id/membership", GroupController, :membership
+    patch "/groups/:id", GroupController, :update
+    get "/groups/:id/events", GroupController, :events
+    put "/groups/:id/events/:type/:txn_id", GroupController, :send_event
     get "/me", V1Controller, :me
     get "/chats", V1Controller, :chats
     get "/chats/:id/events", V1Controller, :list_events
@@ -114,6 +142,7 @@ defmodule LakehouseWeb.Router do
   scope "/api/v1", LakehouseWeb.Api, as: :api do
     pipe_through [:api, :authenticated]
 
+    resources "/services", ServiceController, only: [:index, :create, :delete]
     resources "/rooms", RoomController, only: [:index, :create, :show]
   end
 

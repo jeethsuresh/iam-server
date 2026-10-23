@@ -66,7 +66,7 @@ defmodule LakehouseWeb.RoomLive do
         {:noreply,
          socket
          |> assign(:rooms, Rooms.list_rooms_for(socket.assigns.principal_id))
-         |> push_patch(to: ~p"/rooms/#{room_uuid}")}
+         |> push_patch(to: ~p"/groups/#{room_uuid}")}
 
       {:error, _} ->
         {:noreply, put_flash(socket, :error, "Could not create room.")}
@@ -237,7 +237,7 @@ defmodule LakehouseWeb.RoomLive do
          typing_users: [],
          typing_label: nil
        )
-       |> push_patch(to: ~p"/rooms")}
+       |> push_patch(to: ~p"/groups")}
     else
       {:noreply, socket}
     end
@@ -255,6 +255,7 @@ defmodule LakehouseWeb.RoomLive do
 
   @impl true
   def handle_info({:room_event, room_id, msg}, socket) do
+    socket = revalidate_room_membership(socket)
     socket =
       if socket.assigns.room && socket.assigns.room.id == room_id do
         case msg["type"] do
@@ -288,6 +289,7 @@ defmodule LakehouseWeb.RoomLive do
   end
 
   def handle_info({:room_ephemeral, room_id, %{"type" => "m.typing"} = event}, socket) do
+    socket = revalidate_room_membership(socket)
     socket =
       if socket.assigns.room && socket.assigns.room.id == room_id do
         users =
@@ -438,6 +440,14 @@ defmodule LakehouseWeb.RoomLive do
     end
   end
 
+  defp revalidate_room_membership(socket) do
+    if socket.assigns.room && not Memberships.joined?(socket.assigns.room.id, socket.assigns.principal_id) do
+      socket |> apply_room_param(nil) |> assign(:rooms, Rooms.list_rooms_for(socket.assigns.principal_id))
+    else
+      socket
+    end
+  end
+
   defp apply_room_param(socket, nil) do
     socket
     |> clear_local_typing()
@@ -471,7 +481,7 @@ defmodule LakehouseWeb.RoomLive do
           typing_label: nil
         )
         |> put_flash(:error, "Room not found.")
-        |> push_patch(to: ~p"/rooms")
+        |> push_patch(to: ~p"/groups")
 
       room ->
         if Memberships.joined?(room.id, principal_id) do
@@ -509,7 +519,7 @@ defmodule LakehouseWeb.RoomLive do
             typing_label: nil
           )
           |> put_flash(:error, "You are not a member of this room.")
-          |> push_patch(to: ~p"/rooms")
+          |> push_patch(to: ~p"/groups")
         end
     end
   end

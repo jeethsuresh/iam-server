@@ -9,7 +9,8 @@ defmodule LakehouseWeb.Bdd.IamSteps do
 
   @endpoint LakehouseWeb.Endpoint
 
-  step "an approved user {string} with password {string}", %{args: [username, password]} = context do
+  step "an approved user {string} with password {string}",
+       %{args: [username, password]} = context do
     _ = MatrixFixtures.user_fixture(username)
 
     if password != "password123" do
@@ -20,7 +21,8 @@ defmodule LakehouseWeb.Bdd.IamSteps do
     {:ok, Map.put(context, :users, Map.put(users, username, password))}
   end
 
-  step "a pending user {string} with password {string}", %{args: [username, password]} = context do
+  step "a pending user {string} with password {string}",
+       %{args: [username, password]} = context do
     MatrixFixtures.ensure_rbac!()
     {:ok, principal} = Accounts.register_user(username, password, approve: false)
     refute principal.active
@@ -37,12 +39,52 @@ defmodule LakehouseWeb.Bdd.IamSteps do
     {:ok, Map.put(context, :admin, %{username: admin, password: password})}
   end
 
-  step "I register via API as {string} with password {string}", %{args: [username, password]} = context do
+  step "I register via API as {string} with password {string}",
+       %{args: [username, password]} = context do
     conn = IamClient.register(username, password)
-    {:ok, Map.merge(context, %{last_conn: conn, last_username: username, last_password: password})}
+
+    {:ok,
+     Map.merge(context, %{last_conn: conn, last_username: username, last_password: password})}
   end
 
-  step "I log in via API as {string} with password {string}", %{args: [username, password]} = context do
+  step "I register via API as {string} with password {string} and key {string}",
+       %{args: [username, password, key]} = context do
+    conn = IamClient.register(username, password, key)
+    {:ok, Map.put(context, :last_conn, conn)}
+  end
+
+  step "account {string} should not exist", %{args: [username]} do
+    refute Accounts.user_exists?(username)
+    :ok
+  end
+
+  step "I submit overlapping API registrations for {string} with key {string}",
+       %{args: [username, key]} = context do
+    responses =
+      1..2
+      |> Task.async_stream(fn _ -> IamClient.register(username, "password123", key) end,
+        max_concurrency: 2,
+        timeout: 15_000
+      )
+      |> Enum.map(fn {:ok, conn} -> conn end)
+
+    {:ok, Map.put(context, :registration_responses, responses)}
+  end
+
+  step "one registration succeeds and the other reports a duplicate username", context do
+    assert Enum.sort(Enum.map(context.registration_responses, & &1.status)) == [200, 400]
+    duplicate = Enum.find(context.registration_responses, &(&1.status == 400))
+    assert json_response(duplicate, 400) == "username already taken"
+    :ok
+  end
+
+  step "account {string} should await approval", %{args: [username]} do
+    assert {:ok, %{active: false}} = Accounts.fetch_user(username)
+    :ok
+  end
+
+  step "I log in via API as {string} with password {string}",
+       %{args: [username, password]} = context do
     conn = IamClient.login(username, password)
 
     tokens = Map.get(context, :tokens, %{})
@@ -66,7 +108,8 @@ defmodule LakehouseWeb.Bdd.IamSteps do
     {:ok, Map.put(context, :last_conn, conn)}
   end
 
-  step "I change my password via API from {string} to {string}", %{args: [current, new_pass]} = context do
+  step "I change my password via API from {string} to {string}",
+       %{args: [current, new_pass]} = context do
     token = Map.fetch!(context, :token)
     conn = IamClient.change_password(token, current, new_pass)
     {:ok, Map.merge(context, %{last_conn: conn, last_password: new_pass})}

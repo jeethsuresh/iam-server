@@ -5,6 +5,21 @@ defmodule LakehouseWeb.Test.Api.OAuthClient do
 
   @endpoint LakehouseWeb.Endpoint
 
+  def browser_login(username, password),
+    do: post(build_conn(), "/web/login", %{username: username, password: password})
+
+  def browser_logout(conn), do: conn |> recycle() |> post("/web/logout")
+  def browser_start(conn, params), do: conn |> recycle() |> get("/oauth/start", params)
+
+  def session_check(raw),
+    do: build_conn() |> put_req_header("authorization", "Bearer " <> raw) |> get("/oauth/session")
+
+  def broker_authorize(raw, params),
+    do:
+      build_conn()
+      |> put_req_header("authorization", "Bearer " <> raw)
+      |> post("/oauth/broker/authorize", params)
+
   def backend_register(attrs) do
     build_conn()
     |> put_req_header("content-type", "application/json")

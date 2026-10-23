@@ -21,6 +21,7 @@ defmodule LakehouseIam.Schema.Principal do
     |> cast(attrs, [:type, :username, :active, :meta])
     |> validate_required([:type])
     |> validate_username_if_user()
+    |> unique_constraint(:username, name: :principals_username_index, message: "already taken")
   end
 
   defp validate_username_if_user(changeset) do

@@ -12,7 +12,17 @@
     <h2>Permissions requested</h2>
     <ul>
       <%= for scope <- @sess.scopes do %>
-        <li><code><%= scope %></code></li>
+        <%= if scope == "native.broker" do %>
+          <li>Let Private Store sign you into apps you have already approved on this device.</li>
+        <% else %>
+          <li><code><%= scope %></code>
+            <%= case scope do %>
+              <% "groups.create" -> %> — Create new groups as you. Only new groups are added to selected access.
+              <% "groups.manage" -> %> — Rename groups you own, invite or remove members, accept invitations and leave.
+              <% _ -> %>
+            <% end %>
+          </li>
+        <% end %>
       <% end %>
     </ul>
   </section>
@@ -21,12 +31,12 @@
     <input type="hidden" name="_csrf_token" value={get_csrf_token()} />
     <input type="hidden" name="sessionID" value={@session_id} />
 
-    <%= if "chats.read" in @sess.scopes or "chats.write" in @sess.scopes do %>
+    <%= if "chats.read" in @sess.scopes or "chats.write" in @sess.scopes or "groups.manage" in @sess.scopes do %>
       <section>
         <h2>Chat access</h2>
         <label>
           <input type="checkbox" name="all_rooms" value="true" />
-          All chats (now and future)
+          All groups and chats (now and future)
         </label>
         <p>Or select rooms:</p>
         <ul>

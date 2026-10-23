@@ -139,7 +139,7 @@ defmodule LakehouseMatrix.Sync do
   defp room_payload(room_id, since_ts, full_state) do
     timeline_events =
       if full_state do
-        Events.list_timeline(room_id, limit: 100)
+        Events.list_all_timeline(room_id, 100)
       else
         Events.list_since(since_ts, room_ids: [room_id])
         |> Enum.reject(& &1.state_key)
