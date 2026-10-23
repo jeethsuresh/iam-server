@@ -39,7 +39,10 @@ defmodule LakehouseMatrix.RiverContent do
   end
 
   def reaction(g, id, p) do
-    DelegatedGroups.with_room(g, id, "chats.write", fn ->
+    DelegatedGroups.with_room(g, id, "chats.write", fn -> reaction_authorized!(g, id, p) end)
+  end
+  @doc false
+  def reaction_authorized!(g, id, p) do
       target = target!(id, p["event_id"])
       unless target.type in ["m.room.message" | @entry_types] and p["key"] in @emojis and
         is_boolean(p["active"]) and txn?(p["txn_id"]), do: Repo.rollback(:invalid_event)
@@ -67,7 +70,6 @@ defmodule LakehouseMatrix.RiverContent do
         end
         DelegatedGroups.content_event!(g, id, @reaction_action, action, p["txn_id"])
       end
-    end)
   end
 
   @doc "Read-model fields never replace the signed/original event content."

@@ -16,6 +16,12 @@ defmodule LakehouseMatrix.RiverPublishing do
       _ -> false
     end
   end
+  def reader_allowed?(id, actor) do
+    case thread_record(id) do
+      nil -> true
+      p -> Memberships.joined?(p.space_id, actor) or (p.visibility == "public" and p.comments_policy == "public")
+    end
+  end
   def writer_allowed?(id, actor) do
     case thread_record(id) do
       nil -> true
@@ -67,7 +73,7 @@ defmodule LakehouseMatrix.RiverPublishing do
         if publication.thread_id do
           public = p["visibility"] == "public"
           DelegatedGroups.template_state!(g, publication.thread_id, "m.room.join_rules", %{"join_rule" => if(public, do: "public", else: "invite")}, "")
-          DelegatedGroups.template_state!(g, publication.thread_id, "m.room.history_visibility", %{"history_visibility" => if(public, do: "world_readable", else: "joined")}, "")
+          DelegatedGroups.template_state!(g, publication.thread_id, "m.room.history_visibility", %{"history_visibility" => if(public and p["comments_policy"] == "public", do: "world_readable", else: "joined")}, "")
           unless public do
             for {principal, status} <- Memberships.membership_map(publication.thread_id), status in ["join", "invite"], not Memberships.joined?(room, principal) do
               DelegatedGroups.template_state!(g, publication.thread_id, "m.room.member", %{"membership" => "leave"}, mxid(principal))
@@ -152,7 +158,8 @@ defmodule LakehouseMatrix.RiverPublishing do
       target = if p && p.thread_id && p.visibility == "public", do: p.anchor_id, else: event
       if not is_nil(p) and p.visibility == "public" and not Memberships.joined?(room, g.principal_id), do: unwrap!(DelegatedGroups.membership(g, room, %{"action" => "public_join"}))
       refreshed = if p && p.visibility == "public", do: %{g | room_ids: Enum.uniq(g.room_ids ++ [room])}, else: g
-      unwrap!(RiverContent.reaction(refreshed, room, Map.put(params, "event_id", target)))
+      unless "chats.write" in refreshed.scopes and LakehouseIam.IAM.can?(g.principal_id, "matrix.room.send", Identity.resource_arn(room)), do: Repo.rollback(:forbidden)
+      RiverContent.reaction_authorized!(refreshed, room, Map.put(params, "event_id", target))
     end)
   end
   def blog(g, space, params) do
