@@ -1,6 +1,10 @@
 defmodule LakehouseWeb.App.RtcController do
   use LakehouseWeb, :controller
   alias LakehouseMatrix.RiverRtc
+  def capabilities(conn, _) do
+    scopes = conn.assigns.app_grant.scopes
+    json(conn, %{allow_ice: "chats.read" in scopes, allow_calls: "calls.join" in scopes and "chats.write" in scopes})
+  end
   def index(conn, _), do: respond(conn, RiverRtc.list(conn.assigns.app_grant))
   def update(conn, %{"id" => id} = p), do: respond(conn, RiverRtc.update(conn.assigns.app_grant, conn.assigns.app_token, id, p))
   def lease(conn, %{"id" => id}), do: conn |> put_resp_header("cache-control", "no-store") |> json(%{active: RiverRtc.lease_active?(id)})

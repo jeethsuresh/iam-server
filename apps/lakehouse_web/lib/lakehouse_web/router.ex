@@ -124,6 +124,7 @@ defmodule LakehouseWeb.Router do
     post "/groups/:id/publication", PublishingController, :policy
     post "/posts/:event/comment", PublishingController, :comment
     post "/posts/:event/reactions", PublishingController, :reaction
+    get "/rtc", RtcController, :capabilities
     get "/calls", RtcController, :index
     post "/groups/:id/rtc", RtcController, :update
     get "/groups/:id/files", WorkspaceController, :files
