@@ -18,6 +18,24 @@ defmodule LakehouseMatrix.DelegatedGroups do
     |> Enum.map(&describe(&1, grant.principal_id))
   end
 
+  def overview(grant) do
+    with :ok <- scope(grant, "chats.list") do
+      groups = list(grant)
+      ids = for g <- groups, g.membership == "join", do: g.id
+      recent = if "chats.read" in grant.scopes do
+        Repo.all(from e in RoomEvent, where: e.room_id in ^ids and is_nil(e.state_key) and e.type in ^@types,
+          order_by: [desc: e.inserted_at, desc: e.id], limit: 200)
+          |> Enum.map(fn e ->
+            group = Enum.find(groups, &(&1.id == e.room_id))
+            Map.merge(Events.to_client_event(e), %{"group_id" => e.room_id, "group_name" => group.name})
+          end)
+      else
+        []
+      end
+      {:ok, %{groups: groups, recent: recent}}
+    end
+  end
+
   def create(grant, params) do
     with :ok <- scope(grant, "groups.create"),
          true <- text?(params["name"], 80),
@@ -210,7 +228,7 @@ defmodule LakehouseMatrix.DelegatedGroups do
 
   def membership(grant, id, params) do
     with :ok <- scope(grant, "groups.manage"),
-         true <- allowed(grant, id) == :ok or invitation_allowed?(grant, id),
+         :ok <- membership_allowed(grant, id),
          true <- params["action"] in ~w(invite accept leave remove),
          true <- is_nil(Repo.get(RiverChannel, id)) do
       transact(fn ->
@@ -403,6 +421,9 @@ defmodule LakehouseMatrix.DelegatedGroups do
     else
       _ -> {:error, :forbidden}
     end
+  end
+  defp membership_allowed(g, id) do
+    if allowed(g, id) == :ok or invitation_allowed?(g, id), do: :ok, else: {:error, :forbidden}
   end
   defp invitation_allowed?(g, id) do
     "groups.join" in g.scopes and match?({:ok, _}, Ecto.UUID.cast(id)) and

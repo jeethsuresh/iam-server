@@ -2,6 +2,7 @@ defmodule LakehouseWeb.App.GroupController do
   use LakehouseWeb, :controller
   alias LakehouseMatrix.DelegatedGroups, as: Groups
 
+  def overview(conn, _), do: respond(conn, Groups.overview(conn.assigns.app_grant))
   def index(conn, _) do
     if "chats.list" in conn.assigns.app_grant.scopes,
       do: json(conn, %{groups: Groups.list(conn.assigns.app_grant)}),

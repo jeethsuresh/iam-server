@@ -115,6 +115,7 @@ defmodule LakehouseWeb.Router do
   scope "/app/v1", LakehouseWeb.App, as: :app_v1 do
     pipe_through [:api, LakehouseWeb.Plugs.AppTokenAuth]
 
+    get "/overview", GroupController, :overview
     get "/groups", GroupController, :index
     post "/groups", GroupController, :create
     post "/direct", GroupController, :direct
