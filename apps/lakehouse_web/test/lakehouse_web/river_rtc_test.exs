@@ -6,12 +6,12 @@ defmodule LakehouseWeb.RiverRtcTest do
   alias LakehouseWeb.MatrixFixtures
   setup do
     old = Application.get_env(:lakehouse_matrix, :rtc_url)
-    Application.put_env(:lakehouse_matrix, :rtc_url, "wss: //rtc.gravitas.test")
+    Application.put_env(:lakehouse_matrix, :rtc_url, "wss://rtc.gravitas.test")
     on_exit(fn -> if old, do: Application.put_env(:lakehouse_matrix,:rtc_url,old), else: Application.delete_env(:lakehouse_matrix,:rtc_url) end)
     a = MatrixFixtures.user_fixture("rtcalice"); b = MatrixFixtures.user_fixture("rtcbob")
     scopes = ~w(chats.list chats.read chats.write groups.create groups.manage groups.join spaces.channels calls.read calls.join)
-    {:ok, ga} = Grants.upsert(a.id,"https: //chat.gravitas.cool",scopes,:all,[])
-    {:ok, gb} = Grants.upsert(b.id,"https: //chat.gravitas.cool",scopes,:all,[])
+    {:ok, ga} = Grants.upsert(a.id,"https://chat.gravitas.cool",scopes,:all,[])
+    {:ok, gb} = Grants.upsert(b.id,"https://chat.gravitas.cool",scopes,:all,[])
     {:ok, bundle} = Tokens.issue(ga)
     {:ok, %{token: ta}} = Tokens.verify_access(bundle.access_token)
     {:ok, bundle} = Tokens.issue(gb)
