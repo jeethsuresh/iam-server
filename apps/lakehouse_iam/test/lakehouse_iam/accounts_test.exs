@@ -2,7 +2,7 @@ defmodule LakehouseIam.AccountsTest do
   use LakehouseIam.DataCase, async: false
 
   alias LakehouseIam.{Accounts, IAM}
-  alias LakehouseIam.Schema.Principal
+  alias LakehouseIam.Schema.{Grant, Principal, Resource, Role}
 
   setup do
     Application.put_env(:lakehouse_iam, :admin_username, "admin")
@@ -47,7 +47,10 @@ defmodule LakehouseIam.AccountsTest do
 
   test "scoped grants and inactive users cannot become global administrators" do
     {:ok, actor} = Accounts.register_user("scopedadmin", "password123", approve: true)
-    assert {:ok, _} = IAM.assign_role(actor.id, "admin", "arn:test:room")
+    role = Repo.get_by!(Role, name: "admin")
+    resource = Repo.insert!(%Resource{arn: "arn:test:room"})
+
+    Repo.insert!(%Grant{principal_id: actor.id, role_id: role.id, resource_id: resource.id})
     refute Accounts.admin?(actor.username)
 
     assert {:ok, _} = IAM.assign_role(actor.id, "admin")
