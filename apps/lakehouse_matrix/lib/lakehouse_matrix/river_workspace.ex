@@ -65,10 +65,9 @@ defmodule LakehouseMatrix.RiverWorkspace do
          {:ok, overview} <- DelegatedGroups.overview(g) do
       groups = overview.groups
       ids = for x <- groups, x.membership == "join", do: x.id
-      reads = Repo.all(from r in RiverEntryRead, where: r.principal_id == ^g.principal_id, select: r.event_id) |> MapSet.new()
-      roots = Repo.all(from e in RoomEvent, where: e.room_id in ^ids and e.type in ^@entries and e.principal_id != ^g.principal_id,
+      roots = Repo.all(from e in RoomEvent, left_join: r in RiverEntryRead, on: r.event_id == e.event_id and r.principal_id == ^g.principal_id,
+        where: e.room_id in ^ids and e.type in ^@entries and e.principal_id != ^g.principal_id and is_nil(r.event_id),
         order_by: [desc: e.inserted_at, desc: e.id], limit: 200)
-        |> Enum.reject(&MapSet.member?(reads, &1.event_id))
       entries = roots |> Enum.group_by(& &1.room_id) |> Enum.flat_map(fn {id, rows} ->
         for event <- RiverContent.decorate(rows, g.principal_id), do: Map.put(event, "group_id", id)
       end) |> RiverContent.budget(400_000)
@@ -76,12 +75,21 @@ defmodule LakehouseMatrix.RiverWorkspace do
       # home timeline page. Thread reads are still checked against current ACLs.
       targets = Repo.all(from e in RoomEvent, where: e.room_id in ^ids and e.principal_id == ^g.principal_id and e.type == "m.room.message" and
         fragment("? #>> '{m.relates_to,rel_type}'", e.content) == "m.thread",
-        order_by: [desc: e.inserted_at, desc: e.id], limit: 100,
-        select: {e.room_id, fragment("? #>> '{m.relates_to,event_id}'", e.content)}) |> Enum.uniq() |> Enum.take(40)
+        group_by: [e.room_id, fragment("? #>> '{m.relates_to,event_id}'", e.content)],
+        order_by: [desc: max(e.inserted_at)], limit: 40,
+        select: {e.room_id, fragment("? #>> '{m.relates_to,event_id}'", e.content)})
       threads = for {room, target} <- targets,
         e = Repo.get_by(RoomEvent, room_id: room, event_id: target), not is_nil(e),
         do: Map.put(hd(RiverContent.decorate([e], g.principal_id)), "group_id", room)
-      {:ok, %{catch_up: entries, threads: RiverContent.budget(threads, 200_000)}}
+      recent_entries = Enum.flat_map(@entries, fn type ->
+        rows = Repo.all(from e in RoomEvent, where: e.room_id in ^ids and e.type == ^type, order_by: [desc: e.inserted_at, desc: e.id], limit: 6)
+        projected = rows |> Enum.group_by(& &1.room_id) |> Enum.flat_map(fn {id, events} ->
+          name = Enum.find(groups, &(&1.id == id)).name
+          for event <- RiverContent.decorate(events, g.principal_id), do: event |> Map.put("group_id", id) |> Map.put("group_name", name)
+        end) |> Map.new(&{&1["event_id"],&1})
+        Enum.map(rows, &projected[&1.event_id])
+      end)
+      {:ok, %{catch_up: entries, recent_entries: RiverContent.budget(recent_entries, 200_000), threads: RiverContent.budget(threads, 200_000)}}
     else
       _ -> {:error, :insufficient_scope}
     end

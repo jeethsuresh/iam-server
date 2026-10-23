@@ -42,7 +42,9 @@ defmodule LakehouseMatrix.RiverContent do
       original = target!(id, p["event_id"])
       unless original.type in @entry_types and original.principal_id == g.principal_id,
         do: Repo.rollback(:forbidden)
-      unless valid_text?(p["title"], 160) and valid_text?(p["body"], 160000) and String.length(p["body"]) <= 40000 and txn?(p["txn_id"]),
+      published = Repo.get(LakehouseMatrix.Schema.RiverPublication, original.event_id)
+      if published && published.visibility == "public" && "posts.publish" not in g.scopes, do: Repo.rollback(:insufficient_scope)
+      unless valid_text?(p["title"], 160) and valid_text?(p["body"], 40000) and String.length(p["body"]) <= 40000 and txn?(p["txn_id"]),
         do: Repo.rollback(:invalid_event)
       DelegatedGroups.content_event!(g, id, @edit, %{"version" => 1,
         "m.relates_to" => %{"rel_type" => "m.replace", "event_id" => original.event_id},
@@ -179,6 +181,6 @@ defmodule LakehouseMatrix.RiverContent do
   end
   defp action_id(g, id, txn), do: "$river_content_" <> digest("#{g.principal_id}|#{g.app_origin}|#{id}|#{@reaction_action}|#{txn}")
   defp digest(s), do: :crypto.hash(:sha256, s) |> Base.url_encode64(padding: false)
-  defp valid_text?(s, max), do: is_binary(s) and byte_size(s) <= max and String.trim(s) != ""
+  defp valid_text?(s, max), do: is_binary(s) and byte_size(s) <= max * 4 and String.length(s) <= max and String.trim(s) != ""
   defp txn?(s), do: is_binary(s) and String.match?(s, ~r/^[a-zA-Z0-9_-]{1,128}$/)
 end

@@ -95,4 +95,13 @@ defmodule LakehouseWeb.RiverPublishingTest do
     assert {:error, :forbidden} = RiverContent.entries(gc,room,%{"kind"=>"post"})
   end
 
+  test "editing public content still requires the explicit publish permission", %{grants: [ga | _], room: room, post: post} do
+    {:ok, _} = publish(ga,room,post)
+    params=%{"event_id"=>post,"title"=>"Edit","body"=>"New public content","txn_id"=>"scope-edit"}
+    assert {:error, :insufficient_scope} = RiverContent.edit(%{ga | scopes: ga.scopes -- ["posts.publish"]},room,params)
+    assert {:ok, _} = RiverPublishing.policy(%{ga | scopes: ga.scopes -- ["posts.publish"]},room,%{"event_id"=>post,"visibility"=>"members","comments_policy"=>"members","txn_id"=>"private-first"})
+    assert {:ok, _} = RiverContent.edit(%{ga | scopes: ga.scopes -- ["posts.publish"]},room,params)
+    assert {:error, :not_found} = RiverPublishing.show(nil,post)
+  end
+
 end

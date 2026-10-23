@@ -77,4 +77,22 @@ defmodule LakehouseWeb.RiverWorkspaceTest do
     for _ <- 1..7, do: assert(:ok == Changes.subscribe(a.id, "https://chat.gravitas.cool"))
     assert {:error, :too_many_connections} = Changes.subscribe(a.id, "https://chat.gravitas.cool")
   end
+  test "catch-up excludes acknowledged entries before applying its page bound", %{grants: [ga, gb | _], people: [_, b | _]} do
+    {:ok, dm} = DelegatedGroups.direct(ga,%{"user_id" => Identity.user_id(b.username)})
+    {:ok, _} = DelegatedGroups.membership(gb,dm.id,%{"action"=>"accept"})
+    posts = for n <- 1..201 do
+      {:ok, post} = DelegatedGroups.send(ga,dm.id,"cool.gravitas.river.post.v1","catchup-#{n}",%{"version"=>1,"title"=>"Entry #{n}","body"=>"Body"})
+      post["event_id"]
+    end
+    for id <- Enum.drop(posts,1), do: Repo.insert!(%LakehouseMatrix.Schema.RiverEntryRead{principal_id: gb.principal_id,event_id: id})
+    {:ok, home} = RiverWorkspace.home(gb)
+    assert Enum.map(home.catch_up,& &1["event_id"]) == [hd(posts)]
+  end
+  test "Unicode titles and descriptions use character limits with a bounded byte budget", %{grants: [ga | _]} do
+    title = String.duplicate("🌊",80)
+    {:ok, space} = DelegatedGroups.create(ga,%{"name"=>title,"kind"=>"space","txn_id"=>"unicode","description"=>String.duplicate("🌊",500)})
+    assert space.name == title
+    assert {:ok, _} = DelegatedGroups.send(ga,space.id,"cool.gravitas.river.post.v1","unicode-post",%{"version"=>1,"title"=>String.duplicate("🌊",160),"body"=>String.duplicate("🌊",40000)})
+  end
+
 end

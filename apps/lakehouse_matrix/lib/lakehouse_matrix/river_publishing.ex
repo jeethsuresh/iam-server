@@ -130,7 +130,7 @@ defmodule LakehouseMatrix.RiverPublishing do
         policy = if publication, do: summary(publication), else: @defaults
         member = member?(g, original.room_id)
         unless policy["comments_policy"] != "disabled" and (member or (policy["visibility"] == "public" and policy["comments_policy"] == "public")), do: Repo.rollback(:forbidden)
-        unless is_binary(p["body"]) and String.trim(p["body"]) != "" and byte_size(p["body"]) <= 16_000 and txn?(p["txn_id"]), do: Repo.rollback(:invalid_request)
+        unless is_binary(p["body"]) and String.trim(p["body"]) != "" and byte_size(p["body"]) <= 64_000 and String.length(p["body"]) <= 16_000 and txn?(p["txn_id"]), do: Repo.rollback(:invalid_request)
         if Contacts.blocked?(original.principal_id, g.principal_id), do: Repo.rollback(:forbidden)
         parent = if is_binary(p["parent_id"]), do: Repo.get_by(RoomEvent, event_id: p["parent_id"])
         private_parent = not is_nil(parent) and parent.room_id == original.room_id

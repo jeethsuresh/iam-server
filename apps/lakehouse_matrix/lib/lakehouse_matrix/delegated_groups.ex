@@ -67,7 +67,7 @@ defmodule LakehouseMatrix.DelegatedGroups do
             content = if params["kind"] == "space", do: Map.put(content, "type", "m.space"), else: content
             event!(grant, id, "m.room.create", content, "")
             event!(grant, id, "m.room.name", %{"name" => room.name}, "")
-            if is_binary(params["description"]) and byte_size(params["description"]) <= 500, do: event!(grant, id, "m.room.topic", %{"topic" => params["description"]}, "")
+            if is_binary(params["description"]) and byte_size(params["description"]) <= 2000 and String.length(params["description"]) <= 500, do: event!(grant, id, "m.room.topic", %{"topic" => params["description"]}, "")
             event!(grant, id, "m.room.join_rules", %{"join_rule" => "invite"}, "")
             event!(grant, id, "m.room.history_visibility", %{"history_visibility" => "shared"}, "")
             event!(grant, id, "m.room.power_levels", %{"users" => %{creator => 100}, "users_default" => 0,
@@ -234,7 +234,7 @@ defmodule LakehouseMatrix.DelegatedGroups do
         owner!(grant, id)
         {:ok, _} = Rooms.get_room(id) |> Room.changeset(%{name: String.trim(params["name"])}) |> Repo.update()
         event!(grant, id, "m.room.name", %{"name" => String.trim(params["name"])}, "")
-        if is_binary(params["description"]) and byte_size(params["description"]) <= 500, do: event!(grant, id, "m.room.topic", %{"topic" => params["description"]}, "")
+        if is_binary(params["description"]) and byte_size(params["description"]) <= 2000 and String.length(params["description"]) <= 500, do: event!(grant, id, "m.room.topic", %{"topic" => params["description"]}, "")
         audit!(grant, id, "rename", user_id(grant.principal_id))
         describe(id, grant.principal_id)
       end)
@@ -390,7 +390,7 @@ defmodule LakehouseMatrix.DelegatedGroups do
   defp validate("m.reaction", %{"m.relates_to" => %{"rel_type" => "m.annotation", "event_id" => id, "key" => key}})
        when is_binary(id) and is_binary(key) and byte_size(key) in 1..64, do: :ok
   defp validate(type, %{"body" => body} = c) when type != "m.reaction" do
-    valid = text?(body, if(type == "m.room.message", do: 16000, else: 160000)) && String.length(body) <= 40000 && (type == "m.room.message" ||
+    valid = text?(body, if(type == "m.room.message", do: 16000, else: 40000)) && String.length(body) <= 40000 && (type == "m.room.message" ||
       (c["version"] == 1 && text?(c["title"], 160)))
     if valid, do: :ok, else: {:error, :invalid_event}
   end
@@ -547,7 +547,7 @@ defmodule LakehouseMatrix.DelegatedGroups do
 
   defp scope(g, s), do: if(s in g.scopes, do: :ok, else: {:error, :insufficient_scope})
   defp user_id(id), do: Repo.get!(Principal, id).username |> Identity.user_id()
-  defp text?(s, max), do: is_binary(s) && String.trim(s) != "" && byte_size(s) <= max
+  defp text?(s, max), do: is_binary(s) && String.trim(s) != "" && String.length(s) <= max && byte_size(s) <= max * 4
   defp txn?(s), do: is_binary(s) && byte_size(s) in 1..128 && String.match?(s, ~r/^[a-zA-Z0-9_-]+$/)
   defp digest(s), do: :crypto.hash(:sha256, s) |> Base.url_encode64(padding: false)
   defp uuid(s) do
