@@ -23,12 +23,15 @@ defmodule LakehouseMatrix.DelegatedGroups do
       groups = list(grant)
       ids = for g <- groups, g.membership == "join", do: g.id
       recent = if "chats.read" in grant.scopes do
-        Repo.all(from e in RoomEvent, where: e.room_id in ^ids and is_nil(e.state_key) and e.type in ^@types,
+        rows = Repo.all(from e in RoomEvent, where: e.room_id in ^ids and is_nil(e.state_key) and e.type in ^@types,
           order_by: [desc: e.inserted_at, desc: e.id], limit: 200)
-          |> Enum.map(fn e ->
-            group = Enum.find(groups, &(&1.id == e.room_id))
-            Map.merge(Events.to_client_event(e), %{"group_id" => e.room_id, "group_name" => group.name})
-          end)
+        projected = rows |> Enum.group_by(& &1.room_id) |> Enum.flat_map(fn {_id, entries} ->
+          LakehouseMatrix.RiverContent.decorate(entries, grant.principal_id)
+        end) |> Map.new(&{&1["event_id"], &1})
+        rows |> Enum.map(fn e ->
+          group = Enum.find(groups, &(&1.id == e.room_id))
+          Map.merge(projected[e.event_id], %{"group_id" => e.room_id, "group_name" => group.name})
+        end) |> LakehouseMatrix.RiverContent.budget()
       else
         []
       end

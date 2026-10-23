@@ -63,6 +63,8 @@ defmodule LakehouseWeb.RiverContentTest do
     assert projected["content"]["body"] == "Original"
     assert projected["rendered_content"]["body"] == "Edited"
     assert projected["edited"]
+    {:ok, %{recent: recent}} = DelegatedGroups.overview(a)
+    assert Enum.find(recent, &(&1["event_id"] == post["event_id"]))["rendered_content"]["title"] == "After"
     assert {:error, :transaction_conflict} = RiverContent.edit(a, r.id, %{params | "body" => "Conflicting"})
   end
 
@@ -82,6 +84,8 @@ defmodule LakehouseWeb.RiverContentTest do
       {:ok, _} = DelegatedGroups.send(a, r.id, "cool.gravitas.river.post.v1", "large#{n}",
         %{"version" => 1, "title" => "Post #{n}", "body" => String.duplicate("x", 16000)})
     end
+    {:ok, overview} = DelegatedGroups.overview(a)
+    assert byte_size(Jason.encode!(overview)) < 1_100_000
     {:ok, first} = DelegatedGroups.timeline(a, r.id, %{"limit" => 100})
     assert byte_size(Jason.encode!(first)) < 1_100_000
     assert is_binary(first.next_cursor)
