@@ -13,6 +13,7 @@ set -euo pipefail
 if [[ "$1" == kustomize ]]; then exec "$IAM_TEST_KUBECTL" "$@"; fi
 printf '%s\n' "$*" >> "$IAM_TEST_LOG"
 if [[ "$*" == *'get deployment iam -o jsonpath='* ]]; then printf '1'; fi
+if [[ "$*" == *'config view --minify'* ]]; then printf '%s' "${IAM_TEST_SERVER:-https://02fe9a55-8048-421e-a03f-eae9a4a60472.k8s.ondigitalocean.com}"; fi
 if [[ "$*" == *'wait --for=condition=complete'* && "${IAM_TEST_FAIL_MIGRATION:-0}" == 1 ]]; then exit 1; fi
 MOCK
 chmod +x "$work/kubectl"
@@ -53,3 +54,10 @@ if IAM_MAINTENANCE_RELEASE=1 IAM_TEST_FAIL_MIGRATION=1 "$root/scripts/kubernetes
 grep -q 'scale deployment/iam --replicas=1' "$IAM_TEST_LOG" || { echo 'Failed maintenance release did not restore old pod'; exit 1; }
 if grep -q 'apply .*app.kubernetes.io/component=server' "$IAM_TEST_LOG"; then echo 'Failed maintenance migration updated app'; exit 1; fi
 echo 'kubernetes/deploy_test.sh: OK (render, migration ordering, failure gate)'
+
+: > "$IAM_TEST_LOG"
+if IAM_KUSTOMIZE_OVERLAY=gravitas IAM_TEST_SERVER=https://wrong.example "$root/scripts/kubernetes/deploy.sh" "$image" 2> "$work/error"; then echo 'Unexpected cluster accepted'; exit 1; fi
+if grep -q 'apply \|scale \|create job' "$IAM_TEST_LOG"; then echo 'Unexpected cluster was mutated'; exit 1; fi
+IAM_KUSTOMIZE_OVERLAY=gravitas IAM_MAINTENANCE_RELEASE=1 "$root/scripts/kubernetes/deploy.sh" "$image"
+if grep -q 'get secret' "$IAM_TEST_LOG"; then echo 'Release tried to read application Secrets'; exit 1; fi
+echo 'Gravitas cluster guard and Secret isolation: OK'

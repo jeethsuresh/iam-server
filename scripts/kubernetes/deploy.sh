@@ -39,8 +39,11 @@ kubectl kustomize "$work/$overlay" > "$work/release.yaml"
 if [[ "$render_only" == 1 ]]; then cat "$work/release.yaml"; exit 0; fi
 : "${KUBE_CONTEXT:?Set KUBE_CONTEXT explicitly to your DOKS kubectl context}"
 kube=(kubectl --context "$KUBE_CONTEXT" --namespace iam)
-# Prerequisites are intentionally managed separately from application releases.
-"${kube[@]}" get secret iam-secrets iam-db-app iam-db-ca >/dev/null
+# Prerequisites are managed separately; release credentials cannot read Secrets.
+if [[ "$overlay" == gravitas ]]; then
+  server="$("${kube[@]}" config view --minify -o jsonpath='{.clusters[0].cluster.server}')"
+  [[ "$server" == 'https://02fe9a55-8048-421e-a03f-eae9a4a60472.k8s.ondigitalocean.com' ]] || { echo 'Refusing an unexpected Gravitas cluster' >&2; exit 1; }
+fi
 "${kube[@]}" apply -f "$work/release.yaml" --selector 'app.kubernetes.io/component!=server'
 if [[ "$overlay" == gravitas ]]; then
   "${kube[@]}" rollout status statefulset/iam-db --timeout=180s
