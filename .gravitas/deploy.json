@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "app": "iam",
+  "namespace": "iam",
+  "host": "gravitas.cool",
+  "health_path": "/healthz",
+  "image_repository": "ghcr.io/jeethsuresh/iam-server",
+  "release": {
+    "command": [
+      "bash",
+      "scripts/kubernetes/deploy.sh"
+    ],
+    "env": {
+      "IAM_KUSTOMIZE_OVERLAY": "gravitas",
+      "IAM_MAINTENANCE_RELEASE": "1"
+    }
+  },
+  "verify": [
+    {
+      "path": "/readyz"
+    },
+    {
+      "path": "/.well-known/iam-configuration"
+    }
+  ]
+}
