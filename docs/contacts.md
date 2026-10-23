@@ -72,5 +72,11 @@ Deploy the additive IAM migration/API first, then the River backend/client with
 maintenance procedures. Old River sessions need one explicit reconnect; chat
 remains usable while contact consent is missing. Old peer grants do not imply new
 contact discoverability: the peer must approve River's contacts access too.
-Do not merge/deploy under an unrelated earlier release approval. No live fixtures
-or production data changes are needed to run the PostgreSQL/Chromium CI suite.
+The PostgreSQL/Chromium CI suite uses isolated test data, with no production
+fixtures or live contact changes.
+
+The additive column is readable by older binaries, but the old friends-only
+authorization policy does not protect the new shared graph. After enabling
+contacts, fix forward or preserve the new scope checks when rolling back an
+application image. Do not roll back to the legacy friend authorization or reverse
+the event-type migration after contact events have been recorded.
