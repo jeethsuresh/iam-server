@@ -4,7 +4,7 @@ defmodule LakehouseWeb.RiverChannelsSocialTest do
   alias LakehouseIam.Schema.AppToken
   alias LakehouseMatrix.{DelegatedGroups, Social, Matrix, Memberships, Identity, State}
   alias LakehouseWeb.MatrixFixtures
-  @scopes ~w(profile.name chats.list chats.read chats.write groups.create groups.manage groups.join spaces.channels friends.read friends.manage)
+  @scopes ~w(profile.name chats.list chats.read chats.write groups.create groups.manage groups.join spaces.channels contacts.read contacts.manage)
 
   setup do
     a = MatrixFixtures.user_fixture("chanalice")

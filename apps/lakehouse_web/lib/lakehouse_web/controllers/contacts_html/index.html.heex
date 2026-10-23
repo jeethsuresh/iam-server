@@ -1,0 +1,47 @@
+<div class="dashboard-page contacts-page">
+  <header class="page-heading"><div><p class="eyebrow">YOUR PEOPLE</p><h1>Contacts</h1><p>Your people across Gravitas. Apps need your permission to access this list.</p></div></header>
+  <p>Contacts who approve the same app’s contacts access can find each other there. In River, they appear as friends automatically. Requests still need acceptance. Removing or blocking a contact applies across apps.</p>
+  <%= for {kind, message} <- @flash do %>
+    <p class={"flash flash--#{kind}"} role="status"><%= message %></p>
+  <% end %>
+  <section class="settings-section">
+    <h2>Add a contact</h2>
+    <form action={~p"/contacts"} method="post" class="contact-request-form">
+      <input type="hidden" name="_csrf_token" value={get_csrf_token()} />
+      <input type="hidden" name="action" value="request" />
+      <input type="hidden" name="txn_id" value={Ecto.UUID.generate()} />
+      <label for="contact-username">Gravitas username</label>
+      <input id="contact-username" name="username" required maxlength="100" autocomplete="off" placeholder="alice" />
+      <button type="submit">Send contact request</button>
+    </form>
+  </section>
+  <%= for {title, people, actions} <- [
+    {"Incoming requests", Enum.filter(@contacts.requests, &(&1.direction == "incoming")), [{"accept", "Accept"}, {"ignore", "Ignore"}, {"block", "Block across apps"}]},
+    {"Sent requests", Enum.filter(@contacts.requests, &(&1.direction == "outgoing")), [{"cancel", "Cancel request"}]},
+    {"Your contacts", @contacts.contacts, [{"remove", "Remove contact everywhere"}, {"block", "Block across apps"}]},
+    {"Blocked people", @contacts.blocked, [{"unblock", "Unblock"}]}
+  ] do %>
+    <section class="settings-section">
+      <h2><%= title %> · <%= length(people) %></h2>
+      <%= if people == [] do %><p>No people in this list.</p><% end %>
+      <ul class="contact-list">
+        <%= for person <- people do %>
+          <li>
+            <div><strong><%= person.username %></strong><span><%= person.user_id %></span></div>
+            <div class="contact-actions">
+              <%= for {action, label} <- actions do %>
+                <form action={~p"/contacts"} method="post">
+                  <input type="hidden" name="_csrf_token" value={get_csrf_token()} />
+                  <input type="hidden" name="action" value={action} />
+                  <input type="hidden" name="user_id" value={person.user_id} />
+                  <input type="hidden" name="txn_id" value={Ecto.UUID.generate()} />
+                  <button type="submit"><%= label %></button>
+                </form>
+              <% end %>
+            </div>
+          </li>
+        <% end %>
+      </ul>
+    </section>
+  <% end %>
+</div>

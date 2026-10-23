@@ -1374,3 +1374,18 @@ a:focus-visible,button:focus-visible,input:focus-visible,textarea:focus-visible 
     padding:24px;
   }
 }
+
+/* Contacts reuse the account/settings surfaces and wrap on narrow screens. */
+.contacts-page > p { max-width: 72ch; color: var(--muted); }
+.contact-list { padding: 0; list-style: none; }
+.contact-list > li { display: flex; gap: 16px; align-items: center; justify-content: space-between; flex-wrap: wrap; padding: 16px 0; border-top: 1px solid var(--border); }
+.contact-list > li > div:first-child { min-width: 0; overflow-wrap: anywhere; }
+.contact-list span { display: block; color: var(--muted); font-size: .875rem; }
+.contact-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.contact-actions form { margin: 0; }
+.contact-actions button { margin: 0; }
+@media(max-width:560px) {
+  .main-nav { gap:4px; }
+  .main-nav a { padding:8px 6px; gap:4px; font-size:11px; }
+  .main-nav a span { width:12px; font-size:13px; }
+}

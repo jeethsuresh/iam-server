@@ -91,13 +91,13 @@ defmodule LakehouseMatrix.DelegatedGroups do
 
   def direct(grant, params) do
     with :ok <- scope(grant, "groups.create"), :ok <- scope(grant, "groups.manage"),
-         :ok <- scope(grant, "friends.read"), :ok <- scope(grant, "groups.join"),
+         :ok <- scope(grant, "contacts.read"), :ok <- scope(grant, "groups.join"),
          {:ok, username} <- Identity.parse_user_id(params["user_id"]),
          {:ok, person} <- Accounts.fetch_user(username), true <- person.active and person.id != grant.principal_id do
       transact(fn ->
         [low, high] = ids = Enum.sort([grant.principal_id, person.id])
         Repo.all(from p in Principal, where: p.id in ^ids, order_by: p.id, lock: "FOR NO KEY UPDATE")
-        unless Social.friends?(grant.principal_id, person.id), do: Repo.rollback(:forbidden)
+        unless Social.friends?(grant.principal_id, person.id) and LakehouseIam.Contacts.available_in_app?(person.id, grant.app_origin), do: Repo.rollback(:forbidden)
         locked = (Repo.one(from g in AppGrant, where: g.id == ^grant.id, lock: "FOR UPDATE") || Repo.rollback(:forbidden))
         direct = Repo.get_by(RiverDirect, low_id: low, high_id: high)
         id = if direct do
