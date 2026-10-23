@@ -230,7 +230,7 @@ defmodule LakehouseMatrix.DelegatedGroups do
     with :ok <- scope(grant, "groups.manage"),
          :ok <- membership_allowed(grant, id),
          true <- params["action"] in ~w(invite accept leave remove),
-         true <- is_nil(Repo.get(RiverChannel, id)) do
+         :ok <- root_membership(id) do
       transact(fn ->
         locked_grant = if grant.id, do: Repo.one!(from g in AppGrant, where: g.id == ^grant.id, lock: "FOR UPDATE")
         lock!(id)
@@ -421,6 +421,9 @@ defmodule LakehouseMatrix.DelegatedGroups do
     else
       _ -> {:error, :forbidden}
     end
+  end
+  defp root_membership(id) do
+    if is_nil(Repo.get(RiverChannel, id)), do: :ok, else: {:error, :forbidden}
   end
   defp membership_allowed(g, id) do
     if allowed(g, id) == :ok or invitation_allowed?(g, id), do: :ok, else: {:error, :forbidden}

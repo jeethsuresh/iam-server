@@ -87,7 +87,10 @@ defmodule LakehouseMatrix.Social do
       action == "request" and (is_nil(relation) or relation.status == "none") ->
         pending = Repo.aggregate(from(f in RiverFriendship,
           where: f.requested_by == ^actor and f.status == "pending"), :count)
-        if pending >= 100, do: Repo.rollback(:too_many_requests)
+        cutoff = DateTime.add(DateTime.utc_now(), -3600, :second)
+        recent = Repo.aggregate(from(e in RiverSocialEvent,
+          where: e.actor_id == ^actor and e.action == "request" and e.inserted_at > ^cutoff), :count)
+        if pending >= 100 or recent >= 20, do: Repo.rollback(:too_many_requests)
         if relation do
           Ecto.Changeset.change(relation, status: "pending", requested_by: actor) |> Repo.update!()
         else
