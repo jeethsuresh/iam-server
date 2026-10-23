@@ -71,6 +71,9 @@ defmodule LakehouseWeb.Router do
       live "/rooms/:id", RoomLive, :show
     end
 
+    get "/contacts", ContactsController, :index
+    post "/contacts", ContactsController, :mutate
+
     get "/dashboard", DashboardController, :index
     get "/services/manage", DashboardController, :catalog
     post "/services", DashboardController, :create
@@ -124,6 +127,9 @@ defmodule LakehouseWeb.Router do
     get "/groups/:id/channels", GroupController, :channels
     post "/groups/:id/channels", GroupController, :create_channel
     post "/groups/:id/read", GroupController, :mark_read
+    get "/contacts", ContactsController, :index
+    post "/contacts", ContactsController, :mutate
+    get "/contacts/events", ContactsController, :events
     get "/friends", SocialController, :index
     post "/friends", SocialController, :mutate
     get "/friends/events", SocialController, :events

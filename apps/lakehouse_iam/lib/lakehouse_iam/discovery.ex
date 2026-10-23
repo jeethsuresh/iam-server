@@ -24,6 +24,8 @@ defmodule LakehouseIam.Discovery do
       "native_broker_authorization_endpoint" => base <> "/oauth/broker/authorize",
       "prompt_values_supported" => ["none"],
       "token_endpoint" => base <> "/oauth/token",
+      "contacts_endpoint" => base <> "/app/v1/contacts",
+      "contact_events_endpoint" => base <> "/app/v1/contacts/events",
       "userinfo_endpoint" => base <> "/app/v1/me",
       "grant_types_supported" => ["authorization_code", "refresh_token"],
       "code_challenge_methods_supported" => ["S256"],

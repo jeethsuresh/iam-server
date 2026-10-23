@@ -136,3 +136,7 @@ mix test apps/lakehouse_iam/test/lakehouse_iam/auth/callback_url_test.exs --no-s
 ```
 
 Full `mix test` (and any tests that hit `LakehouseIam.Repo`) require PostgreSQL matching `config/test.exs`, then start apps as usual (omit `--no-start`).
+
+## Shared contacts
+
+See [Gravitas contacts](docs/contacts.md) for delegated permissions, contact requests, River friend projection, migration compatibility and release order.

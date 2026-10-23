@@ -25,6 +25,7 @@ defmodule LakehouseWeb.Layouts do
         <nav aria-label="Main navigation" class="main-nav">
           <a href={~p"/dashboard"} class={@active == :services && "is-active"} aria-current={@active == :services && "page"}><span aria-hidden="true">◈</span> Services</a>
           <a href={~p"/groups"} class={@active == :groups && "is-active"} aria-current={@active == :groups && "page"}><span aria-hidden="true">◎</span> Groups</a>
+          <a href={~p"/contacts"} class={@active == :contacts && "is-active"} aria-current={@active == :contacts && "page"}><span aria-hidden="true">♧</span> Contacts</a>
           <a href={~p"/settings"} class={@active == :settings && "is-active"} aria-current={@active == :settings && "page"}><span aria-hidden="true">⚙</span> Settings</a>
         </nav>
         <%= if @admin do %>

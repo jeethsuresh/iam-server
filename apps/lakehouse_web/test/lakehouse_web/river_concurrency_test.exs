@@ -7,7 +7,7 @@ defmodule LakehouseWeb.RiverConcurrencyTest do
   alias LakehouseMatrix.{DelegatedGroups, Identity, Memberships, Social}
   alias LakehouseMatrix.Schema.{Room, RoomEvent}
   alias LakehouseWeb.MatrixFixtures
-  @scopes ~w(profile.name chats.list chats.read chats.write groups.create groups.manage groups.join spaces.channels friends.read friends.manage)
+  @scopes ~w(profile.name chats.list chats.read chats.write groups.create groups.manage groups.join spaces.channels contacts.read contacts.manage)
 
   # These races need independent committed PostgreSQL connections. Ordinary shared
   # sandbox tests serialize every query and cannot exercise competing row locks.
