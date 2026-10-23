@@ -1,6 +1,7 @@
 defmodule LakehouseWeb.App.WorkspaceController do
   use LakehouseWeb, :controller
   alias LakehouseMatrix.RiverWorkspace, as: Workspace
+  def files(conn, %{"id" => id} = p), do: respond(conn, LakehouseMatrix.RiverFiles.list(conn.assigns.app_grant, id, p))
   def home(conn, _), do: respond(conn, Workspace.home(conn.assigns.app_grant))
   def conversation(conn, p), do: respond(conn, Workspace.conversation(conn.assigns.app_grant, p))
   def invite(conn, %{"id" => id} = p), do: respond(conn, Workspace.invite(conn.assigns.app_grant, id, p))
@@ -10,6 +11,7 @@ defmodule LakehouseWeb.App.WorkspaceController do
     status = cond do
       reason in [:forbidden, :insufficient_scope] -> 403
       reason == :transaction_conflict -> 409
+      reason == :not_found -> 404
       true -> 400
     end
     conn |> put_status(status) |> json(%{error: to_string(reason)})

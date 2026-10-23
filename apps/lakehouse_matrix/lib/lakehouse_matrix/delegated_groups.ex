@@ -319,7 +319,8 @@ defmodule LakehouseMatrix.DelegatedGroups do
          true <- type in @types && txn?(txn) && is_map(content),
          true <- byte_size(Jason.encode!(content)) <= 32000,
          true <- IAM.can?(grant.principal_id, "matrix.room.send", Identity.resource_arn(id)),
-         :ok <- validate(type, content) do
+         :ok <- validate(type, content),
+         :ok <- LakehouseMatrix.RiverFiles.validate(content, id) do
       transact(fn ->
         lock!(id)
         unless access(grant, id) == :ok, do: Repo.rollback(:forbidden)
@@ -328,12 +329,14 @@ defmodule LakehouseMatrix.DelegatedGroups do
         relation!(id, type, content)
         event_id = "$river_" <> digest("#{grant.principal_id}|#{grant.app_origin}|#{id}|#{txn}")
         decorated = Map.put(content, "cool.gravitas.delegation", %{"version" => 1, "app_origin" => grant.app_origin})
-        case Repo.get_by(RoomEvent, event_id: event_id) do
+        result = case Repo.get_by(RoomEvent, event_id: event_id) do
           nil -> event!(grant, id, type, decorated, nil, event_id)
           e ->
             unless e.type == type && e.content == decorated, do: Repo.rollback(:transaction_conflict)
             Events.to_client_event(e)
         end
+        LakehouseMatrix.RiverFiles.register!(grant, id, result, content)
+        result
       end)
     else
       {:error, e} -> {:error, e}
