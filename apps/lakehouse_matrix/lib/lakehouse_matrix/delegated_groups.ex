@@ -298,9 +298,11 @@ defmodule LakehouseMatrix.DelegatedGroups do
           query
         end
         rows = Repo.all(query)
-        page = Enum.take(rows, limit)
-        %{events: page |> Enum.reverse() |> Enum.map(&Events.to_client_event/1),
-          next_cursor: if(length(rows) > limit, do: List.last(page).event_id, else: nil)}
+        candidates = Enum.take(rows, limit)
+        events = candidates |> LakehouseMatrix.RiverContent.decorate(grant.principal_id) |> LakehouseMatrix.RiverContent.budget()
+        page = Enum.take(candidates, length(events))
+        %{events: Enum.reverse(events),
+          next_cursor: if(length(rows) > length(page), do: List.last(page).event_id, else: nil)}
       end)
     end
   end
@@ -332,6 +334,34 @@ defmodule LakehouseMatrix.DelegatedGroups do
     end
   end
 
+  @doc false
+  def with_room(grant, id, permission, callback) when permission in ["chats.read", "chats.write"] do
+    with :ok <- scope(grant, permission), :ok <- access(grant, id) do
+      transact(fn ->
+        lock!(id)
+        unless access(grant, id) == :ok, do: Repo.rollback(:forbidden)
+        if permission == "chats.write" do
+          unless IAM.can?(grant.principal_id, "matrix.room.send", Identity.resource_arn(id)), do: Repo.rollback(:forbidden)
+          direct = Repo.get(RiverDirect, id)
+          if direct && Social.blocked?(direct.low_id, direct.high_id), do: Repo.rollback(:forbidden)
+        end
+        callback.()
+      end)
+    end
+  end
+
+  @doc false
+  def content_event!(g, id, type, content, txn) do
+    event_id = "$river_content_" <> digest("#{g.principal_id}|#{g.app_origin}|#{id}|#{type}|#{txn}")
+    decorated = Map.put(content, "cool.gravitas.delegation", %{"version" => 1, "app_origin" => g.app_origin})
+    case Repo.get_by(RoomEvent, event_id: event_id) do
+      nil -> event!(g, id, type, decorated, nil, event_id)
+      e ->
+        unless e.room_id == id and e.type == type and e.content == decorated, do: Repo.rollback(:transaction_conflict)
+        Events.to_client_event(e)
+    end
+  end
+
   defp validate("m.reaction", %{"m.relates_to" => %{"rel_type" => "m.annotation", "event_id" => id, "key" => key}})
        when is_binary(id) and is_binary(key) and byte_size(key) in 1..64, do: :ok
   defp validate(type, %{"body" => body} = c) when type != "m.reaction" do
@@ -346,10 +376,12 @@ defmodule LakehouseMatrix.DelegatedGroups do
     if relation do
       unless is_map(relation), do: Repo.rollback(:invalid_relation)
       reply = relation["m.in_reply_to"]
-      target = relation["event_id"] || (is_map(reply) && reply["event_id"])
-      unless is_binary(target) && Repo.exists?(from e in RoomEvent,
-        where: e.room_id == ^id and e.event_id == ^target and is_nil(e.state_key)),
-        do: Repo.rollback(:invalid_relation)
+      if not is_nil(reply) and (not is_map(reply) or not is_binary(reply["event_id"])), do: Repo.rollback(:invalid_relation)
+      targets = [relation["event_id"], if(is_map(reply), do: reply["event_id"])] |> Enum.reject(&is_nil/1)
+      unless targets != [] and Enum.all?(targets, fn target ->
+        is_binary(target) and Repo.exists?(from e in RoomEvent,
+          where: e.room_id == ^id and e.event_id == ^target and is_nil(e.state_key))
+      end), do: Repo.rollback(:invalid_relation)
       unless relation["rel_type"] in [nil, "m.thread", "m.annotation"], do: Repo.rollback(:invalid_relation)
       if type != "m.reaction" && relation["rel_type"] == "m.annotation", do: Repo.rollback(:invalid_relation)
     end
