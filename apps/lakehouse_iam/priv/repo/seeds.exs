@@ -4,6 +4,7 @@ alias LakehouseIam.Repo
 alias LakehouseIam.Schema.{Permission, Role, RolePermission}
 
 for {name, desc} <- [
+      {"admin", "Global IAM administration"},
       {"member", "Default interactive user"},
       {"room_admin", "Room administration"}
     ] do
