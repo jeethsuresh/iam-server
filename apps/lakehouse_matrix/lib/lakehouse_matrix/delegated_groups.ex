@@ -4,8 +4,8 @@ defmodule LakehouseMatrix.DelegatedGroups do
   alias LakehouseIam.{Repo, IAM, Accounts}
   alias LakehouseIam.Apps.Grants
   alias LakehouseIam.Schema.{AppGrant, Principal}
-  alias LakehouseMatrix.{Rooms, Memberships, Identity, State, Events, Matrix}
-  alias LakehouseMatrix.Schema.{Room, RoomEvent}
+  alias LakehouseMatrix.{Rooms, Memberships, Identity, State, Events, Matrix, Social}
+  alias LakehouseMatrix.Schema.{Room, RoomEvent, RiverChannel, RiverRoomRead, RiverDirect}
   alias LakehouseMatrix.Events.Context
 
   @group "cool.gravitas.river.group.v1"
@@ -14,8 +14,26 @@ defmodule LakehouseMatrix.DelegatedGroups do
   def list(grant) do
     (Memberships.joined_room_ids(grant.principal_id) ++ Memberships.invited_room_ids(grant.principal_id))
     |> Enum.uniq()
-    |> Enum.filter(&Grants.room_allowed?(grant, &1))
+    |> Enum.filter(&(allowed(grant, &1) == :ok or invitation_allowed?(grant, &1)))
     |> Enum.map(&describe(&1, grant.principal_id))
+  end
+
+  def overview(grant) do
+    with :ok <- scope(grant, "chats.list") do
+      groups = list(grant)
+      ids = for g <- groups, g.membership == "join", do: g.id
+      recent = if "chats.read" in grant.scopes do
+        Repo.all(from e in RoomEvent, where: e.room_id in ^ids and is_nil(e.state_key) and e.type in ^@types,
+          order_by: [desc: e.inserted_at, desc: e.id], limit: 200)
+          |> Enum.map(fn e ->
+            group = Enum.find(groups, &(&1.id == e.room_id))
+            Map.merge(Events.to_client_event(e), %{"group_id" => e.room_id, "group_name" => group.name})
+          end)
+      else
+        []
+      end
+      {:ok, %{groups: groups, recent: recent}}
+    end
   end
 
   def create(grant, params) do
@@ -25,7 +43,7 @@ defmodule LakehouseMatrix.DelegatedGroups do
          true <- txn?(params["txn_id"]),
          true <- IAM.can?(grant.principal_id, "matrix.room.create", nil) do
       transact(fn ->
-        locked = Repo.one!(from g in AppGrant, where: g.id == ^grant.id, lock: "FOR UPDATE")
+        locked = (Repo.one(from g in AppGrant, where: g.id == ^grant.id, lock: "FOR UPDATE") || Repo.rollback(:forbidden))
         id = uuid("#{grant.id}|#{grant.principal_id}|#{grant.app_origin}|#{params["txn_id"]}")
         case Rooms.get_room(id) do
           nil ->
@@ -51,10 +69,145 @@ defmodule LakehouseMatrix.DelegatedGroups do
             unless meta["kind"] == params["kind"] && Rooms.get_room(id).name == String.trim(params["name"]),
               do: Repo.rollback(:transaction_conflict)
         end
+        if params["kind"] == "space" and "spaces.channels" in grant.scopes and "groups.manage" in grant.scopes do
+          refreshed = %{grant | room_ids: Enum.uniq(grant.room_ids ++ [id])}
+          for {name, kind, suffix} <- [{"lobby", "text", "lobby"}, {"The Lounge", "drop_in", "lounge"}] do
+            case create_channel(refreshed, id, %{"name" => name, "kind" => kind, "txn_id" => "default-" <> suffix}) do
+              {:ok, _} -> :ok
+              {:error, e} -> Repo.rollback(e)
+            end
+          end
+        end
         describe(id, grant.principal_id)
       end)
     else
       {:error, reason} -> {:error, reason}
+      _ -> {:error, :invalid_request}
+    end
+  end
+
+  def direct(grant, params) do
+    with :ok <- scope(grant, "groups.create"), :ok <- scope(grant, "groups.manage"),
+         :ok <- scope(grant, "friends.read"), :ok <- scope(grant, "groups.join"),
+         {:ok, username} <- Identity.parse_user_id(params["user_id"]),
+         {:ok, person} <- Accounts.fetch_user(username), true <- person.active and person.id != grant.principal_id do
+      transact(fn ->
+        [low, high] = ids = Enum.sort([grant.principal_id, person.id])
+        Repo.all(from p in Principal, where: p.id in ^ids, order_by: p.id, lock: "FOR NO KEY UPDATE")
+        unless Social.friends?(grant.principal_id, person.id), do: Repo.rollback(:forbidden)
+        locked = (Repo.one(from g in AppGrant, where: g.id == ^grant.id, lock: "FOR UPDATE") || Repo.rollback(:forbidden))
+        direct = Repo.get_by(RiverDirect, low_id: low, high_id: high)
+        id = if direct do
+          lock!(direct.id)
+          current = Memberships.membership(direct.id, grant.principal_id)
+          unless current == "invite" or (current == "join" and Grants.room_allowed?(grant, direct.id)),
+            do: Repo.rollback(:forbidden)
+          if current == "invite" do
+            member!(grant, direct.id, grant.principal_id, "join")
+            audit!(grant, direct.id, "accept", user_id(grant.principal_id))
+          end
+          direct.id
+        else
+          txn = "friend-" <> digest(Enum.join(ids, "|"))
+          case create(grant, %{"name" => "#{Repo.get!(Principal, grant.principal_id).username} & #{person.username}",
+              "kind" => "dm", "txn_id" => txn}) do
+            {:ok, group} ->
+              Repo.insert!(%RiverDirect{id: group.id, low_id: low, high_id: high})
+              member!(grant, group.id, person.id, "invite")
+              audit!(grant, group.id, "invite", user_id(person.id))
+              group.id
+            {:error, e} -> Repo.rollback(e)
+          end
+        end
+        if locked.room_mode == :selected do
+          locked |> AppGrant.changeset(%{room_ids: Enum.uniq(locked.room_ids ++ [id])}) |> Repo.update!()
+        end
+        describe(id, grant.principal_id)
+      end)
+    else
+      {:error, e} -> {:error, e}
+      _ -> {:error, :invalid_request}
+    end
+  end
+
+  def channels(grant, id) do
+    with :ok <- scope(grant, "chats.list"), :ok <- access(grant, id),
+         true <- metadata(id)["kind"] == "space" do
+      rooms = channel_ids(id) |> Enum.filter(&(allowed(grant, &1) == :ok))
+        |> Enum.map(&describe(&1, grant.principal_id))
+      {:ok, %{channels: rooms}}
+    else
+      {:error, e} -> {:error, e}
+      _ -> {:error, :invalid_request}
+    end
+  end
+
+  def create_channel(grant, id, params) do
+    with :ok <- scope(grant, "groups.create"), :ok <- scope(grant, "groups.manage"),
+         :ok <- access(grant, id), true <- metadata(id)["kind"] == "space",
+         true <- text?(params["name"], 80) and txn?(params["txn_id"]),
+         true <- params["kind"] in ["text", "drop_in"],
+         true <- IAM.can?(grant.principal_id, "matrix.room.create", nil) do
+      transact(fn ->
+        locked = (Repo.one(from g in AppGrant, where: g.id == ^grant.id, lock: "FOR UPDATE") || Repo.rollback(:forbidden))
+        lock!(id)
+        owner!(grant, id)
+        child = uuid("channel|#{grant.id}|#{id}|#{params["txn_id"]}")
+        case Repo.get(RiverChannel, child) do
+          nil ->
+            if length(channel_ids(id)) >= 100, do: Repo.rollback(:too_many_channels)
+            Repo.insert!(Room.changeset(%Room{id: child}, %{name: String.trim(params["name"])}))
+            Repo.insert!(%RiverChannel{id: child, space_id: id, kind: params["kind"]})
+            event!(grant, child, "m.room.create", %{"creator" => user_id(grant.principal_id), "room_version" => "11"}, "")
+            event!(grant, child, "m.room.name", %{"name" => String.trim(params["name"])}, "")
+            event!(grant, child, "m.room.join_rules", %{"join_rule" => "invite"}, "")
+            event!(grant, child, "m.room.history_visibility", %{"history_visibility" => "shared"}, "")
+            event!(grant, child, "m.room.power_levels", %{"users" => %{user_id(grant.principal_id) => 100},
+              "state_default" => 100, "invite" => 100, "kick" => 100, "ban" => 100}, "")
+            event!(grant, child, @group, %{"version" => 1, "kind" => "channel", "parent_id" => id,
+              "channel_kind" => params["kind"]}, "")
+            event!(grant, child, "m.space.parent", %{"via" => [Identity.homeserver_domain()], "canonical" => true}, Identity.room_id(id))
+            event!(grant, id, "m.space.child", %{"via" => [Identity.homeserver_domain()], "suggested" => true}, Identity.room_id(child))
+            for {principal, membership} <- Memberships.membership_map(id), membership in ["join", "invite"],
+              do: member!(grant, child, principal, membership)
+            if locked.room_mode == :selected do
+              locked |> AppGrant.changeset(%{room_ids: Enum.uniq(locked.room_ids ++ [child])}) |> Repo.update!()
+            end
+            audit!(grant, id, "channel.create", Identity.room_id(child))
+          c ->
+            unless c.space_id == id and c.kind == params["kind"] and Rooms.get_room(child).name == String.trim(params["name"]),
+              do: Repo.rollback(:transaction_conflict)
+        end
+        describe(child, grant.principal_id)
+      end)
+    else
+      {:error, e} -> {:error, e}
+      _ -> {:error, :invalid_request}
+    end
+  end
+
+  def mark_read(grant, id, params) do
+    with :ok <- scope(grant, "chats.read"), :ok <- access(grant, id),
+         true <- is_binary(params["event_id"]) do
+      transact(fn ->
+        lock!(id)
+        unless access(grant, id) == :ok, do: Repo.rollback(:forbidden)
+        event = Repo.get_by(RoomEvent, room_id: id, event_id: params["event_id"])
+        unless event && is_nil(event.state_key), do: Repo.rollback(:invalid_event)
+        current = Repo.get_by(RiverRoomRead, principal_id: grant.principal_id, room_id: id)
+        previous = if current, do: Repo.get(RoomEvent, current.event_id)
+        if is_nil(previous) or after_event?(event, previous) do
+          changes = %{event_id: event.id}
+          if current do
+            Ecto.Changeset.change(current, changes) |> Repo.update!()
+          else
+            Repo.insert!(%RiverRoomRead{principal_id: grant.principal_id, room_id: id, event_id: event.id})
+          end
+        end
+        %{ok: true}
+      end)
+    else
+      {:error, e} -> {:error, e}
       _ -> {:error, :invalid_request}
     end
   end
@@ -76,14 +229,19 @@ defmodule LakehouseMatrix.DelegatedGroups do
   end
 
   def membership(grant, id, params) do
-    with :ok <- scope(grant, "groups.manage"), :ok <- allowed(grant, id),
-         true <- params["action"] in ~w(invite accept leave remove) do
+    with :ok <- scope(grant, "groups.manage"),
+         :ok <- membership_allowed(grant, id),
+         true <- params["action"] in ~w(invite accept leave remove),
+         :ok <- root_membership(id) do
       transact(fn ->
+        locked_grant = if grant.id, do: (Repo.one(from g in AppGrant, where: g.id == ^grant.id, lock: "FOR UPDATE") || Repo.rollback(:forbidden))
         lock!(id)
         actor = grant.principal_id
         action = params["action"]
         target = if action in ~w(accept leave), do: actor, else: target!(params["user_id"])
         current = Memberships.membership(id, target)
+        direct = Repo.get(RiverDirect, id)
+        if direct && target not in [direct.low_id, direct.high_id], do: Repo.rollback(:forbidden)
         membership = case action do
           "invite" ->
             owner!(grant, id)
@@ -101,6 +259,10 @@ defmodule LakehouseMatrix.DelegatedGroups do
             "leave"
         end
         event = member!(grant, id, target, membership)
+        for child <- channel_ids(id), do: member!(grant, child, target, membership)
+        if action == "accept" and locked_grant && locked_grant.room_mode == :selected do
+          locked_grant |> AppGrant.changeset(%{room_ids: Enum.uniq(locked_grant.room_ids ++ [id])}) |> Repo.update!()
+        end
         audit!(grant, id, action, user_id(target))
         %{"event_id" => event["event_id"], "membership" => membership}
       end)
@@ -111,15 +273,35 @@ defmodule LakehouseMatrix.DelegatedGroups do
   end
 
   def timeline(grant, id, params) do
-    with :ok <- scope(grant, "chats.read"), :ok <- access(grant, id) do
-      limit = case Integer.parse(to_string(params["limit"] || "100")) do
-        {n, ""} -> min(max(n, 1), 200)
-        _ -> 100
-      end
-      events = Repo.all(from e in RoomEvent, where: e.room_id == ^id and is_nil(e.state_key),
-        order_by: [desc: e.inserted_at, desc: e.id], limit: ^limit)
-        |> Enum.reverse() |> Enum.map(&Events.to_client_event/1)
-      {:ok, %{events: events}}
+    with :ok <- scope(grant, "chats.read"), :ok <- access(grant, id),
+         :ok <- valid_cursor(params["before"]) do
+      transact(fn ->
+        lock!(id)
+        unless access(grant, id) == :ok, do: Repo.rollback(:forbidden)
+        value = params["limit"]
+        limit = cond do
+          is_integer(value) -> min(max(value, 1), 200)
+          is_binary(value) -> case Integer.parse(value) do
+            {n, ""} -> min(max(n, 1), 200)
+            _ -> 100
+          end
+          true -> 100
+        end
+        query = from e in RoomEvent, where: e.room_id == ^id and is_nil(e.state_key),
+          order_by: [desc: e.inserted_at, desc: e.id], limit: ^(limit + 1)
+        query = if params["before"] do
+          cursor = Repo.get_by(RoomEvent, room_id: id, event_id: params["before"])
+          unless cursor, do: Repo.rollback(:invalid_cursor)
+          from e in query, where: e.inserted_at < ^cursor.inserted_at or
+            (e.inserted_at == ^cursor.inserted_at and e.id < ^cursor.id)
+        else
+          query
+        end
+        rows = Repo.all(query)
+        page = Enum.take(rows, limit)
+        %{events: page |> Enum.reverse() |> Enum.map(&Events.to_client_event/1),
+          next_cursor: if(length(rows) > limit, do: List.last(page).event_id, else: nil)}
+      end)
     end
   end
 
@@ -131,7 +313,9 @@ defmodule LakehouseMatrix.DelegatedGroups do
          :ok <- validate(type, content) do
       transact(fn ->
         lock!(id)
-        unless Memberships.joined?(id, grant.principal_id), do: Repo.rollback(:forbidden)
+        unless access(grant, id) == :ok, do: Repo.rollback(:forbidden)
+        direct = Repo.get(RiverDirect, id)
+        if direct && Social.blocked?(direct.low_id, direct.high_id), do: Repo.rollback(:forbidden)
         relation!(id, type, content)
         event_id = "$river_" <> digest("#{grant.principal_id}|#{grant.app_origin}|#{id}|#{txn}")
         decorated = Map.put(content, "cool.gravitas.delegation", %{"version" => 1, "app_origin" => grant.app_origin})
@@ -173,12 +357,39 @@ defmodule LakehouseMatrix.DelegatedGroups do
 
   defp describe(id, principal) do
     r = Rooms.get_room(id)
+    channel = Repo.get(RiverChannel, id)
     %{id: id, room_id: Identity.room_id(id), name: r.name, kind: metadata(id)["kind"] || "group",
+      parent_id: channel && channel.space_id, channel_kind: channel && channel.kind,
       membership: Memberships.membership(id, principal), owner: Matrix.creator?(id, principal),
+      unread_count: if(Memberships.joined?(id, principal), do: unread(id, principal), else: 0),
       members: if(Memberships.joined?(id, principal), do: Memberships.list_members(id), else: [])}
   end
+  defp unread(id, principal) do
+    read = Repo.get_by(RiverRoomRead, principal_id: principal, room_id: id)
+    cursor = if read, do: Repo.get(RoomEvent, read.event_id)
+    query = from e in RoomEvent, where: e.room_id == ^id and is_nil(e.state_key) and
+      e.principal_id != ^principal and e.type in ["m.room.message", "cool.gravitas.river.post.v1", "cool.gravitas.river.discussion.v1"]
+    query = if cursor do
+      from e in query, where: e.inserted_at > ^cursor.inserted_at or
+        (e.inserted_at == ^cursor.inserted_at and e.id > ^cursor.id)
+    else
+      query
+    end
+    Repo.aggregate(query, :count)
+  end
+  defp after_event?(a, b), do: DateTime.compare(a.inserted_at, b.inserted_at) == :gt or
+    (a.inserted_at == b.inserted_at and a.id > b.id)
   defp metadata(id), do: get_in(State.get(id, @group) || %{}, ["content"]) || %{}
-  defp lock!(id), do: Repo.one(from r in Room, where: r.id == ^id, lock: "FOR UPDATE") || Repo.rollback(:forbidden)
+  defp channel_ids(id), do: Repo.all(from c in RiverChannel, where: c.space_id == ^id, order_by: c.id, select: c.id)
+  defp lock!(id) do
+    # Space mutations and all child writes take the same root lock first.
+    root = case Repo.get(RiverChannel, id) do
+      nil -> id
+      c -> c.space_id
+    end
+    Repo.one(from r in Room, where: r.id == ^root, lock: "FOR UPDATE") || Repo.rollback(:forbidden)
+  end
+
   defp owner!(g, id) do
     unless Memberships.joined?(id, g.principal_id) && Matrix.creator?(id, g.principal_id), do: Repo.rollback(:forbidden)
   end
@@ -212,15 +423,45 @@ defmodule LakehouseMatrix.DelegatedGroups do
     Events.to_client_event(e)
   end
   defp access(g, id) do
-    with :ok <- allowed(g, id), true <- Memberships.joined?(id, g.principal_id) do
+    with :ok <- allowed(g, id), true <- Memberships.joined?(id, g.principal_id),
+         true <- parent_joined?(id, g.principal_id) do
       :ok
     else
       _ -> {:error, :forbidden}
     end
   end
-  defp allowed(g, id) do
-    if match?({:ok, _}, Ecto.UUID.cast(id)) && Grants.room_allowed?(g, id), do: :ok, else: {:error, :forbidden}
+  defp valid_cursor(nil), do: :ok
+  defp valid_cursor(value) when is_binary(value) and byte_size(value) <= 512, do: :ok
+  defp valid_cursor(_), do: {:error, :invalid_cursor}
+  defp root_membership(id) do
+    if is_nil(Repo.get(RiverChannel, id)), do: :ok, else: {:error, :forbidden}
   end
+  defp membership_allowed(g, id) do
+    if allowed(g, id) == :ok or invitation_allowed?(g, id), do: :ok, else: {:error, :forbidden}
+  end
+  defp invitation_allowed?(g, id) do
+    "groups.join" in g.scopes and match?({:ok, _}, Ecto.UUID.cast(id)) and
+      is_nil(Repo.get(RiverChannel, id)) and Memberships.invited?(id, g.principal_id)
+  end
+  defp parent_joined?(id, principal) do
+    case Repo.get(RiverChannel, id) do
+      nil -> true
+      c -> Memberships.joined?(c.space_id, principal)
+    end
+  end
+  defp allowed(g, id) do
+    if match?({:ok, _}, Ecto.UUID.cast(id)) do
+      direct = Grants.room_allowed?(g, id)
+      inherited = case Repo.get(RiverChannel, id) do
+        nil -> false
+        c -> "spaces.channels" in g.scopes and Grants.room_allowed?(g, c.space_id)
+      end
+      if direct or inherited, do: :ok, else: {:error, :forbidden}
+    else
+      {:error, :forbidden}
+    end
+  end
+
   defp scope(g, s), do: if(s in g.scopes, do: :ok, else: {:error, :insufficient_scope})
   defp user_id(id), do: Repo.get!(Principal, id).username |> Identity.user_id()
   defp text?(s, max), do: is_binary(s) && String.trim(s) != "" && byte_size(s) <= max

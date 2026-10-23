@@ -19,6 +19,10 @@
             <%= case scope do %>
               <% "groups.create" -> %> — Create new groups as you. Only new groups are added to selected access.
               <% "groups.manage" -> %> — Rename groups you own, invite or remove members, accept invitations and leave.
+              <% "groups.join" -> %> — Show your invitations. Accepting one gives this app access to that group.
+              <% "spaces.channels" -> %> — Access current and future channels of spaces you approve, within your chat permissions.
+              <% "friends.read" -> %> — View your private friends, requests and blocked list.
+              <% "friends.manage" -> %> — Send and answer friend requests, remove friends and block people.
               <% _ -> %>
             <% end %>
           </li>
