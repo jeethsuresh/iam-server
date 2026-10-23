@@ -96,37 +96,22 @@ jobs:
     timeout-minutes: 15
     environment:
       name: gravitas
-      url: https://gravitas.cool
+      url: "https://gravitas.cool"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - name: Install verified Kubernetes client
-        run: |
-          curl -fsSLo kubectl https://dl.k8s.io/release/v1.37.0/bin/linux/amd64/kubectl
-          curl -fsSLo kubectl.sha256 https://dl.k8s.io/release/v1.37.0/bin/linux/amd64/kubectl.sha256
-          echo "$(cat kubectl.sha256)  kubectl" | sha256sum --check
-          chmod +x kubectl
-          echo "$PWD" >> "$GITHUB_PATH"
-      - name: Configure IAM-only deployment credential
-        env:
-          GRAVITAS_KUBECONFIG: ${{ secrets.GRAVITAS_KUBECONFIG }}
-        run: |
-          test -n "$GRAVITAS_KUBECONFIG"
-          umask 077
-          printf '%s' "$GRAVITAS_KUBECONFIG" > "$RUNNER_TEMP/iam-kubeconfig"
-          echo "KUBECONFIG=$RUNNER_TEMP/iam-kubeconfig" >> "$GITHUB_ENV"
-      - name: Migrate, deploy and verify HTTPS
-        env:
-          KUBE_CONTEXT: gravitas
-          IAM_KUSTOMIZE_OVERLAY: gravitas
-          IAM_MAINTENANCE_RELEASE: '1'
-          RELEASE_IMAGE: ghcr.io/jeethsuresh/iam-server@${{ needs.image.outputs.digest }}
-        run: |
-          scripts/kubernetes/deploy.sh "$RELEASE_IMAGE"
-          actual="$(kubectl -n iam get deployment/iam -o jsonpath='{.spec.template.spec.containers[0].image}')"
-          test "$actual" = "$RELEASE_IMAGE"
-          curl --fail --silent --show-error --retry 5 --retry-delay 3 https://gravitas.cool/healthz
-          curl --fail --silent --show-error --retry 5 --retry-delay 3 https://gravitas.cool/readyz
-          curl --fail --silent --show-error --retry 5 --retry-delay 3 https://gravitas.cool/.well-known/iam-configuration
-      - name: Remove deployment credential
-        if: always()
-        run: rm -f "$RUNNER_TEMP/iam-kubeconfig"
+        with:
+          persist-credentials: false
+      - name: Fetch pinned private deployment tooling
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: jeethsuresh/gravitas-deploy
+          ref: 1672e6fef247f5ba36ed07ac178dc41482cddaba
+          path: .gravitas-runtime
+          ssh-key: ${{ secrets.GRAVITAS_TOOLING_SSH_KEY }}
+          persist-credentials: false
+      - name: Deploy and verify immutable release
+        uses: ./.gravitas-runtime
+        with:
+          config: .gravitas/deploy.json
+          image: ghcr.io/jeethsuresh/iam-server@${{ needs.image.outputs.digest }}
+          kubeconfig: ${{ secrets.GRAVITAS_KUBECONFIG }}
