@@ -116,7 +116,7 @@ defmodule LakehouseWeb.RiverPublishingTest do
     assert {:ok, nested} = RiverPublishing.comment(gb,post,%{"body"=>"Private follow-up","audience"=>"members","parent_id"=>public["event_id"],"txn_id"=>"private-nested"})
     assert nested["content"]["cool.gravitas.river.reply"]["event_id"] == public["event_id"]
     assert nested["content"]["m.relates_to"]["event_id"] == post
-    assert Repo.get_by!(RoomEvent,event_id:private["event_id"]).room_id == room
+    assert Repo.get_by!(RoomEvent, event_id: private["event_id"]).room_id == room
   end
 
 end
