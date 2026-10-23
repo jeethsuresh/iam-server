@@ -11,6 +11,8 @@ defmodule LakehouseMatrix.DelegatedGroups do
   @group "cool.gravitas.river.group.v1"
   @types ~w(m.room.message m.reaction cool.gravitas.river.post.v1 cool.gravitas.river.discussion.v1)
 
+  def visible?(g, id), do: allowed(g, id) == :ok and (Memberships.joined?(id, g.principal_id) or Memberships.invited?(id, g.principal_id))
+
   def list(grant) do
     (Memberships.joined_room_ids(grant.principal_id) ++ Memberships.invited_room_ids(grant.principal_id))
     |> Enum.uniq()
@@ -42,7 +44,7 @@ defmodule LakehouseMatrix.DelegatedGroups do
   def create(grant, params) do
     with :ok <- scope(grant, "groups.create"),
          true <- text?(params["name"], 80),
-         true <- params["kind"] in ["space", "dm"],
+         true <- params["kind"] in ["space", "dm", "group"],
          true <- txn?(params["txn_id"]),
          true <- IAM.can?(grant.principal_id, "matrix.room.create", nil) do
       transact(fn ->
@@ -56,6 +58,7 @@ defmodule LakehouseMatrix.DelegatedGroups do
             content = if params["kind"] == "space", do: Map.put(content, "type", "m.space"), else: content
             event!(grant, id, "m.room.create", content, "")
             event!(grant, id, "m.room.name", %{"name" => room.name}, "")
+            if is_binary(params["description"]) and byte_size(params["description"]) <= 500, do: event!(grant, id, "m.room.topic", %{"topic" => params["description"]}, "")
             event!(grant, id, "m.room.join_rules", %{"join_rule" => "invite"}, "")
             event!(grant, id, "m.room.history_visibility", %{"history_visibility" => "shared"}, "")
             event!(grant, id, "m.room.power_levels", %{"users" => %{creator => 100}, "users_default" => 0,
@@ -222,6 +225,7 @@ defmodule LakehouseMatrix.DelegatedGroups do
         owner!(grant, id)
         {:ok, _} = Rooms.get_room(id) |> Room.changeset(%{name: String.trim(params["name"])}) |> Repo.update()
         event!(grant, id, "m.room.name", %{"name" => String.trim(params["name"])}, "")
+        if is_binary(params["description"]) and byte_size(params["description"]) <= 500, do: event!(grant, id, "m.room.topic", %{"topic" => params["description"]}, "")
         audit!(grant, id, "rename", user_id(grant.principal_id))
         describe(id, grant.principal_id)
       end)
@@ -407,6 +411,7 @@ defmodule LakehouseMatrix.DelegatedGroups do
     r = Rooms.get_room(id)
     channel = Repo.get(RiverChannel, id)
     %{id: id, room_id: Identity.room_id(id), name: r.name, kind: metadata(id)["kind"] || "group",
+      description: get_in(State.get(id, "m.room.topic") || %{}, ["content", "topic"]) || "",
       parent_id: channel && channel.space_id, channel_kind: channel && channel.kind,
       membership: Memberships.membership(id, principal), owner: Matrix.creator?(id, principal),
       unread_count: if(Memberships.joined?(id, principal), do: unread(id, principal), else: 0),

@@ -22,6 +22,10 @@ defmodule LakehouseMatrix.Events do
       state_key: ctx.state_key
     })
     |> Repo.insert()
+    |> tap(fn
+      {:ok, e} -> LakehouseIam.Changes.notify(%{"room_id" => e.room_id, "member" => if(e.type == "m.room.member", do: e.state_key)})
+      _ -> :ok
+    end)
   end
 
   @spec list_timeline(Ecto.UUID.t(), keyword()) :: [map()]
