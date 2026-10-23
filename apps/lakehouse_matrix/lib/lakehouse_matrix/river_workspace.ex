@@ -73,11 +73,7 @@ defmodule LakehouseMatrix.RiverWorkspace do
       end) |> RiverContent.budget(400_000)
       # Thread participation includes older roots, rather than only the latest
       # home timeline page. Thread reads are still checked against current ACLs.
-      targets = Repo.all(from e in RoomEvent, where: e.room_id in ^ids and e.principal_id == ^g.principal_id and e.type == "m.room.message" and
-        fragment("? #>> '{m.relates_to,rel_type}'", e.content) == "m.thread",
-        group_by: [e.room_id, fragment("? #>> '{m.relates_to,event_id}'", e.content)],
-        order_by: [desc: max(e.inserted_at)], limit: 40,
-        select: {e.room_id, fragment("? #>> '{m.relates_to,event_id}'", e.content)})
+      targets = recent_threads(ids, g.principal_id)
       threads = for {room, target} <- targets,
         e = Repo.get_by(RoomEvent, room_id: room, event_id: target), not is_nil(e),
         do: Map.put(hd(RiverContent.decorate([e], g.principal_id)), "group_id", room)
@@ -92,6 +88,41 @@ defmodule LakehouseMatrix.RiverWorkspace do
       {:ok, %{catch_up: entries, recent_entries: RiverContent.budget(recent_entries, 200_000), threads: RiverContent.budget(threads, 200_000)}}
     else
       _ -> {:error, :insufficient_scope}
+    end
+  end
+
+  # Orbit keeps five recent threads per channel, plus two when active within
+  # 24 hours. A root author participates even without posting a reply.
+  defp recent_threads(ids, actor) do
+    room_ids = Enum.map(ids, fn id -> {:ok, value} = Ecto.UUID.dump(id); value end)
+    {:ok, principal} = Ecto.UUID.dump(actor)
+    now = DateTime.utc_now()
+    cutoff = now |> DateTime.add(-72 * 3600, :second) |> DateTime.to_naive()
+    extra = now |> DateTime.add(-24 * 3600, :second) |> DateTime.to_naive()
+    sql = """
+    WITH recent AS (
+      SELECT root.room_id, root.event_id, MAX(reply.inserted_at) AS activity
+      FROM room_events root JOIN room_events reply ON reply.room_id = root.room_id
+        AND reply.type = 'm.room.message'
+        AND reply.content #>> '{m.relates_to,rel_type}' = 'm.thread'
+        AND reply.content #>> '{m.relates_to,event_id}' = root.event_id
+      WHERE root.room_id = ANY($1::uuid[])
+        AND (root.principal_id = $2 OR EXISTS (
+          SELECT 1 FROM room_events mine WHERE mine.room_id = root.room_id
+            AND mine.principal_id = $2 AND mine.type = 'm.room.message'
+            AND mine.content #>> '{m.relates_to,rel_type}' = 'm.thread'
+            AND mine.content #>> '{m.relates_to,event_id}' = root.event_id))
+      GROUP BY root.room_id, root.event_id HAVING MAX(reply.inserted_at) >= $3
+    ), ranked AS (
+      SELECT *, ROW_NUMBER() OVER (PARTITION BY room_id ORDER BY activity DESC, event_id) AS position
+      FROM recent
+    ) SELECT room_id, event_id FROM ranked
+      WHERE position <= 5 OR (position <= 7 AND activity >= $4)
+      ORDER BY activity DESC, event_id
+    """
+    for [room, event] <- Repo.query!(sql, [room_ids, principal, cutoff, extra]).rows do
+      {:ok, id} = Ecto.UUID.load(room)
+      {id, event}
     end
   end
 

@@ -1,5 +1,6 @@
 defmodule LakehouseWeb.RiverWorkspaceTest do
   use LakehouseWeb.ConnCase
+  import Ecto.Query
   alias LakehouseIam.{Contacts, Changes, Repo, Apps.Grants}
   alias LakehouseMatrix.{DelegatedGroups, RiverWorkspace, Identity, Memberships}
   alias LakehouseMatrix.Schema.RoomEvent
@@ -93,6 +94,25 @@ defmodule LakehouseWeb.RiverWorkspaceTest do
     {:ok, space} = DelegatedGroups.create(ga,%{"name"=>title,"kind"=>"space","txn_id"=>"unicode","description"=>String.duplicate("🌊",500)})
     assert space.name == title
     assert {:ok, _} = DelegatedGroups.send(ga,space.id,"cool.gravitas.river.post.v1","unicode-post",%{"version"=>1,"title"=>String.duplicate("🌊",160),"body"=>String.duplicate("🌊",40000)})
+  end
+
+  test "authored roots count as participation and sidebar activity is capped per room", %{grants: [ga, gb | _], people: [_, b | _]} do
+    {:ok, dm} = DelegatedGroups.direct(ga, %{"user_id" => Identity.user_id(b.username)})
+    {:ok, _} = DelegatedGroups.membership(gb, dm.id, %{"action" => "accept"})
+    for n <- 1..9 do
+      {:ok, root} = DelegatedGroups.send(ga, dm.id, "m.room.message", "root-#{n}", %{"body" => "Root #{n}"})
+      {:ok, _} = DelegatedGroups.send(gb, dm.id, "m.room.message", "reply-#{n}", %{"body" => "Following", "m.relates_to" => %{"rel_type" => "m.thread", "event_id" => root["event_id"]}})
+    end
+    {:ok, home} = RiverWorkspace.home(ga)
+    assert length(home.threads) == 7
+    old = DateTime.add(DateTime.utc_now(), -48 * 3600, :second)
+    Repo.update_all(Ecto.Query.from(e in RoomEvent, where: e.room_id == ^dm.id), set: [inserted_at: old])
+    {:ok, home} = RiverWorkspace.home(ga)
+    assert length(home.threads) == 5
+    old = DateTime.add(DateTime.utc_now(), -73 * 3600, :second)
+    Repo.update_all(Ecto.Query.from(e in RoomEvent, where: e.room_id == ^dm.id), set: [inserted_at: old])
+    {:ok, home} = RiverWorkspace.home(ga)
+    assert home.threads == []
   end
 
 end
