@@ -148,6 +148,7 @@ defmodule LakehouseWeb.Router do
     get "/friends", SocialController, :index
     post "/friends", SocialController, :mutate
     get "/friends/events", SocialController, :events
+    get "/groups/:id/entries", RiverContentController, :entries
     get "/groups/:id/thread", RiverContentController, :thread
     post "/groups/:id/reactions", RiverContentController, :reaction
     post "/groups/:id/entry", RiverContentController, :edit

@@ -78,4 +78,21 @@ defmodule LakehouseWeb.RiverPublishingTest do
     assert {:error, :not_found} = RiverPublishing.show(nil, post)
     assert Repo.get_by!(RoomEvent, event_id: post).content["body"] == "Private draft"
   end
+  test "post feeds and combined comment pages retain older content without exposing private cursors", %{grants: [ga, gb, gc], room: room, post: post} do
+    {:ok, _} = publish(ga, room, post)
+    for n <- 1..103 do
+      {:ok, _} = RiverPublishing.comment(gc, post, %{"body" => "Comment #{n}", "txn_id" => "page-#{n}"})
+    end
+    {:ok, first} = RiverPublishing.show(nil, post)
+    assert length(first.comments) == 100 and is_binary(first.next_cursor)
+    {:ok, second} = RiverPublishing.show(nil, post, %{"before" => first.next_cursor})
+    assert length(second.comments) == 3 and is_nil(second.next_cursor)
+    assert MapSet.disjoint?(MapSet.new(first.comments, & &1["event_id"]), MapSet.new(second.comments, & &1["event_id"]))
+    for n <- 1..105 do
+      {:ok, _} = DelegatedGroups.send(gb,room,"m.room.message","chat-#{n}",%{"body" => "Chat #{n}"})
+    end
+    assert {:ok, %{events: [%{"event_id" => ^post}], next_cursor: nil}} = RiverContent.entries(gb,room,%{"kind"=>"post"})
+    assert {:error, :forbidden} = RiverContent.entries(gc,room,%{"kind"=>"post"})
+  end
+
 end

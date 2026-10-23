@@ -25,6 +25,18 @@ defmodule LakehouseMatrix.RiverContent do
     end)
   end
 
+  def entries(g, id, p) do
+    DelegatedGroups.with_room(g, id, "chats.read", fn ->
+      type = case p["kind"] do
+        "post" -> "cool.gravitas.river.post.v1"
+        "discussion" -> "cool.gravitas.river.discussion.v1"
+        _ -> Repo.rollback(:invalid_request)
+      end
+      query = from e in RoomEvent, where: e.room_id == ^id and e.type == ^type, order_by: [desc: e.inserted_at, desc: e.id]
+      {events, cursor} = page(query, id, p, g.principal_id)
+      %{events: events, next_cursor: cursor}
+    end)
+  end
   def edit(g, id, p) do
     DelegatedGroups.with_room(g, id, "chats.write", fn ->
       original = target!(id, p["event_id"])
