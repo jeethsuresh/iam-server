@@ -140,6 +140,7 @@ defmodule LakehouseWeb.RiverChannelsSocialTest do
     {:ok, _} = social(gb, a, "accept", "accept")
     {:ok, first} = DelegatedGroups.direct(ga, %{"user_id" => Identity.user_id(b.username)})
     assert first.kind == "dm"
+    assert {:error, :forbidden} = DelegatedGroups.direct(%{fresh(ga) | room_ids: []}, %{"user_id" => Identity.user_id(b.username)})
     assert Memberships.invited?(first.id, b.id)
     {:ok, other} = DelegatedGroups.direct(gb, %{"user_id" => Identity.user_id(a.username)})
     assert first.id == other.id

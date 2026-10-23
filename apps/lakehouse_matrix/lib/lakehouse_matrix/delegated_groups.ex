@@ -43,7 +43,7 @@ defmodule LakehouseMatrix.DelegatedGroups do
          true <- txn?(params["txn_id"]),
          true <- IAM.can?(grant.principal_id, "matrix.room.create", nil) do
       transact(fn ->
-        locked = Repo.one!(from g in AppGrant, where: g.id == ^grant.id, lock: "FOR UPDATE")
+        locked = (Repo.one(from g in AppGrant, where: g.id == ^grant.id, lock: "FOR UPDATE") || Repo.rollback(:forbidden))
         id = uuid("#{grant.id}|#{grant.principal_id}|#{grant.app_origin}|#{params["txn_id"]}")
         case Rooms.get_room(id) do
           nil ->
@@ -95,12 +95,13 @@ defmodule LakehouseMatrix.DelegatedGroups do
         [low, high] = ids = Enum.sort([grant.principal_id, person.id])
         Repo.all(from p in Principal, where: p.id in ^ids, order_by: p.id, lock: "FOR NO KEY UPDATE")
         unless Social.friends?(grant.principal_id, person.id), do: Repo.rollback(:forbidden)
-        locked = Repo.one!(from g in AppGrant, where: g.id == ^grant.id, lock: "FOR UPDATE")
+        locked = (Repo.one(from g in AppGrant, where: g.id == ^grant.id, lock: "FOR UPDATE") || Repo.rollback(:forbidden))
         direct = Repo.get_by(RiverDirect, low_id: low, high_id: high)
         id = if direct do
           lock!(direct.id)
           current = Memberships.membership(direct.id, grant.principal_id)
-          unless current in ["join", "invite"], do: Repo.rollback(:forbidden)
+          unless current == "invite" or (current == "join" and Grants.room_allowed?(grant, direct.id)),
+            do: Repo.rollback(:forbidden)
           if current == "invite" do
             member!(grant, direct.id, grant.principal_id, "join")
             audit!(grant, direct.id, "accept", user_id(grant.principal_id))
@@ -145,9 +146,10 @@ defmodule LakehouseMatrix.DelegatedGroups do
     with :ok <- scope(grant, "groups.create"), :ok <- scope(grant, "groups.manage"),
          :ok <- access(grant, id), true <- metadata(id)["kind"] == "space",
          true <- text?(params["name"], 80) and txn?(params["txn_id"]),
-         true <- params["kind"] in ["text", "drop_in"] do
+         true <- params["kind"] in ["text", "drop_in"],
+         true <- IAM.can?(grant.principal_id, "matrix.room.create", nil) do
       transact(fn ->
-        locked = Repo.one!(from g in AppGrant, where: g.id == ^grant.id, lock: "FOR UPDATE")
+        locked = (Repo.one(from g in AppGrant, where: g.id == ^grant.id, lock: "FOR UPDATE") || Repo.rollback(:forbidden))
         lock!(id)
         owner!(grant, id)
         child = uuid("channel|#{grant.id}|#{id}|#{params["txn_id"]}")
@@ -232,7 +234,7 @@ defmodule LakehouseMatrix.DelegatedGroups do
          true <- params["action"] in ~w(invite accept leave remove),
          :ok <- root_membership(id) do
       transact(fn ->
-        locked_grant = if grant.id, do: Repo.one!(from g in AppGrant, where: g.id == ^grant.id, lock: "FOR UPDATE")
+        locked_grant = if grant.id, do: (Repo.one(from g in AppGrant, where: g.id == ^grant.id, lock: "FOR UPDATE") || Repo.rollback(:forbidden))
         lock!(id)
         actor = grant.principal_id
         action = params["action"]
