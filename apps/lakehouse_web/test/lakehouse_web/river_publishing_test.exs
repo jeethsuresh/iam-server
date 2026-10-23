@@ -41,7 +41,7 @@ defmodule LakehouseWeb.RiverPublishingTest do
     assert {:ok, ^first} = RiverPublishing.comment(gc, post, params)
     assert Memberships.joined?(policy["thread_id"], gc.principal_id)
     refute Memberships.joined?(room, gc.principal_id)
-    assert {:ok, second} = RiverPublishing.comment(gb, post, %{"body" => "Nested", "parent_id" => first["event_id"], "txn_id" => "nested"})
+    assert {:ok, second} = RiverPublishing.comment(gb, post, %{"body" => "Nested", "audience"=>"public", "parent_id" => first["event_id"], "txn_id" => "nested"})
     assert get_in(second, ["content", "m.relates_to", "event_id"]) == policy["anchor_id"]
     assert {:ok, result} = RiverPublishing.show(nil, post)
     assert length(result.comments) == 2
@@ -102,6 +102,21 @@ defmodule LakehouseWeb.RiverPublishingTest do
     assert {:ok, _} = RiverPublishing.policy(%{ga | scopes: ga.scopes -- ["posts.publish"]},room,%{"event_id"=>post,"visibility"=>"members","comments_policy"=>"members","txn_id"=>"private-first"})
     assert {:ok, _} = RiverContent.edit(%{ga | scopes: ga.scopes -- ["posts.publish"]},room,params)
     assert {:error, :not_found} = RiverPublishing.show(nil,post)
+  end
+
+  test "an explicit member draft never becomes public when the comment policy changes", %{grants: [ga, gb, gc],room: room,post: post} do
+    {:ok, _} = publish(ga,room,post,"members")
+    {:ok, _} = publish(ga,room,post,"public","broaden")
+    assert {:ok, private} = RiverPublishing.comment(gb,post,%{"body"=>"Member draft","audience"=>"members","txn_id"=>"private-draft"})
+    assert {:ok, outside} = RiverPublishing.show(nil,post)
+    refute Jason.encode!(outside) =~ "Member draft"
+    {:ok, public} = RiverPublishing.comment(gc,post,%{"body"=>"Public parent","audience"=>"public","txn_id"=>"public-parent"})
+    {:ok, _} = publish(ga,room,post,"members","restrict")
+    assert {:error,:forbidden} = RiverPublishing.comment(gb,post,%{"body"=>"Public draft","audience"=>"public","txn_id"=>"public-draft"})
+    assert {:ok, nested} = RiverPublishing.comment(gb,post,%{"body"=>"Private follow-up","audience"=>"members","parent_id"=>public["event_id"],"txn_id"=>"private-nested"})
+    assert nested["content"]["cool.gravitas.river.reply"]["event_id"] == public["event_id"]
+    assert nested["content"]["m.relates_to"]["event_id"] == post
+    assert Repo.get_by!(RoomEvent,event_id:private["event_id"]).room_id == room
   end
 
 end

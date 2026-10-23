@@ -115,7 +115,7 @@ defmodule LakehouseMatrix.RiverPublishing do
       policy = if publication, do: summary(publication), else: @defaults
       %{entry: public_event, space: %{id: original.room_id, name: LakehouseMatrix.Rooms.get_room(original.room_id).name},
         publication: policy, comments: comments, next_cursor: cursor, reaction_summary: reactions, member: member,
-        can_comment: not is_nil(g) and policy["comments_policy"] != "disabled" and (member or (policy["visibility"] == "public" and policy["comments_policy"] == "public")),
+        can_comment: not is_nil(g) and "chats.write" in g.scopes and policy["comments_policy"] != "disabled" and (member or (policy["visibility"] == "public" and policy["comments_policy"] == "public")),
         can_view_comments: member or policy["comments_policy"] == "public"}
     end)
   end
@@ -133,16 +133,22 @@ defmodule LakehouseMatrix.RiverPublishing do
         unless is_binary(p["body"]) and String.trim(p["body"]) != "" and byte_size(p["body"]) <= 64_000 and String.length(p["body"]) <= 16_000 and txn?(p["txn_id"]), do: Repo.rollback(:invalid_request)
         if Contacts.blocked?(original.principal_id, g.principal_id), do: Repo.rollback(:forbidden)
         parent = if is_binary(p["parent_id"]), do: Repo.get_by(RoomEvent, event_id: p["parent_id"])
-        private_parent = not is_nil(parent) and parent.room_id == original.room_id
-        public = not is_nil(publication) and not is_nil(publication.thread_id) and policy["comments_policy"] == "public" and not private_parent
+        audience = p["audience"] || if(member, do: "members", else: "public")
+        unless audience in ~w(members public), do: Repo.rollback(:invalid_request)
+        public = audience == "public"
+        if public and not (not is_nil(publication) and publication.visibility == "public" and policy["comments_policy"] == "public"), do: Repo.rollback(:forbidden)
+        if not public and not member, do: Repo.rollback(:forbidden)
         room = if public, do: publication.thread_id, else: original.room_id
         root = if public, do: publication.anchor_id, else: original.event_id
-        if parent && (parent.room_id != room or (parent.event_id != root and get_in(parent.content, ["m.relates_to", "event_id"]) != root)), do: Repo.rollback(:invalid_relation)
+        moved_parent = member and not public and not is_nil(parent) and not is_nil(publication) and parent.room_id == publication.thread_id and
+          (parent.event_id == publication.anchor_id || get_in(parent.content, ["m.relates_to", "event_id"]) == publication.anchor_id)
+        if parent && not moved_parent && (parent.room_id != room or (parent.event_id != root and get_in(parent.content, ["m.relates_to", "event_id"]) != root)), do: Repo.rollback(:invalid_relation)
         if is_binary(p["parent_id"]) and is_nil(parent), do: Repo.rollback(:invalid_relation)
         if public and not Memberships.joined?(room, g.principal_id), do: unwrap!(DelegatedGroups.membership(g, room, %{"action" => "public_join"}))
         refreshed = if public, do: %{g | room_ids: Enum.uniq(g.room_ids ++ [room])}, else: g
-        content = %{"body" => p["body"], "msgtype" => "m.text", "cool.gravitas.river.comment" => %{"version" => 1, "post_event_id" => event},
-          "m.relates_to" => %{"rel_type" => "m.thread", "event_id" => root, "is_falling_back" => false, "m.in_reply_to" => %{"event_id" => if(parent, do: parent.event_id, else: root)}}}
+        content = %{"body" => p["body"], "msgtype" => "m.text", "cool.gravitas.river.comment" => %{"version" => 1, "post_event_id" => event, "audience" => audience},
+          "m.relates_to" => %{"rel_type" => "m.thread", "event_id" => root, "is_falling_back" => false, "m.in_reply_to" => %{"event_id" => if(parent && not moved_parent, do: parent.event_id, else: root)}}}
+        content = if moved_parent, do: Map.put(content, "cool.gravitas.river.reply", %{"version"=>1,"event_id"=>parent.event_id,"room_id"=>Identity.room_id(parent.room_id)}), else: content
         unwrap!(DelegatedGroups.send(refreshed, room, "m.room.message", p["txn_id"], content))
       end)
     end
