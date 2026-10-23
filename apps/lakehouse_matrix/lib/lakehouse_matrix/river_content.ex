@@ -30,7 +30,7 @@ defmodule LakehouseMatrix.RiverContent do
       original = target!(id, p["event_id"])
       unless original.type in @entry_types and original.principal_id == g.principal_id,
         do: Repo.rollback(:forbidden)
-      unless valid_text?(p["title"], 160) and valid_text?(p["body"], 16000) and txn?(p["txn_id"]),
+      unless valid_text?(p["title"], 160) and valid_text?(p["body"], 160000) and String.length(p["body"]) <= 40000 and txn?(p["txn_id"]),
         do: Repo.rollback(:invalid_event)
       DelegatedGroups.content_event!(g, id, @edit, %{"version" => 1,
         "m.relates_to" => %{"rel_type" => "m.replace", "event_id" => original.event_id},
@@ -75,6 +75,7 @@ defmodule LakehouseMatrix.RiverContent do
   def decorate(rows, actor) do
     room = hd(rows).room_id
     ids = Enum.map(rows, & &1.event_id)
+    publications = LakehouseMatrix.RiverPublishing.summaries(ids)
     edits = Repo.all(from e in RoomEvent, where: e.room_id == ^room and e.type == ^@edit and
       fragment("? #>> '{m.relates_to,event_id}'", e.content) in ^ids,
       order_by: [asc: e.inserted_at, asc: e.id])
@@ -101,6 +102,7 @@ defmodule LakehouseMatrix.RiverContent do
     for e <- rows do
       edit = edits[e.event_id]
       Events.to_client_event(e)
+      |> Map.put("publication", Map.get(publications, e.event_id, %{"visibility" => "members", "comments_policy" => "members"}))
       |> Map.put("reaction_summary", Map.get(reactions, e.event_id, []))
       |> Map.put("reply_count", Map.get(replies, e.event_id, 0))
       |> Map.put("unsigned", %{"cool.gravitas.stream_order" => "#{DateTime.to_unix(e.inserted_at, :microsecond)}:#{e.id}"})

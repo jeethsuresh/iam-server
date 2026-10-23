@@ -99,6 +99,8 @@ defmodule LakehouseWeb.Router do
   scope "/", LakehouseWeb do
     pipe_through :api
 
+    get "/public/v1/posts/:event", App.PublishingController, :show
+    get "/public/v1/spaces/:id/posts", App.PublishingController, :blog
     get "/rtc/leases/:id", App.RtcController, :lease
     get "/healthz", DiscoveryController, :health
     get "/readyz", DiscoveryController, :ready
@@ -119,6 +121,9 @@ defmodule LakehouseWeb.Router do
   scope "/app/v1", LakehouseWeb.App, as: :app_v1 do
     pipe_through [:api, LakehouseWeb.Plugs.AppTokenAuth]
 
+    post "/groups/:id/publication", PublishingController, :policy
+    post "/posts/:event/comment", PublishingController, :comment
+    post "/posts/:event/reactions", PublishingController, :reaction
     get "/calls", RtcController, :index
     post "/groups/:id/rtc", RtcController, :update
     get "/groups/:id/files", WorkspaceController, :files

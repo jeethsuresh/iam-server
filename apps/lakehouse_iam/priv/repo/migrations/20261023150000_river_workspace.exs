@@ -4,6 +4,17 @@ defmodule LakehouseIam.Repo.Migrations.RiverWorkspace do
     alter table(:room_events) do
       add :sticky_duration_ms, :integer
     end
+    create table(:river_publications, primary_key: false) do
+      add :id, :text, primary_key: true
+      add :space_id, references(:rooms, type: :uuid, on_delete: :delete_all), null: false
+      add :author_id, references(:principals, type: :uuid, on_delete: :delete_all), null: false
+      add :thread_id, references(:rooms, type: :uuid, on_delete: :nilify_all)
+      add :anchor_id, :text
+      add :visibility, :text, null: false, default: "members"
+      add :comments_policy, :text, null: false, default: "members"
+    end
+    create unique_index(:river_publications, [:thread_id])
+    create index(:river_publications, [:space_id, :visibility])
     create table(:river_rtc_members, primary_key: false) do
       add :id, :text, primary_key: true
       add :room_id, references(:rooms, type: :uuid, on_delete: :delete_all), null: false

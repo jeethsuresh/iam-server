@@ -68,7 +68,7 @@ defmodule LakehouseMatrix.Matrix do
   def join_room(principal_id, room_ref) do
     with {:ok, room} <- resolve_room(room_ref) do
       if delegated?(room.id) do
-        with {:ok, _} <- delegated_membership(principal_id, room.id, "accept"),
+        with {:ok, _} <- delegated_membership(principal_id, room.id, if(LakehouseMatrix.RiverPublishing.public_join?(room.id), do: "public_join", else: "accept")),
           do: {:ok, %{"room_id" => Identity.room_id(room.id)}}
       else
         legacy_join_room(principal_id, room_ref)
@@ -112,7 +112,7 @@ defmodule LakehouseMatrix.Matrix do
   defp delegated_membership(principal, id, action, username \\ nil) do
     grant = %LakehouseIam.Schema.AppGrant{principal_id: principal,
       app_origin: "https://" <> Identity.homeserver_domain(),
-      scopes: ["groups.manage"], room_mode: :all}
+      scopes: ["groups.manage", "groups.join"], room_mode: :all}
     params = %{"action" => action}
     params = if username, do: Map.put(params, "user_id", Identity.user_id(Accounts.normalize_username(username))), else: params
     LakehouseMatrix.DelegatedGroups.membership(grant, id, params)
