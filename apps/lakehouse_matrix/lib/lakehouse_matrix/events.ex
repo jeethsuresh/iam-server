@@ -19,7 +19,8 @@ defmodule LakehouseMatrix.Events do
       sender: ctx.sender,
       principal_id: ctx.principal_id,
       origin_server_ts: ctx.origin_server_ts,
-      state_key: ctx.state_key
+      state_key: ctx.state_key,
+      sticky_duration_ms: ctx.sticky_duration_ms
     })
     |> Repo.insert()
     |> tap(fn
@@ -109,8 +110,12 @@ defmodule LakehouseMatrix.Events do
       "content" => e.content
     }
 
-    if e.state_key do
-      Map.put(base, "state_key", e.state_key)
+    base = if e.state_key, do: Map.put(base, "state_key", e.state_key), else: base
+    if is_integer(e.sticky_duration_ms) and e.sticky_duration_ms > 0 do
+      duration = min(e.sticky_duration_ms, 3_600_000)
+      remaining = min(e.origin_server_ts, DateTime.to_unix(e.inserted_at, :millisecond)) + duration - System.system_time(:millisecond)
+      base = Map.put(base, "sticky", %{"duration_ms" => duration})
+      if remaining > 0, do: Map.put(base, "unsigned", %{"sticky_duration_remaining_ms" => remaining}), else: base
     else
       base
     end

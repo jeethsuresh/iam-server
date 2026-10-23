@@ -99,6 +99,7 @@ defmodule LakehouseWeb.Router do
   scope "/", LakehouseWeb do
     pipe_through :api
 
+    get "/rtc/leases/:id", App.RtcController, :lease
     get "/healthz", DiscoveryController, :health
     get "/readyz", DiscoveryController, :ready
     get "/.well-known/webfinger", DiscoveryController, :webfinger
@@ -118,6 +119,8 @@ defmodule LakehouseWeb.Router do
   scope "/app/v1", LakehouseWeb.App, as: :app_v1 do
     pipe_through [:api, LakehouseWeb.Plugs.AppTokenAuth]
 
+    get "/calls", RtcController, :index
+    post "/groups/:id/rtc", RtcController, :update
     get "/groups/:id/files", WorkspaceController, :files
     get "/home", WorkspaceController, :home
     post "/conversations", WorkspaceController, :conversation

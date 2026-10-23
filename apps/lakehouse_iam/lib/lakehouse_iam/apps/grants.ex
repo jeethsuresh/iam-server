@@ -93,7 +93,7 @@ defmodule LakehouseIam.Apps.Grants do
 
       grant ->
         {:ok, _} = Repo.delete(grant)
-        LakehouseIam.Changes.notify(%{"principal_id" => grant.principal_id})
+        LakehouseIam.Changes.notify(%{"principal_id" => grant.principal_id, "app_origin" => grant.app_origin})
         :ok
     end
   end

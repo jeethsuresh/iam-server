@@ -129,3 +129,9 @@ end
 if media_root = System.get_env("LAKEHOUSE_MEDIA_ROOT") do
   config :lakehouse_matrix, :media_root, media_root
 end
+
+if rtc_url = System.get_env("MATRIX_RTC_URL") do
+  uri = URI.parse(rtc_url)
+  unless uri.scheme == "wss" and is_binary(uri.host) and is_nil(uri.userinfo), do: raise("MATRIX_RTC_URL must be a trusted WSS URL")
+  config :lakehouse_matrix, :rtc_url, rtc_url
+end

@@ -11,6 +11,15 @@ defmodule LakehouseMatrix.DelegatedGroups do
   @group "cool.gravitas.river.group.v1"
   @types ~w(m.room.message m.reaction cool.gravitas.river.post.v1 cool.gravitas.river.discussion.v1)
 
+  def authorized?(g, id, permission) do
+    permission in g.scopes and access(g, id) == :ok and
+      (permission != "chats.write" or (IAM.can?(g.principal_id, "matrix.room.send", Identity.resource_arn(id)) and
+        case Repo.get(RiverDirect, id) do
+          nil -> true
+          direct -> not Social.blocked?(direct.low_id, direct.high_id)
+        end))
+  end
+  def template_state!(g, id, type, content, key), do: event!(g, id, type, content, key)
   def visible?(g, id), do: allowed(g, id) == :ok and (Memberships.joined?(id, g.principal_id) or Memberships.invited?(id, g.principal_id))
 
   def list(grant) do
@@ -294,7 +303,7 @@ defmodule LakehouseMatrix.DelegatedGroups do
           end
           true -> 100
         end
-        query = from e in RoomEvent, where: e.room_id == ^id and is_nil(e.state_key),
+        query = from e in RoomEvent, where: e.room_id == ^id and is_nil(e.state_key) and e.type != "m.rtc.member",
           order_by: [desc: e.inserted_at, desc: e.id], limit: ^(limit + 1)
         query = if params["before"] do
           cursor = Repo.get_by(RoomEvent, room_id: id, event_id: params["before"])
@@ -465,7 +474,8 @@ defmodule LakehouseMatrix.DelegatedGroups do
   defp event!(g, id, type, content, state_key, event_id \\ nil) do
     ctx = %Context{room_id: id, principal_id: g.principal_id, sender: user_id(g.principal_id),
       event_id: event_id || Identity.new_event_id(), type: type, content: content,
-      state_key: state_key, origin_server_ts: System.system_time(:millisecond)}
+      state_key: state_key, origin_server_ts: System.system_time(:millisecond),
+      sticky_duration_ms: if(type == "m.rtc.member", do: 70_000)}
     if type == "m.room.member" do
       {:ok, target} = Identity.parse_user_id(state_key)
       p = Repo.get_by!(Principal, username: target)

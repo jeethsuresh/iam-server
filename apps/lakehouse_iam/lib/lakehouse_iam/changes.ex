@@ -25,7 +25,7 @@ defmodule LakehouseIam.Changes do
       {:reply, {:error, :too_many_connections}, state}
     else
       ref = Process.monitor(pid)
-      broadcast(state, %{"principal_id" => principal})
+      broadcast(state, %{"principal_id" => principal, "app_origin" => origin})
       {:reply, :ok, put_in(state.watchers[ref], {principal, origin, pid})}
     end
   end
@@ -44,8 +44,8 @@ defmodule LakehouseIam.Changes do
     {old, watchers} = Map.pop(state.watchers, ref)
     next = %{state | watchers: watchers}
     if old do
-      {principal, _, _} = old
-      broadcast(next, %{"principal_id" => principal})
+      {principal, origin, _} = old
+      broadcast(next, %{"principal_id" => principal, "app_origin" => origin})
     end
     {:noreply, next}
   end

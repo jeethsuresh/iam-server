@@ -13,6 +13,7 @@ defmodule LakehouseWeb.Plugs.AppTokenAuth do
           {:ok, %{grant: grant, token: token}} ->
             grant = %{grant | scopes: Tokens.effective_scopes(token, grant)}
             conn
+            |> assign(:app_token, token)
             |> assign(:app_grant, grant)
             |> assign(:principal_id, grant.principal_id)
             |> assign(:app_origin, grant.app_origin)

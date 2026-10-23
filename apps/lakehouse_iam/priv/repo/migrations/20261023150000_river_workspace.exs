@@ -1,6 +1,18 @@
 defmodule LakehouseIam.Repo.Migrations.RiverWorkspace do
   use Ecto.Migration
   def change do
+    alter table(:room_events) do
+      add :sticky_duration_ms, :integer
+    end
+    create table(:river_rtc_members, primary_key: false) do
+      add :id, :text, primary_key: true
+      add :room_id, references(:rooms, type: :uuid, on_delete: :delete_all), null: false
+      add :principal_id, references(:principals, type: :uuid, on_delete: :delete_all), null: false
+      add :app_origin, :text, null: false
+      add :token_id, references(:app_tokens, type: :uuid, on_delete: :delete_all), null: false
+      add :expires_at, :utc_datetime_usec, null: false
+    end
+    create index(:river_rtc_members, [:room_id, :expires_at])
     create table(:river_files, primary_key: false) do
       add :id, :uuid, primary_key: true
       add :room_id, references(:rooms, type: :uuid, on_delete: :delete_all), null: false
