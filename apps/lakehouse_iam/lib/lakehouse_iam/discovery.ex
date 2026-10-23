@@ -27,7 +27,7 @@ defmodule LakehouseIam.Discovery do
       "userinfo_endpoint" => base <> "/app/v1/me",
       "grant_types_supported" => ["authorization_code", "refresh_token"],
       "code_challenge_methods_supported" => ["S256"],
-      "scopes_supported" => ["profile.name", "chats.list", "chats.read", "chats.write", "native.broker"]
+      "scopes_supported" => LakehouseIam.Apps.Scopes.known()
     }
   end
 
