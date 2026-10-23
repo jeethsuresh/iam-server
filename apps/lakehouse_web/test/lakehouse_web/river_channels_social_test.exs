@@ -95,6 +95,8 @@ defmodule LakehouseWeb.RiverChannelsSocialTest do
     assert length(Enum.uniq(ids)) == 7
     assert oldest.next_cursor == nil
     assert {:error, :invalid_cursor} = DelegatedGroups.timeline(g, child.id, %{"before" => "$foreign"})
+    assert {:error, :invalid_cursor} = DelegatedGroups.timeline(g, child.id, %{"before" => %{}})
+    assert {:ok, _} = DelegatedGroups.timeline(g, child.id, %{"limit" => %{}})
     assert {:ok, _} = DelegatedGroups.mark_read(g, child.id, %{"event_id" => List.last(sent)["event_id"]})
     assert {:ok, _} = DelegatedGroups.mark_read(g, child.id, %{"event_id" => hd(sent)["event_id"]})
     assert Enum.find(DelegatedGroups.list(g), &(&1.id == child.id)).unread_count == 0

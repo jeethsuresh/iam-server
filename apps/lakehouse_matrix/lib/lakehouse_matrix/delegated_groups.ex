@@ -273,13 +273,19 @@ defmodule LakehouseMatrix.DelegatedGroups do
   end
 
   def timeline(grant, id, params) do
-    with :ok <- scope(grant, "chats.read"), :ok <- access(grant, id) do
+    with :ok <- scope(grant, "chats.read"), :ok <- access(grant, id),
+         :ok <- valid_cursor(params["before"]) do
       transact(fn ->
         lock!(id)
         unless access(grant, id) == :ok, do: Repo.rollback(:forbidden)
-        limit = case Integer.parse(to_string(params["limit"] || "100")) do
-          {n, ""} -> min(max(n, 1), 200)
-          _ -> 100
+        value = params["limit"]
+        limit = cond do
+          is_integer(value) -> min(max(value, 1), 200)
+          is_binary(value) -> case Integer.parse(value) do
+            {n, ""} -> min(max(n, 1), 200)
+            _ -> 100
+          end
+          true -> 100
         end
         query = from e in RoomEvent, where: e.room_id == ^id and is_nil(e.state_key),
           order_by: [desc: e.inserted_at, desc: e.id], limit: ^(limit + 1)
@@ -424,6 +430,9 @@ defmodule LakehouseMatrix.DelegatedGroups do
       _ -> {:error, :forbidden}
     end
   end
+  defp valid_cursor(nil), do: :ok
+  defp valid_cursor(value) when is_binary(value) and byte_size(value) <= 512, do: :ok
+  defp valid_cursor(_), do: {:error, :invalid_cursor}
   defp root_membership(id) do
     if is_nil(Repo.get(RiverChannel, id)), do: :ok, else: {:error, :forbidden}
   end

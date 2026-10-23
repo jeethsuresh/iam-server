@@ -9,6 +9,7 @@ defmodule LakehouseIam.Repo.Migrations.RiverChannelsAndSocial do
       timestamps(type: :utc_datetime_usec)
     end
     create index(:river_channels, [:space_id])
+    create index(:room_events, [:room_id, :inserted_at, :id], name: :river_room_timeline_index)
     create constraint(:river_channels, :distinct_channel_parent, check: "id <> space_id")
     create constraint(:river_channels, :channel_kind, check: "kind IN ('text', 'drop_in')")
 
@@ -51,6 +52,7 @@ defmodule LakehouseIam.Repo.Migrations.RiverChannelsAndSocial do
     end
     create unique_index(:river_social_events, [:actor_id, :app_origin, :txn_id])
     create index(:river_social_events, [:target_id, :inserted_at])
+    create index(:river_social_events, [:actor_id, :inserted_at])
 
     create table(:river_room_reads, primary_key: false) do
       add :principal_id, references(:principals, type: :uuid, on_delete: :delete_all), primary_key: true
