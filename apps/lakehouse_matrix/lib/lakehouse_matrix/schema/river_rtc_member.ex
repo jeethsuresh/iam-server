@@ -2,6 +2,7 @@ defmodule LakehouseMatrix.Schema.RiverRtcMember do
   use Ecto.Schema
   @primary_key {:id, :string, autogenerate: false}
   schema "river_rtc_members" do
+    field :call_chat_id, :binary_id
     field :room_id, :binary_id
     field :principal_id, :binary_id
     field :app_origin, :string

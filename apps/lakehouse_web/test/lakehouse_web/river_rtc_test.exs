@@ -55,4 +55,23 @@ defmodule LakehouseWeb.RiverRtcTest do
     assert {:ok, _} = DelegatedGroups.membership(g,r.id,%{"action"=>"leave"})
     assert {:error,:forbidden} = RiverRtc.update(g,t,r.id,%{"action"=>"join","member_id"=>String.duplicate("b",43)})
   end
+  test "call-only chat requires a current centrally valid lease and resets between calls", %{ga: ga, gb: gb, ta: ta, tb: tb, room: room, id: id} do
+    {:ok, a} = RiverRtc.update(ga,ta,room.id,%{"action"=>"join","member_id"=>id})
+    assert {:error, :forbidden} = DelegatedGroups.timeline(gb,a.call_chat_id,%{})
+    second_id = String.duplicate("c",43)
+    {:ok, b} = RiverRtc.update(gb,tb,room.id,%{"action"=>"join","member_id"=>second_id})
+    assert a.call_chat_id == b.call_chat_id
+    assert {:ok, message} = DelegatedGroups.send(ga,a.call_chat_id,"m.room.message","call-message",%{"body"=>"Only callers"})
+    assert {:ok, %{events: events}} = DelegatedGroups.timeline(gb,a.call_chat_id,%{})
+    assert Enum.any?(events,&(&1["event_id"]==message["event_id"]))
+    {:ok, _} = RiverRtc.update(ga,ta,room.id,%{"action"=>"leave","member_id"=>id})
+    assert {:error, :forbidden} = DelegatedGroups.timeline(ga,a.call_chat_id,%{})
+    Repo.get!(RiverRtcMember,second_id) |> Ecto.Changeset.change(expires_at: DateTime.add(DateTime.utc_now(),-1,:second)) |> Repo.update!()
+    assert {:error, :forbidden} = DelegatedGroups.timeline(gb,a.call_chat_id,%{})
+    payload = Sync.sync(gb.principal_id,nil)
+    refute Map.has_key?(get_in(payload,["rooms","join"]), Identity.room_id(a.call_chat_id))
+    {:ok, next} = RiverRtc.update(ga,ta,room.id,%{"action"=>"join","member_id"=>String.duplicate("d",43)})
+    refute next.call_chat_id == a.call_chat_id
+  end
+
 end

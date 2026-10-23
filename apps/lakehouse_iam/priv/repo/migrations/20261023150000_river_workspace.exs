@@ -15,10 +15,16 @@ defmodule LakehouseIam.Repo.Migrations.RiverWorkspace do
     end
     create unique_index(:river_publications, [:thread_id])
     create index(:river_publications, [:space_id, :visibility])
+    create table(:river_call_chats, primary_key: false) do
+      add :id, references(:rooms, type: :uuid, on_delete: :delete_all), primary_key: true
+      add :parent_id, references(:rooms, type: :uuid, on_delete: :delete_all), null: false
+    end
+    create index(:river_call_chats, [:parent_id])
     create table(:river_rtc_members, primary_key: false) do
       add :id, :text, primary_key: true
       add :room_id, references(:rooms, type: :uuid, on_delete: :delete_all), null: false
       add :principal_id, references(:principals, type: :uuid, on_delete: :delete_all), null: false
+      add :call_chat_id, references(:rooms, type: :uuid, on_delete: :nilify_all)
       add :app_origin, :text, null: false
       add :token_id, references(:app_tokens, type: :uuid, on_delete: :delete_all), null: false
       add :expires_at, :utc_datetime_usec, null: false

@@ -50,10 +50,10 @@ defmodule LakehouseMatrix.DelegatedGroups do
     end
   end
 
-  def create(grant, params) do
+  def create(grant, params, internal \\ false) do
     with :ok <- scope(grant, "groups.create"),
          true <- text?(params["name"], 80),
-         true <- params["kind"] in ["space", "dm", "group", "post_comments"],
+         true <- params["kind"] in ["space", "dm", "group"] or (internal and params["kind"] in ["post_comments", "call_chat"]),
          true <- txn?(params["txn_id"]),
          true <- IAM.can?(grant.principal_id, "matrix.room.create", nil) do
       transact(fn ->
@@ -456,7 +456,10 @@ defmodule LakehouseMatrix.DelegatedGroups do
     # Space mutations and all child writes take the same root lock first.
     root = case Repo.get(RiverChannel, id) do
       nil -> case LakehouseMatrix.RiverPublishing.thread_record(id) do
-        nil -> id
+        nil -> case LakehouseMatrix.RiverRtc.chat_record(id) do
+          nil -> id
+          chat -> chat.parent_id
+        end
         p -> p.space_id
       end
       c -> c.space_id
@@ -509,7 +512,7 @@ defmodule LakehouseMatrix.DelegatedGroups do
   defp valid_cursor(value) when is_binary(value) and byte_size(value) <= 512, do: :ok
   defp valid_cursor(_), do: {:error, :invalid_cursor}
   defp root_membership(id) do
-    if is_nil(Repo.get(RiverChannel, id)), do: :ok, else: {:error, :forbidden}
+    if is_nil(Repo.get(RiverChannel, id)) and is_nil(LakehouseMatrix.RiverRtc.chat_record(id)), do: :ok, else: {:error, :forbidden}
   end
   defp membership_allowed(g, id) do
     if allowed(g, id) == :ok or invitation_allowed?(g, id), do: :ok, else: {:error, :forbidden}
@@ -534,7 +537,9 @@ defmodule LakehouseMatrix.DelegatedGroups do
         nil -> false
         c -> "spaces.channels" in g.scopes and Grants.room_allowed?(g, c.space_id)
       end
-      if direct or inherited, do: :ok, else: {:error, :forbidden}
+      call_chat = LakehouseMatrix.RiverRtc.chat_record(id)
+      inherited_call = call_chat && "calls.join" in g.scopes && Grants.room_allowed?(g, call_chat.parent_id)
+      if direct or inherited or inherited_call, do: :ok, else: {:error, :forbidden}
     else
       {:error, :forbidden}
     end

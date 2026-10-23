@@ -83,7 +83,7 @@ defmodule LakehouseMatrix.RiverPublishing do
     unless "groups.create" in g.scopes, do: Repo.rollback(:insufficient_scope)
     projected = hd(RiverContent.decorate([original], g.principal_id))
     name = ((projected["rendered_content"] || projected["content"])["title"]) |> String.slice(0, 65)
-    group = unwrap!(DelegatedGroups.create(g, %{"kind" => "post_comments", "name" => "Post: " <> name, "txn_id" => "publish-" <> digest(original.event_id)}))
+    group = unwrap!(DelegatedGroups.create(g, %{"kind" => "post_comments", "name" => "Post: " <> name, "txn_id" => "publish-" <> digest(original.event_id)}, true))
     anchor = DelegatedGroups.content_event!(g, group.id, "m.room.message", %{"body" => "Comments on " <> name, "msgtype" => "m.text",
       "cool.gravitas.river.post" => %{"version" => 1, "room_id" => Identity.room_id(original.room_id), "event_id" => original.event_id}}, "post-anchor")
     %{publication | thread_id: group.id, anchor_id: anchor["event_id"]}
