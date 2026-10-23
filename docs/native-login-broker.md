@@ -23,6 +23,13 @@ refresh credentials are never involved. `/oauth/token` refresh is serialized by
 the Android broker and preserves scope and the fixed original family expiry.
 `session_id` and `/oauth/session` proof `exp` bind the account and absolute lifetime.
 
+The store's explicit `broker:true` native start/exchange adds a `broker` object to
+its existing device response: `issuer`, `appOrigin`, `subject`, `account`,
+`accessToken`, `refreshToken`, `scope`, `accessExpiresAt`, `sessionId`,
+`sessionCheckToken`, `sessionExpiresAt`. Expiries are integer Unix seconds; the
+absolute family expiry is verified against the live proof's `exp`. Legacy native
+clients omit that flag and receive only the usual store device credential.
+
 Discovery advertises `native_broker_authorization_endpoint`, whose value is
 `https://gravitas.cool/oauth/broker/authorize`.
 
@@ -82,6 +89,14 @@ requesting an account. Custom-token cache expiry is zero; request-specific token
 types prevent platform caching across different challenges/states, and the child
 immediately invalidates each received code. State/version/challenge/account and
 returned issuer/origin/redirect/family/subject are checked before exchange.
+
+For installation after account setup, the child first pins and calls the
+`dev.jeeth.privatestore.gravitas` ContentProvider's `prepare` method. This narrow
+handshake verifies the actual Binder caller's sole package and release signer,
+then reconciles AccountManager visibility immediately. It returns only
+`protocolVersion:1` and `available`, never an account name or credential. Query,
+CRUD, unknown methods and unapproved callers are rejected. It does not add an
+account or initiate consent; absent accounts still use browser fallback.
 
 Spacetime posts `{code, code_verifier, session_id, sub}` to its own
 `/api/auth/gravitas/broker`. Only its existing local bearer/user response reaches
