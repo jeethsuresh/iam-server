@@ -387,6 +387,19 @@ defmodule LakehouseMatrix.DelegatedGroups do
       end), do: Repo.rollback(:invalid_relation)
       unless relation["rel_type"] in [nil, "m.thread", "m.annotation"], do: Repo.rollback(:invalid_relation)
       if type != "m.reaction" && relation["rel_type"] == "m.annotation", do: Repo.rollback(:invalid_relation)
+      if relation["rel_type"] == "m.thread" do
+        unless type == "m.room.message" and is_binary(relation["event_id"]), do: Repo.rollback(:invalid_relation)
+        root = Repo.get_by(RoomEvent, room_id: id, event_id: relation["event_id"])
+        unless root && root.type in ["m.room.message", "cool.gravitas.river.post.v1", "cool.gravitas.river.discussion.v1"] &&
+          get_in(root.content, ["m.relates_to", "rel_type"]) != "m.thread", do: Repo.rollback(:invalid_relation)
+        if reply && reply["event_id"] != root.event_id do
+          quoted = Repo.get_by!(RoomEvent, room_id: id, event_id: reply["event_id"])
+          canonical = get_in(quoted.content, ["m.relates_to", "rel_type"]) == "m.thread" &&
+            get_in(quoted.content, ["m.relates_to", "event_id"]) == root.event_id
+          legacy = get_in(quoted.content, ["m.relates_to", "m.in_reply_to", "event_id"]) == root.event_id
+          unless canonical or legacy, do: Repo.rollback(:invalid_relation)
+        end
+      end
     end
   end
 

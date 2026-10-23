@@ -47,6 +47,13 @@ defmodule LakehouseWeb.RiverContentTest do
     assert length(replies) == 2
     assert {:ok, %{root: canonical}} = RiverContent.thread(a, r.id, %{"event_id" => first["event_id"]})
     assert canonical["event_id"] == root["event_id"]
+    assert {:error, :invalid_relation} = DelegatedGroups.send(a, r.id, "m.room.message", "noncanonical-root", %{"body" => "Invalid",
+      "m.relates_to" => %{"rel_type" => "m.thread", "event_id" => first["event_id"]}})
+    assert {:error, :invalid_relation} = DelegatedGroups.send(a, r.id, "m.room.message", "missing-root", %{"body" => "Invalid",
+      "m.relates_to" => %{"rel_type" => "m.thread", "m.in_reply_to" => %{"event_id" => root["event_id"]}}})
+    {:ok, unrelated} = message(a, r.id, "unrelated", "Another thread")
+    assert {:error, :invalid_relation} = DelegatedGroups.send(a, r.id, "m.room.message", "unrelated-parent", %{"body" => "Invalid",
+      "m.relates_to" => %{"rel_type" => "m.thread", "event_id" => root["event_id"], "m.in_reply_to" => %{"event_id" => unrelated["event_id"]}}})
     assert {:error, :invalid_relation} = DelegatedGroups.send(a, r.id, "m.room.message", "foreign-parent", %{"body" => "Invalid",
       "m.relates_to" => %{"rel_type" => "m.thread", "event_id" => root["event_id"], "m.in_reply_to" => %{"event_id" => "$foreign"}}})
   end
