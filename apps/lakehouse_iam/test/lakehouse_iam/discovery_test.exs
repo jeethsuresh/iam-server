@@ -99,6 +99,13 @@ defmodule LakehouseIam.DiscoveryTest do
       assert {:error, _} = Discovery.validate_url(url), url
     end
   end
+  test "discovery advertises exactly the implemented delegated scopes" do
+    scopes = Discovery.configuration()["scopes_supported"]
+    assert Enum.sort(scopes) == Enum.sort(LakehouseIam.Apps.Scopes.known())
+    for scope <- ~w(groups.create groups.manage groups.join spaces.channels friends.read friends.manage native.broker) do
+      assert scope in scopes
+    end
+  end
 end
   test "discovery advertises exactly the implemented delegated scopes" do
     scopes = Discovery.configuration()["scopes_supported"]
