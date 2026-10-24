@@ -115,4 +115,27 @@ defmodule LakehouseWeb.RiverWorkspaceTest do
     assert home.threads == []
   end
 
+  test "catch-up has independent bounds and previews; joining does not mark old entries unread", %{grants: [ga, gb | _], people: [_, b | _]} do
+    {:ok, dm} = DelegatedGroups.direct(ga, %{"user_id"=>Identity.user_id(b.username)})
+    {:ok, old} = DelegatedGroups.send(ga, dm.id, "cool.gravitas.river.post.v1", "before-join", %{"version"=>1,"title"=>"Before join","body"=>"History"})
+    {:ok, _} = DelegatedGroups.membership(gb, dm.id, %{"action"=>"accept"})
+    for kind <- ~w(post discussion), n <- 1..21 do
+      {:ok, _} = DelegatedGroups.send(ga, dm.id, "cool.gravitas.river.#{kind}.v1", "#{kind}-#{n}", %{"version"=>1,"title"=>"#{kind} #{n}","body"=>String.duplicate("🌊",40000)})
+    end
+    {:ok, home} = RiverWorkspace.home(gb)
+    assert length(home.catch_up) == 40
+    refute Enum.any?(home.catch_up, &(&1["event_id"] == old["event_id"]))
+    for kind <- ~w(post discussion) do
+      events = Enum.filter(home.catch_up, &(&1["type"] == "cool.gravitas.river.#{kind}.v1"))
+      assert length(events) == 20
+      assert hd(events)["content"]["title"] == "#{kind} 21"
+      assert Enum.all?(events, &(String.length(&1["content"]["body"]) == 300))
+    end
+    assert Enum.find(DelegatedGroups.list(gb), &(&1.id == dm.id)).unread_count == 0
+    {:ok, msg} = DelegatedGroups.send(ga, dm.id, "m.room.message", "chat", %{"body"=>"Newest chat"})
+    {:ok, _} = DelegatedGroups.send(ga, dm.id, "m.room.message", "thread", %{"body"=>"Separate reply","m.relates_to"=>%{"rel_type"=>"m.thread","event_id"=>msg["event_id"]}})
+    info = Enum.find(DelegatedGroups.list(gb), &(&1.id == dm.id))
+    assert info.unread_count == 1 and info.unread_preview == "Newest chat"
+  end
+
 end

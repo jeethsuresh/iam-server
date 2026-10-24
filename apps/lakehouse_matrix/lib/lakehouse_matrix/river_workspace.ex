@@ -4,7 +4,7 @@ defmodule LakehouseMatrix.RiverWorkspace do
   alias LakehouseIam.{Repo, Contacts, Accounts}
   alias LakehouseIam.Schema.{Principal, AppGrant}
   alias LakehouseMatrix.{DelegatedGroups, Identity, Memberships, State, RiverContent}
-  alias LakehouseMatrix.Schema.{RoomEvent, RiverEntryRead}
+  alias LakehouseMatrix.Schema.{RoomEvent, RoomMembership, RiverEntryRead}
   @entries ~w(cool.gravitas.river.post.v1 cool.gravitas.river.discussion.v1)
 
   def conversation(g, p) do
@@ -65,12 +65,18 @@ defmodule LakehouseMatrix.RiverWorkspace do
          {:ok, overview} <- DelegatedGroups.overview(g) do
       groups = overview.groups
       ids = for x <- groups, x.membership == "join", do: x.id
-      roots = Repo.all(from e in RoomEvent, left_join: r in RiverEntryRead, on: r.event_id == e.event_id and r.principal_id == ^g.principal_id,
-        where: e.room_id in ^ids and e.type in ^@entries and e.principal_id != ^g.principal_id and is_nil(r.event_id),
-        order_by: [desc: e.inserted_at, desc: e.id], limit: 200)
-      entries = roots |> Enum.group_by(& &1.room_id) |> Enum.flat_map(fn {id, rows} ->
-        for event <- RiverContent.decorate(rows, g.principal_id), do: Map.put(event, "group_id", id)
-      end) |> RiverContent.budget(400_000)
+      roots = Enum.flat_map(@entries, fn type ->
+        Repo.all(from e in RoomEvent,
+          join: m in RoomMembership, on: m.room_id == e.room_id and m.principal_id == ^g.principal_id,
+          left_join: r in RiverEntryRead, on: r.event_id == e.event_id and r.principal_id == ^g.principal_id,
+          where: e.room_id in ^ids and e.type == ^type and e.principal_id != ^g.principal_id and is_nil(r.event_id) and e.inserted_at >= m.updated_at,
+          order_by: [desc: e.inserted_at, desc: e.id], limit: 20)
+      end)
+      projected = roots |> Enum.group_by(& &1.room_id) |> Enum.flat_map(fn {id, rows} ->
+        name = Enum.find(groups, &(&1.id == id)).name
+        for event <- RiverContent.decorate(rows, g.principal_id), do: event |> Map.put("group_id", id) |> Map.put("group_name", name) |> entry_preview()
+      end) |> Map.new(&{&1["event_id"], &1})
+      entries = Enum.map(roots, &projected[&1.event_id])
       # Thread participation includes older roots, rather than only the latest
       # home timeline page. Thread reads are still checked against current ACLs.
       targets = recent_threads(ids, g.principal_id)
@@ -81,7 +87,7 @@ defmodule LakehouseMatrix.RiverWorkspace do
         rows = Repo.all(from e in RoomEvent, where: e.room_id in ^ids and e.type == ^type, order_by: [desc: e.inserted_at, desc: e.id], limit: 6)
         projected = rows |> Enum.group_by(& &1.room_id) |> Enum.flat_map(fn {id, events} ->
           name = Enum.find(groups, &(&1.id == id)).name
-          for event <- RiverContent.decorate(events, g.principal_id), do: event |> Map.put("group_id", id) |> Map.put("group_name", name)
+          for event <- RiverContent.decorate(events, g.principal_id), do: event |> Map.put("group_id", id) |> Map.put("group_name", name) |> entry_preview()
         end) |> Map.new(&{&1["event_id"],&1})
         Enum.map(rows, &projected[&1.event_id])
       end)
@@ -89,6 +95,14 @@ defmodule LakehouseMatrix.RiverWorkspace do
     else
       _ -> {:error, :insufficient_scope}
     end
+  end
+
+  # Home only needs a preview. A few long posts must not exhaust its response
+  # budget and hide the independent discussions/unread sections.
+  defp entry_preview(event) do
+    content = event["rendered_content"] || event["content"]
+    content = Map.take(content, ~w(version title body)) |> Map.update("body", "", &String.slice(&1, 0, 300))
+    event |> Map.put("content", content) |> Map.delete("rendered_content")
   end
 
   # Orbit keeps five recent threads per channel, plus two when active within

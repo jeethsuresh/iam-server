@@ -428,25 +428,30 @@ defmodule LakehouseMatrix.DelegatedGroups do
   defp describe(id, principal) do
     r = Rooms.get_room(id)
     channel = Repo.get(RiverChannel, id)
+    unread = if Memberships.joined?(id, principal), do: unread(id, principal), else: %{count: 0, preview: "", timestamp: 0}
     %{id: id, room_id: Identity.room_id(id), name: r.name, kind: metadata(id)["kind"] || "group",
       description: get_in(State.get(id, "m.room.topic") || %{}, ["content", "topic"]) || "",
       parent_id: channel && channel.space_id, channel_kind: channel && channel.kind,
       membership: Memberships.membership(id, principal), owner: Matrix.creator?(id, principal),
-      unread_count: if(Memberships.joined?(id, principal), do: unread(id, principal), else: 0),
+      unread_count: unread.count, unread_preview: unread.preview, last_activity_at: unread.timestamp,
       members: if(Memberships.joined?(id, principal), do: Memberships.list_members(id), else: [])}
   end
   defp unread(id, principal) do
     read = Repo.get_by(RiverRoomRead, principal_id: principal, room_id: id)
     cursor = if read, do: Repo.get(RoomEvent, read.event_id)
-    query = from e in RoomEvent, where: e.room_id == ^id and is_nil(e.state_key) and
-      e.principal_id != ^principal and e.type in ["m.room.message", "cool.gravitas.river.post.v1", "cool.gravitas.river.discussion.v1"]
+    query = from e in RoomEvent,
+      join: m in LakehouseMatrix.Schema.RoomMembership, on: m.room_id == e.room_id and m.principal_id == ^principal,
+      where: e.room_id == ^id and is_nil(e.state_key) and e.inserted_at >= m.updated_at and
+      e.principal_id != ^principal and e.type in ["m.room.message", "cool.gravitas.river.invitation.v1"] and
+      fragment("COALESCE(? #>> '{m.relates_to,rel_type}', '') != 'm.thread'", e.content)
     query = if cursor do
       from e in query, where: e.inserted_at > ^cursor.inserted_at or
         (e.inserted_at == ^cursor.inserted_at and e.id > ^cursor.id)
     else
       query
     end
-    Repo.aggregate(query, :count)
+    latest = Repo.one(from e in query, order_by: [desc: e.inserted_at, desc: e.id], limit: 1, select: e)
+    %{count: Repo.aggregate(query, :count, :id), preview: if(latest, do: String.slice(latest.content["body"] || "", 0, 220), else: ""), timestamp: if(latest, do: latest.origin_server_ts, else: 0)}
   end
   defp after_event?(a, b), do: DateTime.compare(a.inserted_at, b.inserted_at) == :gt or
     (a.inserted_at == b.inserted_at and a.id > b.id)
