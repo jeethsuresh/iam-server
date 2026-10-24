@@ -6,7 +6,7 @@ Feature: Matrix client-server room lifecycle
     Given an approved user "alice" with password "password123"
     And an approved user "bob" with password "password123"
     When I matrix-login as "alice"
-    And I create a matrix room named "General"
+    And I create a public matrix room named "General"
     And "bob" joins the room via API
     And I send matrix message "hello matrix"
     Then room messages should include "hello matrix"
@@ -26,7 +26,7 @@ Feature: Matrix client-server room lifecycle
     Given an approved user "alice" with password "password123"
     And an approved user "bob" with password "password123"
     When I matrix-login as "alice"
-    And I create a matrix room named "Locked"
+    And I create a public matrix room named "Locked"
     And "bob" joins the room via API
     And user "bob" has no send permission
     When "bob" attempts to send matrix message "nope"
@@ -37,7 +37,7 @@ Feature: Matrix client-server room lifecycle
     Given an approved user "alice" with password "password123"
     And an approved user "bob" with password "password123"
     When I matrix-login as "alice"
-    And I create a matrix room named "Busy"
+    And I create a public matrix room named "Busy"
     And "bob" joins the room via API
     And I matrix-login as "alice"
     And two users send distinct messages in the same room

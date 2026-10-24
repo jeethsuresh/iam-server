@@ -29,10 +29,20 @@ defmodule LakehouseMatrix.Events.Processor do
 
   @spec process(Context.t()) :: {:ok, map()} | {:error, term()}
   def process(%Context{} = ctx) do
-    with {:ok, event_map} <- dispatch(ctx),
-         {:ok, _record} <- Events.persist(ctx, event_map) do
-      RoomServer.broadcast_event(ctx.room_id, event_map)
-      {:ok, event_map}
+    result = LakehouseIam.Repo.transaction(fn ->
+      LakehouseMatrix.ClientStore.lock!()
+      with {:ok, event_map} <- dispatch(ctx),
+           {:ok, _record} <- Events.persist(ctx, event_map) do
+        event_map
+      else
+        {:error, reason} -> LakehouseIam.Repo.rollback(reason)
+      end
+    end)
+    case result do
+      {:ok, event_map} ->
+        RoomServer.broadcast_event(ctx.room_id, event_map)
+        {:ok, event_map}
+      error -> error
     end
   end
 

@@ -14,7 +14,7 @@ defmodule LakehouseWeb.Matrix.ClientControllerTest do
 
   test "GET /_matrix/client/versions", %{conn: conn} do
     conn = get(conn, "/_matrix/client/versions")
-    assert %{"versions" => ["v3"]} = json_response(conn, 200)
+    assert %{"versions" => ["v1.1"], "unstable_features" => %{"org.matrix.msc4186" => true}} = json_response(conn, 200)
   end
 
   test "POST /_matrix/client/v3/login", %{conn: conn} do
@@ -38,7 +38,7 @@ defmodule LakehouseWeb.Matrix.ClientControllerTest do
       conn
       |> put_req_header(elem(auth, 0), elem(auth, 1))
       |> put_req_header("content-type", "application/json")
-      |> post("/_matrix/client/v3/createRoom", %{"name" => "General"})
+      |> post("/_matrix/client/v3/createRoom", %{"name" => "General", "preset" => "public_chat"})
       |> json_response(200)
 
     assert %{"room_id" => room_id} = create
@@ -76,7 +76,7 @@ defmodule LakehouseWeb.Matrix.ClientControllerTest do
       |> get("/_matrix/client/v3/rooms/#{room_id}/messages")
       |> json_response(200)
 
-    assert [%{"content" => %{"body" => "hello matrix"}}] = messages["chunk"]
+    assert Enum.any?(messages["chunk"], &(&1["content"]["body"] == "hello matrix"))
 
     sync =
       build_conn()

@@ -12,28 +12,48 @@ defmodule LakehouseWeb.Plugs.MatrixAuth do
   def call(conn, _opts) do
     case get_req_header(conn, "authorization") do
       ["Bearer " <> token] ->
-        case LakehouseIam.Auth.Token.verify(token) do
-          {:ok, claims} ->
-            username = claims["username"]
+        case LakehouseMatrix.ClientStore.authenticate(token) do
+          {:ok, principal, device, session} ->
+            conn
+            |> assign(:username, principal.username)
+            |> assign(:principal_id, principal.id)
+            |> assign(:current_principal, principal)
+            |> assign(:matrix_device_id, device)
+            |> assign(:matrix_session_id, session)
 
-            case Accounts.fetch_user(username) do
-              {:ok, %Principal{id: principal_id} = principal} ->
-                conn
-                |> assign(:jwt_claims, claims)
-                |> assign(:username, username)
-                |> assign(:principal_id, principal_id)
-                |> assign(:current_principal, principal)
+          :error ->
+            legacy(conn, token)
+        end
 
-              :error ->
-                matrix_error(conn, 401, "M_UNKNOWN_TOKEN", "Unknown access token")
+      _ ->
+        matrix_error(conn, 401, "M_MISSING_TOKEN", "Missing access token")
+    end
+  end
+
+  defp legacy(conn, token) do
+    case LakehouseIam.Auth.Token.verify(token) do
+      {:ok, claims} ->
+        username = claims["username"]
+
+        case Accounts.fetch_user(username) do
+          {:ok, %Principal{id: principal_id} = principal} ->
+            if Accounts.active?(principal) do
+              conn
+              |> assign(:jwt_claims, claims)
+              |> assign(:username, username)
+              |> assign(:principal_id, principal_id)
+              |> assign(:current_principal, principal)
+              |> assign(:matrix_device_id, "legacy")
+            else
+              matrix_error(conn, 401, "M_UNKNOWN_TOKEN", "Unknown access token")
             end
 
           :error ->
             matrix_error(conn, 401, "M_UNKNOWN_TOKEN", "Unknown access token")
         end
 
-      _ ->
-        matrix_error(conn, 401, "M_MISSING_TOKEN", "Missing access token")
+      :error ->
+        matrix_error(conn, 401, "M_UNKNOWN_TOKEN", "Unknown access token")
     end
   end
 

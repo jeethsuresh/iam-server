@@ -39,14 +39,15 @@ defmodule LakehouseMatrix.Identity do
   @spec parse_room_id(String.t()) :: {:ok, Ecto.UUID.t()} | :error
   def parse_room_id("!" <> rest) do
     case String.split(rest, ":", parts: 2) do
-      [uuid, _domain] when byte_size(uuid) > 0 -> {:ok, uuid}
+      [uuid, domain] when byte_size(uuid) > 0 ->
+        if domain == homeserver_domain(), do: Ecto.UUID.cast(uuid), else: :error
       _ -> :error
     end
   end
 
   def parse_room_id(uuid) when is_binary(uuid) do
     if String.match?(uuid, ~r/^[0-9a-f-]{36}$/i) do
-      {:ok, uuid}
+      Ecto.UUID.cast(uuid)
     else
       :error
     end
@@ -55,7 +56,8 @@ defmodule LakehouseMatrix.Identity do
   @spec parse_room_alias(String.t()) :: {:ok, String.t()} | :error
   def parse_room_alias("#" <> rest) do
     case String.split(rest, ":", parts: 2) do
-      [alias_name, _domain] when byte_size(alias_name) > 0 -> {:ok, alias_name}
+      [alias_name, domain] when byte_size(alias_name) > 0 ->
+        if domain == homeserver_domain(), do: {:ok, alias_name}, else: :error
       _ -> :error
     end
   end

@@ -1,3 +1,7 @@
+> Native Matrix compatibility is being expanded. The new client and sliding-sync
+> APIs share River's room store. Room federation and full Matrix 1.19 compliance
+> are still unfinished; see [the compatibility status and rollout notes](docs/matrix-compatibility.md).
+
 ## Gravitas dashboard and Kubernetes
 
 The signed-in home now lists connected and available services. Administrators maintain the shared service catalog; Groups keeps the existing room experience. See [DigitalOcean Kubernetes deployment and service integration](docs/kubernetes.md) for release images, database storage, optional failover, wildcard TLS, secret configuration and the app-side PKCE login contract.

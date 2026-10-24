@@ -1,6 +1,7 @@
 defmodule LakehouseWeb.Matrix.MultiUserChatTest do
   use LakehouseWeb.ConnCase, async: false
 
+  alias LakehouseMatrix.Identity
   import LakehouseWeb.MatrixFixtures
 
   setup do
@@ -25,7 +26,7 @@ defmodule LakehouseWeb.Matrix.MultiUserChatTest do
       build_conn()
       |> put_req_header(elem(alice_auth, 0), elem(alice_auth, 1))
       |> put_req_header("content-type", "application/json")
-      |> post("/_matrix/client/v3/createRoom", %{"name" => "DM"})
+      |> post("/_matrix/client/v3/createRoom", %{"name" => "DM", "invite" => [Identity.user_id("bob")]})
       |> json_response(200)
 
     assert build_conn()

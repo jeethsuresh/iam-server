@@ -8,7 +8,7 @@ defmodule LakehouseWeb.Plugs.AppCors do
       conn =
         conn
         |> put_resp_header("access-control-allow-origin", "*")
-        |> put_resp_header("access-control-allow-methods", "GET, POST, OPTIONS")
+        |> put_resp_header("access-control-allow-methods", "GET, POST, PUT, DELETE, OPTIONS")
         |> put_resp_header("access-control-allow-headers", "authorization, content-type")
         |> put_resp_header("access-control-max-age", "600")
 
@@ -18,6 +18,7 @@ defmodule LakehouseWeb.Plugs.AppCors do
     end
   end
 
+  defp public_api?("/_matrix/" <> _), do: true
   defp public_api?("/.well-known/" <> _), do: true
   defp public_api?("/app/v1/" <> _), do: true
   defp public_api?(path), do: path in ["/backend/register", "/oauth/token"]
