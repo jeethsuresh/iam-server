@@ -63,9 +63,12 @@ defmodule LakehouseMatrix.RiverPublishing do
       action = DelegatedGroups.content_event!(g, room, @policy, content, p["txn_id"])
       unless previous do
         publication = Repo.get(RiverPublication, original.event_id) || %RiverPublication{id: original.event_id, space_id: room, author_id: g.principal_id}
-        publication = if p["visibility"] == "public" and is_nil(publication.thread_id), do: create_thread!(g, publication, original), else: publication
-        attrs = %{visibility: p["visibility"], comments_policy: p["comments_policy"]}
-        if Ecto.get_meta(publication, :state) == :built do
+        prepared = if p["visibility"] == "public" and is_nil(publication.thread_id), do: create_thread!(g, publication, original), else: publication
+        # Keep the loaded record unchanged until the changeset tracks new room
+        # IDs. Mutating its data first makes Repo.update ignore those fields.
+        attrs = %{visibility: p["visibility"], comments_policy: p["comments_policy"],
+          thread_id: prepared.thread_id, anchor_id: prepared.anchor_id}
+        publication = if Ecto.get_meta(publication, :state) == :built do
           Ecto.Changeset.change(publication, attrs) |> Repo.insert!()
         else
           Ecto.Changeset.change(publication, attrs) |> Repo.update!()
