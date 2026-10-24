@@ -22,6 +22,7 @@ reference for Orbit parity: jeethsuresh/orbit f8abebcb407bc8a4d4e4920a6862e549f7
   the same app origin, with the existing contacts.read permission. Eight live
   connections per account/app are allowed. Process exits release presence.
 
-Apply migration 20261023150000 after the contacts migration. No production release
-has been approved for this branch. Keep the existing release hold and deploy IAM
-before River when an explicit release is approved.
+Apply migration 20261023150000 after the contacts migration. Keep automatic deployment disabled. Deploy IAM before River using the existing
+maintenance adapter when a manual release is requested. The Gravitas overlay
+configures MATRIX_RTC_URL=wss://rtc.gravitas.cool; the matching River media
+resources and protected runtime configuration live in its deploy/media directory.
