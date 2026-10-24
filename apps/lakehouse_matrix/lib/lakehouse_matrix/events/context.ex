@@ -10,7 +10,8 @@ defmodule LakehouseMatrix.Events.Context do
     :type,
     :content,
     :state_key,
-    :origin_server_ts
+    :origin_server_ts,
+    :sticky_duration_ms
   ]
 
   @type t :: %__MODULE__{

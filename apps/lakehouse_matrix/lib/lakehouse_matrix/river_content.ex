@@ -25,12 +25,26 @@ defmodule LakehouseMatrix.RiverContent do
     end)
   end
 
+  def entries(g, id, p) do
+    DelegatedGroups.with_room(g, id, "chats.read", fn ->
+      type = case p["kind"] do
+        "post" -> "cool.gravitas.river.post.v1"
+        "discussion" -> "cool.gravitas.river.discussion.v1"
+        _ -> Repo.rollback(:invalid_request)
+      end
+      query = from e in RoomEvent, where: e.room_id == ^id and e.type == ^type, order_by: [desc: e.inserted_at, desc: e.id]
+      {events, cursor} = page(query, id, p, g.principal_id)
+      %{events: events, next_cursor: cursor}
+    end)
+  end
   def edit(g, id, p) do
     DelegatedGroups.with_room(g, id, "chats.write", fn ->
       original = target!(id, p["event_id"])
       unless original.type in @entry_types and original.principal_id == g.principal_id,
         do: Repo.rollback(:forbidden)
-      unless valid_text?(p["title"], 160) and valid_text?(p["body"], 16000) and txn?(p["txn_id"]),
+      published = Repo.get(LakehouseMatrix.Schema.RiverPublication, original.event_id)
+      if published && published.visibility == "public" && "posts.publish" not in g.scopes, do: Repo.rollback(:insufficient_scope)
+      unless valid_text?(p["title"], 160) and valid_text?(p["body"], 40000) and String.length(p["body"]) <= 40000 and txn?(p["txn_id"]),
         do: Repo.rollback(:invalid_event)
       DelegatedGroups.content_event!(g, id, @edit, %{"version" => 1,
         "m.relates_to" => %{"rel_type" => "m.replace", "event_id" => original.event_id},
@@ -39,7 +53,10 @@ defmodule LakehouseMatrix.RiverContent do
   end
 
   def reaction(g, id, p) do
-    DelegatedGroups.with_room(g, id, "chats.write", fn ->
+    DelegatedGroups.with_room(g, id, "chats.write", fn -> reaction_authorized!(g, id, p) end)
+  end
+  @doc false
+  def reaction_authorized!(g, id, p) do
       target = target!(id, p["event_id"])
       unless target.type in ["m.room.message" | @entry_types] and p["key"] in @emojis and
         is_boolean(p["active"]) and txn?(p["txn_id"]), do: Repo.rollback(:invalid_event)
@@ -67,7 +84,6 @@ defmodule LakehouseMatrix.RiverContent do
         end
         DelegatedGroups.content_event!(g, id, @reaction_action, action, p["txn_id"])
       end
-    end)
   end
 
   @doc "Read-model fields never replace the signed/original event content."
@@ -75,6 +91,7 @@ defmodule LakehouseMatrix.RiverContent do
   def decorate(rows, actor) do
     room = hd(rows).room_id
     ids = Enum.map(rows, & &1.event_id)
+    publications = LakehouseMatrix.RiverPublishing.summaries(ids)
     edits = Repo.all(from e in RoomEvent, where: e.room_id == ^room and e.type == ^@edit and
       fragment("? #>> '{m.relates_to,event_id}'", e.content) in ^ids,
       order_by: [asc: e.inserted_at, asc: e.id])
@@ -101,6 +118,7 @@ defmodule LakehouseMatrix.RiverContent do
     for e <- rows do
       edit = edits[e.event_id]
       Events.to_client_event(e)
+      |> Map.put("publication", Map.get(publications, e.event_id, %{"visibility" => "members", "comments_policy" => "members"}))
       |> Map.put("reaction_summary", Map.get(reactions, e.event_id, []))
       |> Map.put("reply_count", Map.get(replies, e.event_id, 0))
       |> Map.put("unsigned", %{"cool.gravitas.stream_order" => "#{DateTime.to_unix(e.inserted_at, :microsecond)}:#{e.id}"})
@@ -163,6 +181,6 @@ defmodule LakehouseMatrix.RiverContent do
   end
   defp action_id(g, id, txn), do: "$river_content_" <> digest("#{g.principal_id}|#{g.app_origin}|#{id}|#{@reaction_action}|#{txn}")
   defp digest(s), do: :crypto.hash(:sha256, s) |> Base.url_encode64(padding: false)
-  defp valid_text?(s, max), do: is_binary(s) and byte_size(s) <= max and String.trim(s) != ""
+  defp valid_text?(s, max), do: is_binary(s) and byte_size(s) <= max * 4 and String.length(s) <= max and String.trim(s) != ""
   defp txn?(s), do: is_binary(s) and String.match?(s, ~r/^[a-zA-Z0-9_-]{1,128}$/)
 end

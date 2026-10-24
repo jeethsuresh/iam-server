@@ -8,7 +8,7 @@ defmodule LakehouseMatrix.Memberships do
   alias LakehouseMatrix.Schema.{Room, RoomMembership}
 
   @spec joined_room_ids(Ecto.UUID.t()) :: [Ecto.UUID.t()]
-  def joined_room_ids(principal_id), do: room_ids_with_membership(principal_id, "join")
+  def joined_room_ids(principal_id), do: room_ids_with_membership(principal_id, "join") |> Enum.filter(&(LakehouseMatrix.RiverRtc.chat_allowed?(&1, principal_id) and LakehouseMatrix.RiverPublishing.reader_allowed?(&1, principal_id)))
 
   @spec invited_room_ids(Ecto.UUID.t()) :: [Ecto.UUID.t()]
   def invited_room_ids(principal_id), do: room_ids_with_membership(principal_id, "invite")
@@ -27,11 +27,11 @@ defmodule LakehouseMatrix.Memberships do
             fragment("?->>'membership' = 'join'", m.membership_state),
         order_by: [desc: m.inserted_at],
         select: r
-    )
+    ) |> Enum.filter(&(LakehouseMatrix.RiverRtc.chat_allowed?(&1.id, principal_id) and LakehouseMatrix.RiverPublishing.reader_allowed?(&1.id, principal_id)))
   end
 
   @spec joined?(Ecto.UUID.t(), Ecto.UUID.t()) :: boolean()
-  def joined?(room_id, principal_id), do: membership?(room_id, principal_id, "join")
+  def joined?(room_id, principal_id), do: membership?(room_id, principal_id, "join") and LakehouseMatrix.RiverRtc.chat_allowed?(room_id, principal_id) and LakehouseMatrix.RiverPublishing.reader_allowed?(room_id, principal_id)
 
   @spec invited?(Ecto.UUID.t(), Ecto.UUID.t()) :: boolean()
   def invited?(room_id, principal_id), do: membership?(room_id, principal_id, "invite")

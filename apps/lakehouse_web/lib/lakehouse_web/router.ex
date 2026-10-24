@@ -99,6 +99,9 @@ defmodule LakehouseWeb.Router do
   scope "/", LakehouseWeb do
     pipe_through :api
 
+    get "/public/v1/posts/:event", App.PublishingController, :show
+    get "/public/v1/spaces/:id/posts", App.PublishingController, :blog
+    get "/rtc/leases/:id", App.RtcController, :lease
     get "/healthz", DiscoveryController, :health
     get "/readyz", DiscoveryController, :ready
     get "/.well-known/webfinger", DiscoveryController, :webfinger
@@ -118,6 +121,19 @@ defmodule LakehouseWeb.Router do
   scope "/app/v1", LakehouseWeb.App, as: :app_v1 do
     pipe_through [:api, LakehouseWeb.Plugs.AppTokenAuth]
 
+    post "/groups/:id/publication", PublishingController, :policy
+    post "/posts/:event/comment", PublishingController, :comment
+    post "/posts/:event/reactions", PublishingController, :reaction
+    get "/rtc", RtcController, :capabilities
+    get "/calls", RtcController, :index
+    post "/groups/:id/rtc", RtcController, :update
+    get "/groups/:id/files", WorkspaceController, :files
+    get "/home", WorkspaceController, :home
+    post "/conversations", WorkspaceController, :conversation
+    post "/groups/:id/invitations", WorkspaceController, :invite
+    post "/groups/:id/entry/read", WorkspaceController, :read
+    get "/live", LiveController, :events
+    get "/presence", LiveController, :presence
     get "/overview", GroupController, :overview
     get "/groups", GroupController, :index
     post "/groups", GroupController, :create
@@ -133,6 +149,7 @@ defmodule LakehouseWeb.Router do
     get "/friends", SocialController, :index
     post "/friends", SocialController, :mutate
     get "/friends/events", SocialController, :events
+    get "/groups/:id/entries", RiverContentController, :entries
     get "/groups/:id/thread", RiverContentController, :thread
     post "/groups/:id/reactions", RiverContentController, :reaction
     post "/groups/:id/entry", RiverContentController, :edit

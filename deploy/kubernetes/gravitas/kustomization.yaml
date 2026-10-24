@@ -21,3 +21,6 @@ patches:
       - op: add
         path: /data/IAM_NATIVE_BROKER_ORIGIN
         value: https://apps.gravitas.cool
+      - op: add
+        path: /data/MATRIX_RTC_URL
+        value: wss://rtc.gravitas.cool

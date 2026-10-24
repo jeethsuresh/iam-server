@@ -76,6 +76,7 @@ defmodule LakehouseIam.Contacts do
           [low, high] = ids
           relation = Repo.get_by(Contact, low_id: low, high_id: high)
           change!(g.principal_id, target.id, relation, p["action"], low, high)
+          LakehouseIam.Changes.notify(%{"principals" => ids})
           Repo.insert!(%ContactEvent{actor_id: g.principal_id, target_id: target.id,
             app_origin: g.app_origin, txn_id: p["txn_id"], action: p["action"], type: "cool.gravitas.contact.v1"}) |> event()
         end

@@ -11,6 +11,17 @@ defmodule LakehouseMatrix.DelegatedGroups do
   @group "cool.gravitas.river.group.v1"
   @types ~w(m.room.message m.reaction cool.gravitas.river.post.v1 cool.gravitas.river.discussion.v1)
 
+  def authorized?(g, id, permission) do
+    permission in g.scopes and access(g, id) == :ok and
+      (permission != "chats.write" or (LakehouseMatrix.RiverPublishing.writer_allowed?(id, g.principal_id) and IAM.can?(g.principal_id, "matrix.room.send", Identity.resource_arn(id)) and
+        case Repo.get(RiverDirect, id) do
+          nil -> true
+          direct -> not Social.blocked?(direct.low_id, direct.high_id)
+        end))
+  end
+  def template_state!(g, id, type, content, key), do: event!(g, id, type, content, key)
+  def visible?(g, id), do: allowed(g, id) == :ok and (Memberships.joined?(id, g.principal_id) or Memberships.invited?(id, g.principal_id))
+
   def list(grant) do
     (Memberships.joined_room_ids(grant.principal_id) ++ Memberships.invited_room_ids(grant.principal_id))
     |> Enum.uniq()
@@ -39,10 +50,10 @@ defmodule LakehouseMatrix.DelegatedGroups do
     end
   end
 
-  def create(grant, params) do
+  def create(grant, params, internal \\ false) do
     with :ok <- scope(grant, "groups.create"),
          true <- text?(params["name"], 80),
-         true <- params["kind"] in ["space", "dm"],
+         true <- params["kind"] in ["space", "dm", "group"] or (internal and params["kind"] in ["post_comments", "call_chat"]),
          true <- txn?(params["txn_id"]),
          true <- IAM.can?(grant.principal_id, "matrix.room.create", nil) do
       transact(fn ->
@@ -56,6 +67,7 @@ defmodule LakehouseMatrix.DelegatedGroups do
             content = if params["kind"] == "space", do: Map.put(content, "type", "m.space"), else: content
             event!(grant, id, "m.room.create", content, "")
             event!(grant, id, "m.room.name", %{"name" => room.name}, "")
+            if is_binary(params["description"]) and byte_size(params["description"]) <= 2000 and String.length(params["description"]) <= 500, do: event!(grant, id, "m.room.topic", %{"topic" => params["description"]}, "")
             event!(grant, id, "m.room.join_rules", %{"join_rule" => "invite"}, "")
             event!(grant, id, "m.room.history_visibility", %{"history_visibility" => "shared"}, "")
             event!(grant, id, "m.room.power_levels", %{"users" => %{creator => 100}, "users_default" => 0,
@@ -222,6 +234,7 @@ defmodule LakehouseMatrix.DelegatedGroups do
         owner!(grant, id)
         {:ok, _} = Rooms.get_room(id) |> Room.changeset(%{name: String.trim(params["name"])}) |> Repo.update()
         event!(grant, id, "m.room.name", %{"name" => String.trim(params["name"])}, "")
+        if is_binary(params["description"]) and byte_size(params["description"]) <= 2000 and String.length(params["description"]) <= 500, do: event!(grant, id, "m.room.topic", %{"topic" => params["description"]}, "")
         audit!(grant, id, "rename", user_id(grant.principal_id))
         describe(id, grant.principal_id)
       end)
@@ -232,20 +245,23 @@ defmodule LakehouseMatrix.DelegatedGroups do
   end
 
   def membership(grant, id, params) do
-    with :ok <- scope(grant, "groups.manage"),
-         :ok <- membership_allowed(grant, id),
-         true <- params["action"] in ~w(invite accept leave remove),
+    with :ok <- scope(grant, if(params["action"] == "public_join", do: "groups.join", else: "groups.manage")),
+         :ok <- if(params["action"] == "public_join" and LakehouseMatrix.RiverPublishing.public_join?(id), do: :ok, else: membership_allowed(grant, id)),
+         true <- params["action"] in ~w(invite accept leave remove public_join),
          :ok <- root_membership(id) do
       transact(fn ->
         locked_grant = if grant.id, do: (Repo.one(from g in AppGrant, where: g.id == ^grant.id, lock: "FOR UPDATE") || Repo.rollback(:forbidden))
         lock!(id)
         actor = grant.principal_id
         action = params["action"]
-        target = if action in ~w(accept leave), do: actor, else: target!(params["user_id"])
+        target = if action in ~w(accept leave public_join), do: actor, else: target!(params["user_id"])
         current = Memberships.membership(id, target)
         direct = Repo.get(RiverDirect, id)
         if direct && target not in [direct.low_id, direct.high_id], do: Repo.rollback(:forbidden)
         membership = case action do
+          "public_join" ->
+            unless LakehouseMatrix.RiverPublishing.public_join?(id), do: Repo.rollback(:forbidden)
+            "join"
           "invite" ->
             owner!(grant, id)
             if target == actor || current in ~w(join invite), do: Repo.rollback(:invalid_membership)
@@ -263,7 +279,7 @@ defmodule LakehouseMatrix.DelegatedGroups do
         end
         event = member!(grant, id, target, membership)
         for child <- channel_ids(id), do: member!(grant, child, target, membership)
-        if action == "accept" and locked_grant && locked_grant.room_mode == :selected do
+        if action in ["accept", "public_join"] and locked_grant && locked_grant.room_mode == :selected do
           locked_grant |> AppGrant.changeset(%{room_ids: Enum.uniq(locked_grant.room_ids ++ [id])}) |> Repo.update!()
         end
         audit!(grant, id, action, user_id(target))
@@ -290,7 +306,7 @@ defmodule LakehouseMatrix.DelegatedGroups do
           end
           true -> 100
         end
-        query = from e in RoomEvent, where: e.room_id == ^id and is_nil(e.state_key),
+        query = from e in RoomEvent, where: e.room_id == ^id and is_nil(e.state_key) and e.type != "m.rtc.member",
           order_by: [desc: e.inserted_at, desc: e.id], limit: ^(limit + 1)
         query = if params["before"] do
           cursor = Repo.get_by(RoomEvent, room_id: id, event_id: params["before"])
@@ -313,23 +329,28 @@ defmodule LakehouseMatrix.DelegatedGroups do
   def send(grant, id, type, txn, content) do
     with :ok <- scope(grant, "chats.write"), :ok <- access(grant, id),
          true <- type in @types && txn?(txn) && is_map(content),
-         true <- byte_size(Jason.encode!(content)) <= 32000,
+         true <- byte_size(Jason.encode!(content)) <= 250000,
          true <- IAM.can?(grant.principal_id, "matrix.room.send", Identity.resource_arn(id)),
-         :ok <- validate(type, content) do
+         :ok <- validate(type, content),
+         :ok <- LakehouseMatrix.RiverFiles.validate(content, id),
+         true <- LakehouseMatrix.RiverPublishing.valid_send?(id, type, content, grant.principal_id) do
       transact(fn ->
         lock!(id)
         unless access(grant, id) == :ok, do: Repo.rollback(:forbidden)
+        unless LakehouseMatrix.RiverPublishing.writer_allowed?(id, grant.principal_id) and LakehouseMatrix.RiverPublishing.valid_send?(id, type, content, grant.principal_id), do: Repo.rollback(:forbidden)
         direct = Repo.get(RiverDirect, id)
         if direct && Social.blocked?(direct.low_id, direct.high_id), do: Repo.rollback(:forbidden)
         relation!(id, type, content)
         event_id = "$river_" <> digest("#{grant.principal_id}|#{grant.app_origin}|#{id}|#{txn}")
         decorated = Map.put(content, "cool.gravitas.delegation", %{"version" => 1, "app_origin" => grant.app_origin})
-        case Repo.get_by(RoomEvent, event_id: event_id) do
+        result = case Repo.get_by(RoomEvent, event_id: event_id) do
           nil -> event!(grant, id, type, decorated, nil, event_id)
           e ->
             unless e.type == type && e.content == decorated, do: Repo.rollback(:transaction_conflict)
             Events.to_client_event(e)
         end
+        LakehouseMatrix.RiverFiles.register!(grant, id, result, content)
+        result
       end)
     else
       {:error, e} -> {:error, e}
@@ -344,6 +365,7 @@ defmodule LakehouseMatrix.DelegatedGroups do
         lock!(id)
         unless access(grant, id) == :ok, do: Repo.rollback(:forbidden)
         if permission == "chats.write" do
+          unless LakehouseMatrix.RiverPublishing.writer_allowed?(id, grant.principal_id), do: Repo.rollback(:forbidden)
           unless IAM.can?(grant.principal_id, "matrix.room.send", Identity.resource_arn(id)), do: Repo.rollback(:forbidden)
           direct = Repo.get(RiverDirect, id)
           if direct && Social.blocked?(direct.low_id, direct.high_id), do: Repo.rollback(:forbidden)
@@ -368,7 +390,7 @@ defmodule LakehouseMatrix.DelegatedGroups do
   defp validate("m.reaction", %{"m.relates_to" => %{"rel_type" => "m.annotation", "event_id" => id, "key" => key}})
        when is_binary(id) and is_binary(key) and byte_size(key) in 1..64, do: :ok
   defp validate(type, %{"body" => body} = c) when type != "m.reaction" do
-    valid = text?(body, 16000) && (type == "m.room.message" ||
+    valid = text?(body, if(type == "m.room.message", do: 16000, else: 40000)) && String.length(body) <= 40000 && (type == "m.room.message" ||
       (c["version"] == 1 && text?(c["title"], 160)))
     if valid, do: :ok, else: {:error, :invalid_event}
   end
@@ -390,7 +412,7 @@ defmodule LakehouseMatrix.DelegatedGroups do
       if relation["rel_type"] == "m.thread" do
         unless type == "m.room.message" and is_binary(relation["event_id"]), do: Repo.rollback(:invalid_relation)
         root = Repo.get_by(RoomEvent, room_id: id, event_id: relation["event_id"])
-        unless root && root.type in ["m.room.message", "cool.gravitas.river.post.v1", "cool.gravitas.river.discussion.v1"] &&
+        unless root && LakehouseMatrix.RiverPublishing.replies_allowed?(root) && root.type in ["m.room.message", "cool.gravitas.river.post.v1", "cool.gravitas.river.discussion.v1"] &&
           get_in(root.content, ["m.relates_to", "rel_type"]) != "m.thread", do: Repo.rollback(:invalid_relation)
         if reply && reply["event_id"] != root.event_id do
           quoted = Repo.get_by!(RoomEvent, room_id: id, event_id: reply["event_id"])
@@ -407,6 +429,7 @@ defmodule LakehouseMatrix.DelegatedGroups do
     r = Rooms.get_room(id)
     channel = Repo.get(RiverChannel, id)
     %{id: id, room_id: Identity.room_id(id), name: r.name, kind: metadata(id)["kind"] || "group",
+      description: get_in(State.get(id, "m.room.topic") || %{}, ["content", "topic"]) || "",
       parent_id: channel && channel.space_id, channel_kind: channel && channel.kind,
       membership: Memberships.membership(id, principal), owner: Matrix.creator?(id, principal),
       unread_count: if(Memberships.joined?(id, principal), do: unread(id, principal), else: 0),
@@ -432,7 +455,13 @@ defmodule LakehouseMatrix.DelegatedGroups do
   defp lock!(id) do
     # Space mutations and all child writes take the same root lock first.
     root = case Repo.get(RiverChannel, id) do
-      nil -> id
+      nil -> case LakehouseMatrix.RiverPublishing.thread_record(id) do
+        nil -> case LakehouseMatrix.RiverRtc.chat_record(id) do
+          nil -> id
+          chat -> chat.parent_id
+        end
+        p -> p.space_id
+      end
       c -> c.space_id
     end
     Repo.one(from r in Room, where: r.id == ^root, lock: "FOR UPDATE") || Repo.rollback(:forbidden)
@@ -457,7 +486,8 @@ defmodule LakehouseMatrix.DelegatedGroups do
   defp event!(g, id, type, content, state_key, event_id \\ nil) do
     ctx = %Context{room_id: id, principal_id: g.principal_id, sender: user_id(g.principal_id),
       event_id: event_id || Identity.new_event_id(), type: type, content: content,
-      state_key: state_key, origin_server_ts: System.system_time(:millisecond)}
+      state_key: state_key, origin_server_ts: System.system_time(:millisecond),
+      sticky_duration_ms: if(type == "m.rtc.member", do: 70_000)}
     if type == "m.room.member" do
       {:ok, target} = Identity.parse_user_id(state_key)
       p = Repo.get_by!(Principal, username: target)
@@ -482,7 +512,7 @@ defmodule LakehouseMatrix.DelegatedGroups do
   defp valid_cursor(value) when is_binary(value) and byte_size(value) <= 512, do: :ok
   defp valid_cursor(_), do: {:error, :invalid_cursor}
   defp root_membership(id) do
-    if is_nil(Repo.get(RiverChannel, id)), do: :ok, else: {:error, :forbidden}
+    if is_nil(Repo.get(RiverChannel, id)) and is_nil(LakehouseMatrix.RiverRtc.chat_record(id)), do: :ok, else: {:error, :forbidden}
   end
   defp membership_allowed(g, id) do
     if allowed(g, id) == :ok or invitation_allowed?(g, id), do: :ok, else: {:error, :forbidden}
@@ -493,7 +523,10 @@ defmodule LakehouseMatrix.DelegatedGroups do
   end
   defp parent_joined?(id, principal) do
     case Repo.get(RiverChannel, id) do
-      nil -> true
+      nil -> case LakehouseMatrix.RiverPublishing.thread_record(id) do
+        nil -> true
+        p -> p.visibility == "public" or Memberships.joined?(p.space_id, principal)
+      end
       c -> Memberships.joined?(c.space_id, principal)
     end
   end
@@ -504,7 +537,9 @@ defmodule LakehouseMatrix.DelegatedGroups do
         nil -> false
         c -> "spaces.channels" in g.scopes and Grants.room_allowed?(g, c.space_id)
       end
-      if direct or inherited, do: :ok, else: {:error, :forbidden}
+      call_chat = LakehouseMatrix.RiverRtc.chat_record(id)
+      inherited_call = call_chat && "calls.join" in g.scopes && Grants.room_allowed?(g, call_chat.parent_id)
+      if direct or inherited or inherited_call, do: :ok, else: {:error, :forbidden}
     else
       {:error, :forbidden}
     end
@@ -512,7 +547,7 @@ defmodule LakehouseMatrix.DelegatedGroups do
 
   defp scope(g, s), do: if(s in g.scopes, do: :ok, else: {:error, :insufficient_scope})
   defp user_id(id), do: Repo.get!(Principal, id).username |> Identity.user_id()
-  defp text?(s, max), do: is_binary(s) && String.trim(s) != "" && byte_size(s) <= max
+  defp text?(s, max), do: is_binary(s) && String.trim(s) != "" && String.length(s) <= max && byte_size(s) <= max * 4
   defp txn?(s), do: is_binary(s) && byte_size(s) in 1..128 && String.match?(s, ~r/^[a-zA-Z0-9_-]+$/)
   defp digest(s), do: :crypto.hash(:sha256, s) |> Base.url_encode64(padding: false)
   defp uuid(s) do

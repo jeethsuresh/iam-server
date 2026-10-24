@@ -130,7 +130,8 @@ defmodule LakehouseMatrix.Sync do
       Enum.all?(joins, fn {_id, payload} ->
         timeline = get_in(payload, ["timeline", "events"]) || []
         state = get_in(payload, ["state", "events"]) || []
-        timeline == [] and state == []
+        sticky = get_in(payload, ["sticky", "events"]) || []
+        timeline == [] and state == [] and sticky == []
       end)
 
     no_join_updates and map_size(invites) == 0 and map_size(leaves) == 0
@@ -155,7 +156,11 @@ defmodule LakehouseMatrix.Sync do
         |> Enum.map(&Events.to_client_event/1)
       end
 
+    timeline_ids = MapSet.new(timeline_events, & &1["event_id"])
+    sticky = LakehouseMatrix.RiverRtc.sticky(room_id) |> Enum.reject(&MapSet.member?(timeline_ids, &1["event_id"]))
+    sticky = if full_state, do: sticky, else: Enum.filter(sticky, &(&1["origin_server_ts"] > since_ts))
     %{
+      "sticky" => %{"events" => sticky},
       "timeline" => %{
         "events" => timeline_events,
         "limited" => false,

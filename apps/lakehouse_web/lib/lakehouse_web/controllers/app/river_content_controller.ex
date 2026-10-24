@@ -1,6 +1,7 @@
 defmodule LakehouseWeb.App.RiverContentController do
   use LakehouseWeb, :controller
   alias LakehouseMatrix.RiverContent
+  def entries(conn, %{"id" => id} = p), do: respond(conn, RiverContent.entries(conn.assigns.app_grant, id, p))
   def thread(conn, %{"id" => id} = p), do: respond(conn, RiverContent.thread(conn.assigns.app_grant, id, p))
   def reaction(conn, %{"id" => id} = p), do: respond(conn, RiverContent.reaction(conn.assigns.app_grant, id, p))
   def edit(conn, %{"id" => id} = p), do: respond(conn, RiverContent.edit(conn.assigns.app_grant, id, p))

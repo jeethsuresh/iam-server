@@ -12,6 +12,7 @@ defmodule LakehouseMatrix.Schema.RoomEvent do
     field :sender, :string
     field :origin_server_ts, :integer
     field :state_key, :string
+    field :sticky_duration_ms, :integer
 
     belongs_to :room, LakehouseMatrix.Schema.Room
     belongs_to :principal, LakehouseIam.Schema.Principal
@@ -29,7 +30,8 @@ defmodule LakehouseMatrix.Schema.RoomEvent do
       :sender,
       :principal_id,
       :origin_server_ts,
-      :state_key
+      :state_key,
+      :sticky_duration_ms
     ], empty_values: [])
     |> validate_required([:room_id, :event_id, :type, :content, :sender, :origin_server_ts])
     |> unique_constraint(:event_id)

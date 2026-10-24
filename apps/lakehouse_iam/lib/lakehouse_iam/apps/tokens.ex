@@ -117,6 +117,18 @@ defmodule LakehouseIam.Apps.Tokens do
     end
   end
 
+  @doc false
+  def verify_access_id(id) do
+    with %AppToken{kind: :access, revoked_at: nil} = token <- Repo.get(AppToken, id),
+         true <- DateTime.compare(token.expires_at, DateTime.utc_now()) == :gt,
+         %AppGrant{} = grant <- Repo.get(AppGrant, token.grant_id),
+         true <- valid_family?(token, grant) do
+      {:ok, %{grant: grant, token: token}}
+    else
+      _ -> {:error, :invalid}
+    end
+  end
+
   @spec refresh(String.t()) ::
           {:ok, %{access_token: String.t(), refresh_token: String.t(), expires_in: pos_integer()}}
           | {:error, atom()}
@@ -155,7 +167,7 @@ defmodule LakehouseIam.Apps.Tokens do
 
   @doc "Legacy credentials cannot inherit delegation when a consent grant is upgraded."
   def effective_scopes(%AppToken{scopes: nil}, grant),
-    do: Enum.reject(grant.scopes, &(&1 in ~w(native.broker groups.join spaces.channels friends.read friends.manage contacts.read contacts.manage)))
+    do: Enum.reject(grant.scopes, &(&1 in ~w(native.broker groups.join spaces.channels friends.read friends.manage contacts.read contacts.manage calls.read calls.join posts.publish)))
 
   def effective_scopes(%AppToken{scopes: scopes}, grant),
     do: Enum.filter(scopes, &(&1 in grant.scopes))
