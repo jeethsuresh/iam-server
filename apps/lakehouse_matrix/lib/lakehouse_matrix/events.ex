@@ -111,11 +111,24 @@ defmodule LakehouseMatrix.Events do
     }
 
     base = if e.state_key, do: Map.put(base, "state_key", e.state_key), else: base
+    base = redact_client_event(base, e)
     if is_integer(e.sticky_duration_ms) and e.sticky_duration_ms > 0 do
       duration = min(e.sticky_duration_ms, 3_600_000)
       remaining = min(e.origin_server_ts, DateTime.to_unix(e.inserted_at, :millisecond)) + duration - System.system_time(:millisecond)
       base = Map.put(base, "sticky", %{"duration_ms" => duration})
       if remaining > 0, do: Map.put(base, "unsigned", %{"sticky_duration_remaining_ms" => remaining}), else: base
+    else
+      base
+    end
+  end
+
+  defp redact_client_event(base, %{type: "m.room.redaction"}), do: base
+  defp redact_client_event(base, e) do
+    redaction = LakehouseIam.Repo.one(from r in RoomEvent,
+      where: r.room_id == ^e.room_id and r.type == "m.room.redaction" and fragment("?->>'redacts' = ?", r.content, ^e.event_id),
+      order_by: [desc: r.stream_id], limit: 1)
+    if redaction do
+      base |> Map.put("content", %{}) |> Map.put("unsigned", %{"redacted_because" => to_client_event(redaction)})
     else
       base
     end

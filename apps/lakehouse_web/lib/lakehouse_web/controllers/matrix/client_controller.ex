@@ -3,10 +3,12 @@ defmodule LakehouseWeb.Matrix.ClientController do
 
   alias LakehouseMatrix.{Identity, Matrix}
 
-  @versions ["v3"]
+  # API path versions (v3) are not Matrix specification versions. Keep the
+  # advertised baseline conservative until the full v1.19 conformance gate passes.
+  @versions ["v1.1"]
 
   def versions(conn, _params) do
-    json(conn, %{"versions" => @versions, "unstable_features" => %{}})
+    json(conn, %{"versions" => @versions, "unstable_features" => %{"org.matrix.msc4186" => true}})
   end
 
   def login(conn, params) do
@@ -94,6 +96,8 @@ defmodule LakehouseWeb.Matrix.ClientController do
         matrix_error(conn, 400, "M_UNKNOWN", "Could not create room")
     end
   end
+
+  def join_room_id(conn, %{"roomId" => id}), do: join_room(conn, %{"roomIdOrAlias" => id})
 
   def join_room(conn, %{"roomIdOrAlias" => room_ref}) do
     case Matrix.join_room(conn.assigns.principal_id, room_ref) do

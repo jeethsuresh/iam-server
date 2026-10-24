@@ -128,6 +128,7 @@ defmodule LakehouseMatrix.DelegatedGroups do
               "kind" => "dm", "txn_id" => txn}) do
             {:ok, group} ->
               Repo.insert!(%RiverDirect{id: group.id, low_id: low, high_id: high})
+              LakehouseMatrix.ClientStore.link_direct(low, high, Identity.room_id(group.id))
               member!(grant, group.id, person.id, "invite")
               audit!(grant, group.id, "invite", user_id(person.id))
               group.id
@@ -559,5 +560,8 @@ defmodule LakehouseMatrix.DelegatedGroups do
     <<a::32, b::16, c::12, d::14, e::48, _::bitstring>> = :crypto.hash(:sha256, s)
     Ecto.UUID.load!(<<a::32, b::16, 5::4, c::12, 2::2, d::14, e::48>>)
   end
-  defp transact(fun), do: Repo.transaction(fun)
+  defp transact(fun), do: Repo.transaction(fn ->
+    LakehouseMatrix.ClientStore.lock!()
+    fun.()
+  end)
 end
