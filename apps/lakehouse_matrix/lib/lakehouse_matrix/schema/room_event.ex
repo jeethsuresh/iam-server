@@ -13,6 +13,7 @@ defmodule LakehouseMatrix.Schema.RoomEvent do
     field :origin_server_ts, :integer
     field :state_key, :string
     field :sticky_duration_ms, :integer
+    field :stream_id, :integer, read_after_writes: true
 
     belongs_to :room, LakehouseMatrix.Schema.Room
     belongs_to :principal, LakehouseIam.Schema.Principal

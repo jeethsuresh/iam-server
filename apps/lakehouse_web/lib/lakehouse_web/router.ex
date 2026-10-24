@@ -107,6 +107,7 @@ defmodule LakehouseWeb.Router do
     get "/.well-known/webfinger", DiscoveryController, :webfinger
     get "/.well-known/iam-configuration", DiscoveryController, :configuration
     get "/.well-known/matrix/client", DiscoveryController, :matrix_client
+    get "/.well-known/matrix/server", DiscoveryController, :matrix_server
 
     post "/backend/register", IamBackendController, :create
     post "/login", IamSessionController, :create
@@ -184,21 +185,59 @@ defmodule LakehouseWeb.Router do
     pipe_through :api
 
     get "/versions", ClientController, :versions
-    post "/v3/login", ClientController, :login
+    get "/v3/login", ProtocolController, :login_flows
+    post "/v3/login", ProtocolController, :login
+    get "/v3/profile/:userId", ProtocolController, :profile
+    get "/v3/profile/:userId/:field", ProtocolController, :profile
   end
 
   scope "/_matrix/client", LakehouseWeb.Matrix, as: :matrix do
     pipe_through [:api, LakehouseWeb.Plugs.MatrixAuth]
 
-    get "/v3/sync", ClientController, :sync
-    post "/v3/createRoom", ClientController, :create_room
+    get "/v3/sync", ProtocolController, :sync
+    post "/unstable/org.matrix.msc4186/sync", ProtocolController, :sliding_sync
+    post "/v4/sync", ProtocolController, :sliding_sync
+    get "/v3/account/whoami", ProtocolController, :whoami
+    post "/v3/logout", ProtocolController, :logout
+    post "/v3/logout/all", ProtocolController, :logout_all
+    get "/v3/capabilities", ProtocolController, :capabilities
+    get "/v3/devices", ProtocolController, :devices
+    get "/v3/devices/:device", ProtocolController, :get_device
+    put "/v3/devices/:device", ProtocolController, :update_device
+    get "/v3/joined_rooms", ProtocolController, :joined_rooms
+    post "/v3/rooms/:roomId/join", ClientController, :join_room_id
+    get "/v3/rooms/:roomId/state", ProtocolController, :get_state
+    get "/v3/rooms/:roomId/state/:eventType", ProtocolController, :get_state
+    get "/v3/rooms/:roomId/state/:eventType/:stateKey", ProtocolController, :get_state
+    put "/v3/rooms/:roomId/state/:eventType/:stateKey", ProtocolController, :put_state
+    get "/v3/rooms/:roomId/event/:eventId", ProtocolController, :event
+    get "/v3/rooms/:roomId/members", ProtocolController, :members
+    get "/v3/rooms/:roomId/joined_members", ProtocolController, :joined_members
+    put "/v3/rooms/:roomId/redact/:eventId/:txnId", ProtocolController, :redact
+    post "/v3/rooms/:roomId/receipt/:receiptType/:eventId", ProtocolController, :receipt
+    post "/v3/rooms/:roomId/read_markers", ProtocolController, :read_markers
+    get "/v3/user/:userId/account_data/:type", ProtocolController, :get_data
+    put "/v3/user/:userId/account_data/:type", ProtocolController, :put_data
+    get "/v3/user/:userId/rooms/:roomId/account_data/:type", ProtocolController, :get_data
+    put "/v3/user/:userId/rooms/:roomId/account_data/:type", ProtocolController, :put_data
+    post "/v3/user/:userId/filter", ProtocolController, :create_filter
+    get "/v3/user/:userId/filter/:filterId", ProtocolController, :get_filter
+    put "/v3/sendToDevice/:eventType/:txnId", ProtocolController, :send_to_device
+    post "/v3/keys/upload", ProtocolController, :keys_upload
+    post "/v3/keys/query", ProtocolController, :keys_query
+    post "/v3/keys/claim", ProtocolController, :keys_claim
+    get "/v3/pushrules/", ProtocolController, :pushrules
+    get "/v1/media/config", ProtocolController, :media_config
+    get "/v1/media/download/:serverName/:mediaId", MediaController, :download
+
+    post "/v3/createRoom", ProtocolController, :create_room
     post "/v3/join/:roomIdOrAlias", ClientController, :join_room
     post "/v3/rooms/:roomId/invite", ClientController, :invite
     post "/v3/rooms/:roomId/leave", ClientController, :leave_room
     post "/v3/rooms/:roomId/kick", ClientController, :kick
-    put "/v3/rooms/:roomId/send/:eventType/:txnId", ClientController, :send_event
-    put "/v3/rooms/:roomId/state/:eventType", ClientController, :put_state
-    get "/v3/rooms/:roomId/messages", ClientController, :messages
+    put "/v3/rooms/:roomId/send/:eventType/:txnId", ProtocolController, :send_event
+    put "/v3/rooms/:roomId/state/:eventType", ProtocolController, :put_state
+    get "/v3/rooms/:roomId/messages", ProtocolController, :messages
   end
 
   scope "/_matrix/media", LakehouseWeb.Matrix, as: :matrix_media do
@@ -206,5 +245,23 @@ defmodule LakehouseWeb.Router do
 
     post "/v3/upload", MediaController, :upload
     get "/v3/download/:serverName/:mediaId", MediaController, :download
+  end
+  scope "/_matrix", LakehouseWeb.Matrix do
+    get "/federation/v1/version", FederationController, :version
+    get "/key/v2/server", FederationController, :server_keys
+    get "/key/v2/server/:keyId", FederationController, :server_keys
+    get "/key/v2/query/:serverName", FederationController, :query_keys
+    get "/key/v2/query/:serverName/:keyId", FederationController, :query_keys
+    post "/key/v2/query", FederationController, :query_keys
+  end
+
+  scope "/_matrix/federation", LakehouseWeb.Matrix do
+    pipe_through [:api, LakehouseWeb.Plugs.FederationAuth]
+    get "/v1/query/profile", FederationController, :profile
+    put "/v1/send/:txnId", FederationController, :transaction
+  end
+
+  scope "/_matrix", LakehouseWeb.Matrix do
+    match :*, "/*path", ProtocolController, :unrecognized
   end
 end

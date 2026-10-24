@@ -12,6 +12,7 @@ defmodule LakehouseMatrix.RiverRtc do
   end
   defp do_update(g, token, room, p) do
     Repo.transaction(fn ->
+        LakehouseMatrix.ClientStore.lock!()
     Repo.one(from p in Principal, where: p.id == ^g.principal_id, lock: "FOR NO KEY UPDATE") || Repo.rollback(:forbidden)
     Repo.one(from a in AppGrant, where: a.id == ^g.id, lock: "FOR UPDATE") || Repo.rollback(:forbidden)
     unwrap!(DelegatedGroups.with_room(g, room, "chats.write", fn ->

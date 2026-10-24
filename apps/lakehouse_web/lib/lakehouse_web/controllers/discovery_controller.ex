@@ -26,6 +26,13 @@ defmodule LakehouseWeb.DiscoveryController do
   def matrix_client(conn, _),
     do: public(conn) |> json(%{"m.homeserver" => %{"base_url" => Discovery.public_url()}})
 
+  def matrix_server(conn, _) do
+    case LakehouseMatrix.Federation.Signing.config() do
+      {:ok, _, _} -> public(conn) |> json(%{"m.server" => (URI.parse(Discovery.public_url()).host || LakehouseMatrix.Identity.homeserver_domain()) <> ":443"})
+      _ -> conn |> put_status(404) |> json(%{"errcode" => "M_NOT_FOUND", "error" => "Matrix signing is not configured"})
+    end
+  end
+
   def health(conn, _), do: json(conn, %{status: "ok"})
 
   def ready(conn, _) do

@@ -12,6 +12,7 @@ defmodule LakehouseMatrix.RiverWorkspace do
          true <- is_binary(p["txn_id"]) and is_binary(p["name"]),
          true <- "contacts.read" in g.scopes and "groups.manage" in g.scopes do
       Repo.transaction(fn ->
+        LakehouseMatrix.ClientStore.lock!()
         peers = p["member_ids"] |> Enum.map(&person!/1) |> Enum.uniq() |> Enum.sort()
         unless g.principal_id not in peers, do: Repo.rollback(:invalid_member)
         ids = Enum.sort([g.principal_id | peers])

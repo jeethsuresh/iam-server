@@ -135,3 +135,13 @@ if rtc_url = System.get_env("MATRIX_RTC_URL") do
   unless uri.scheme == "wss" and is_binary(uri.host) and is_nil(uri.userinfo), do: raise("MATRIX_RTC_URL must be a trusted WSS URL")
   config :lakehouse_matrix, :rtc_url, rtc_url
 end
+
+# Persistent, dedicated Ed25519 seed; never reuse the IAM JWT signing secret.
+if matrix_key = System.get_env("MATRIX_SIGNING_KEY") do
+  case Base.decode64(String.trim_trailing(matrix_key, "="), padding: false) do
+    {:ok, seed} when byte_size(seed) == 32 -> :ok
+    _ -> raise "MATRIX_SIGNING_KEY must encode a 32-byte Ed25519 seed"
+  end
+  config :lakehouse_matrix, signing_key: String.trim_trailing(matrix_key, "="),
+    signing_key_id: System.get_env("MATRIX_SIGNING_KEY_ID", "ed25519:gravitas1")
+end

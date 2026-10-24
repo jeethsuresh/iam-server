@@ -28,6 +28,13 @@ defmodule LakehouseWeb.Bdd.MatrixSteps do
     {:ok, Map.merge(context, %{last_conn: conn, room_id: room_id, room_name: name})}
   end
 
+  step "I create a public matrix room named {string}", %{args: [name]} = context do
+    token = Map.fetch!(context, :matrix_token)
+    conn = MatrixClient.create_room(token, name, %{"preset" => "public_chat"})
+    assert %{"room_id" => room_id} = json_response(conn, 200)
+    {:ok, Map.merge(context, %{last_conn: conn, room_id: room_id, room_name: name})}
+  end
+
   step "I invite {string} to the room via API", %{args: [user_id]} = context do
     token = Map.fetch!(context, :matrix_token)
     room_id = Map.fetch!(context, :room_id)
