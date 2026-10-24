@@ -52,6 +52,36 @@ defmodule LakehouseWeb.RiverPublishingTest do
     assert {:ok, _} = RiverPublishing.reaction(gc, post, %{"key" => "👍", "active" => true, "txn_id" => "react"})
     assert {:ok, %{reaction_summary: [%{count: 1}]}} = RiverPublishing.show(nil, post)
   end
+
+  test "a saved members-only post persists its public comment room when published", %{grants: [ga, gb, gc], room: room, post: post} do
+    # River's editor always saves an initial publication policy, even for a
+    # private post. Publishing later must update this existing database row.
+    assert {:ok, _} = RiverPublishing.policy(ga, room, %{"event_id" => post,
+      "visibility" => "members", "comments_policy" => "members", "txn_id" => "save-private"})
+    assert is_nil(Repo.get!(LakehouseMatrix.Schema.RiverPublication, post).thread_id)
+    assert {:ok, _} = RiverPublishing.comment(gb, post, %{"body" => "Earlier private comment",
+      "audience" => "members", "txn_id" => "private-before-publication"})
+
+    assert {:ok, %{publication: policy}} = publish(ga, room, post)
+    assert is_binary(policy["thread_id"]) and policy["thread_id"] != room
+    assert is_binary(policy["anchor_id"])
+    stored = Repo.get!(LakehouseMatrix.Schema.RiverPublication, post)
+    assert stored.thread_id == policy["thread_id"]
+    assert stored.anchor_id == policy["anchor_id"]
+    assert {:ok, comment} = RiverPublishing.comment(gc, post, %{"body" => "Outside public comment",
+      "audience" => "public", "txn_id" => "public-after-private"})
+    assert get_in(comment, ["content", "m.relates_to", "event_id"]) == stored.anchor_id
+    assert {:ok, _} = RiverPublishing.reaction(gc, post, %{"key" => "👍", "active" => true, "txn_id" => "public-after-private-reaction"})
+    assert {:ok, response} = RiverPublishing.show(nil, post)
+    assert length(response.comments) == 1
+    assert hd(response.comments)["content"]["body"] == "Outside public comment"
+    refute Jason.encode!(response) =~ "Earlier private comment"
+    assert [%{key: "👍", count: 1}] = response.reaction_summary
+
+    assert {:ok, %{publication: same}} = publish(ga, room, post, "public", "publish-again")
+    assert same["thread_id"] == stored.thread_id and same["anchor_id"] == stored.anchor_id
+    refute Memberships.joined?(room, gc.principal_id)
+  end
   test "author permissions, members-only comments, disabling and unpublishing are enforced on every write path", %{grants: [ga, gb, gc], room: room, post: post} do
     assert {:error, :forbidden} = publish(gb, room, post)
     assert {:error, :insufficient_scope} = publish(%{ga | scopes: ga.scopes -- ["posts.publish"]}, room, post)
