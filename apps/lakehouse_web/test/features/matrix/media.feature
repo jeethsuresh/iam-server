@@ -26,7 +26,7 @@ Feature: Room media and membership via Matrix API
     And an approved user "bob" with password "password123"
     And an approved user "carol" with password "password123"
     When I matrix-login as "alice"
-    And I create a matrix room named "KickRoom"
+    And I create a public matrix room named "KickRoom"
     And "bob" joins the room via API
     And "carol" joins the room via API
     And I matrix-login as "bob"

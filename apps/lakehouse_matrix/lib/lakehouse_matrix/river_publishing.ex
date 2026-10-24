@@ -232,6 +232,7 @@ defmodule LakehouseMatrix.RiverPublishing do
   end
   defp locked_grant(g, fun) do
     Repo.transaction(fn ->
+      LakehouseMatrix.ClientStore.lock!()
       Repo.one(from a in AppGrant, where: a.id == ^g.id, lock: "FOR UPDATE") || Repo.rollback(:forbidden)
       fun.()
     end)

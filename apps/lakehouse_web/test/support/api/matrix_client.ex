@@ -21,10 +21,10 @@ defmodule LakehouseWeb.Test.Api.MatrixClient do
     |> put_req_header("content-type", "application/json")
   end
 
-  def create_room(token, name) do
+  def create_room(token, name, params \\ %{}) do
     token
     |> with_token()
-    |> post("/_matrix/client/v3/createRoom", %{"name" => name})
+    |> post("/_matrix/client/v3/createRoom", Map.put(params, "name", name))
   end
 
   def join(token, room_id) do

@@ -8,7 +8,7 @@ Feature: Multi-user Matrix chat
     When I matrix-login as "alice"
     And I matrix-login as "bob"
     And I matrix-login as "alice"
-    And I create a matrix room named "Chat"
+    And I create a public matrix room named "Chat"
     And "bob" joins the room via API
     When "alice" sends matrix message "hello bob" with txn "ab1"
     Then "bob" room messages should include "hello bob"
@@ -23,7 +23,7 @@ Feature: Multi-user Matrix chat
     Given an approved user "alice" with password "password123"
     And an approved user "bob" with password "password123"
     When I matrix-login as "alice"
-    And I create a matrix room named "Thread"
+    And I create a public matrix room named "Thread"
     And "bob" joins the room via API
     And I matrix-login as "bob"
     When "alice" sends matrix message "ping" with txn "p1"

@@ -123,7 +123,8 @@ defmodule LakehouseMatrix.Matrix do
     with {:ok, room} <- resolve_room(room_id_or_alias),
          {:ok, principal} <- fetch_principal(principal_id) do
       invited = Memberships.invited?(room.id, principal_id)
-      allowed = if delegated?(room.id), do: invited, else: invited or can_join?(principal_id, room.id)
+      rules = get_in(State.get(room.id, "m.room.join_rules") || %{}, ["content", "join_rule"])
+      allowed = if delegated?(room.id), do: invited, else: Memberships.joined?(room.id, principal_id) or invited or (rules in [nil, "public"] and can_join?(principal_id, room.id))
 
       if allowed do
         with :ok <- ensure_room_started(room),
@@ -350,7 +351,7 @@ defmodule LakehouseMatrix.Matrix do
   def send_message(principal_id, room_id, txn_id, content) do
     if delegated?(room_id) do
       grant = %LakehouseIam.Schema.AppGrant{principal_id: principal_id,
-        app_origin: "https://" <> Identity.homeserver_domain(), scopes: ["chats.write"], room_mode: :all}
+        app_origin: "https://" <> Identity.homeserver_domain(), scopes: ["chats.write", "spaces.channels", "calls.join"], room_mode: :all}
       LakehouseMatrix.DelegatedGroups.send(grant, room_id, "m.room.message", txn_id, content)
     else
       legacy_send_message(principal_id, room_id, txn_id, content)
@@ -510,18 +511,7 @@ defmodule LakehouseMatrix.Matrix do
   defp blank_state_key(nil), do: nil
   defp blank_state_key(key), do: key
 
-  defp origin_ts(txn_id) do
-  base = System.system_time(:millisecond)
-
-  case txn_id do
-    id when is_binary(id) ->
-      # Nudge txn-based ids so rapid sends stay ordered without a central sequencer.
-      base + rem(:erlang.phash2(id), 1000)
-
-    _ ->
-      base
-  end
-  end
+  defp origin_ts(_txn_id), do: System.system_time(:millisecond)
 
   defp resolve_room(room_id_or_alias) do
     cond do
