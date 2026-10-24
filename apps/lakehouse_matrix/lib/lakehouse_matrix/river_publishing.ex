@@ -110,8 +110,7 @@ defmodule LakehouseMatrix.RiverPublishing do
       targets = if publication && publication.thread_id && (member or publication.comments_policy == "public"),
         do: targets ++ [{publication.thread_id, publication.anchor_id, "public"}], else: targets
       {comments, cursor} = comments_page(targets, actor, params)
-      reaction_root = if publication && publication.thread_id, do: Repo.get_by!(RoomEvent, event_id: publication.anchor_id), else: original
-      reactions = hd(RiverContent.decorate([reaction_root], actor))["reaction_summary"]
+      reactions = projected["reaction_summary"]
       policy = if publication, do: summary(publication), else: @defaults
       %{entry: public_event, space: %{id: original.room_id, name: LakehouseMatrix.Rooms.get_room(original.room_id).name},
         publication: policy, comments: comments, next_cursor: cursor, reaction_summary: reactions, member: member,

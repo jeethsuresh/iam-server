@@ -96,31 +96,37 @@ defmodule LakehouseMatrix.RiverContent do
       fragment("? #>> '{m.relates_to,event_id}'", e.content) in ^ids,
       order_by: [asc: e.inserted_at, asc: e.id])
       |> Map.new(fn e -> {get_in(e.content, ["m.relates_to", "event_id"]), e} end)
-    {:ok, room_uuid} = Ecto.UUID.dump(room)
+    # Published posts use their public anchor for reactions in every River view.
+    # Earlier member-only reactions stay in the private event history.
+    linked = Map.filter(publications, fn {_, p} -> not is_nil(p["anchor_id"]) end)
+    public = Map.filter(linked, fn {_, p} -> p["visibility"] == "public" end)
+    targets = ids ++ Enum.map(linked, fn {_, p} -> p["anchor_id"] end)
+    rooms = [room | Enum.map(linked, fn {_, p} -> p["thread_id"] end)] |> Enum.uniq()
+    room_uuids = Enum.map(rooms, fn id -> {:ok, uuid} = Ecto.UUID.dump(id); uuid end)
     {:ok, actor_uuid} = Ecto.UUID.dump(actor)
     sql = """
     SELECT r.content #>> '{m.relates_to,event_id}', r.content #>> '{m.relates_to,key}',
            COUNT(DISTINCT r.sender), BOOL_OR(r.principal_id = $3)
     FROM room_events r
-    WHERE r.room_id = $1 AND r.type = 'm.reaction'
+    WHERE r.room_id = ANY($1::uuid[]) AND r.type = 'm.reaction'
       AND r.content #>> '{m.relates_to,event_id}' = ANY($2::text[])
       AND NOT EXISTS (SELECT 1 FROM room_events d WHERE d.room_id = r.room_id
         AND d.type = 'm.room.redaction' AND d.content->>'redacts' = r.event_id)
     GROUP BY 1, 2 ORDER BY 1, 2
     """
-    reactions = Repo.query!(sql, [room_uuid, ids, actor_uuid]).rows
+    reactions = Repo.query!(sql, [room_uuids, targets, actor_uuid]).rows
       |> Enum.group_by(&hd/1, fn [_id, key, count, mine] -> %{key: key, count: count, mine: mine || false} end)
     replies = Repo.all(from e in RoomEvent,
-      where: e.room_id == ^room and e.type == "m.room.message" and
-        fragment("COALESCE(? #>> '{m.relates_to,event_id}', ? #>> '{m.relates_to,m.in_reply_to,event_id}')", e.content, e.content) in ^ids,
+      where: e.room_id in ^rooms and e.type == "m.room.message" and
+        fragment("COALESCE(? #>> '{m.relates_to,event_id}', ? #>> '{m.relates_to,m.in_reply_to,event_id}')", e.content, e.content) in ^targets,
       group_by: fragment("COALESCE(? #>> '{m.relates_to,event_id}', ? #>> '{m.relates_to,m.in_reply_to,event_id}')", e.content, e.content),
       select: {fragment("COALESCE(? #>> '{m.relates_to,event_id}', ? #>> '{m.relates_to,m.in_reply_to,event_id}')", e.content, e.content), count(e.id)}) |> Map.new()
     for e <- rows do
       edit = edits[e.event_id]
       Events.to_client_event(e)
       |> Map.put("publication", Map.get(publications, e.event_id, %{"visibility" => "members", "comments_policy" => "members"}))
-      |> Map.put("reaction_summary", Map.get(reactions, e.event_id, []))
-      |> Map.put("reply_count", Map.get(replies, e.event_id, 0))
+      |> Map.put("reaction_summary", Map.get(reactions, if(public[e.event_id], do: public[e.event_id]["anchor_id"], else: e.event_id), []))
+      |> Map.put("reply_count", Map.get(replies, e.event_id, 0) + if(linked[e.event_id], do: Map.get(replies, linked[e.event_id]["anchor_id"], 0), else: 0))
       |> Map.put("unsigned", %{"cool.gravitas.stream_order" => "#{DateTime.to_unix(e.inserted_at, :microsecond)}:#{e.id}"})
       |> then(fn event ->
         if edit && edit.principal_id == e.principal_id do

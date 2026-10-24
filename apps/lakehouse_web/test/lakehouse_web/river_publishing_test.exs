@@ -119,4 +119,25 @@ defmodule LakehouseWeb.RiverPublishingTest do
     assert Repo.get_by!(RoomEvent, event_id: private["event_id"]).room_id == room
   end
 
+  test "post feed and detail share canonical reactions and include public comment counts", %{grants: [ga, gb, gc], room: room, post: post} do
+    {:ok, _} = RiverPublishing.reaction(gb, post, %{"key"=>"❤️", "active"=>true, "txn_id"=>"private-react"})
+    {:ok, _} = publish(ga, room, post)
+    {:ok, _} = RiverPublishing.reaction(gc, post, %{"key"=>"👍", "active"=>true, "txn_id"=>"public-react"})
+    {:ok, _} = RiverPublishing.comment(gc, post, %{"body"=>"Public reply", "audience"=>"public", "txn_id"=>"public-reply"})
+    {:ok, _} = RiverPublishing.comment(gb, post, %{"body"=>"Private reply", "audience"=>"members", "txn_id"=>"private-reply"})
+    {:ok, %{events: [feed]}} = RiverContent.entries(gb, room, %{"kind"=>"post"})
+    {:ok, detail} = RiverPublishing.show(gb, post)
+    assert feed["reaction_summary"] == detail.reaction_summary
+    assert feed["reply_count"] == 2
+    assert [%{key: "👍", count: 1}] = detail.reaction_summary
+    {:ok, outside} = RiverPublishing.show(nil, post)
+    assert length(outside.comments) == 1
+    refute Jason.encode!(outside) =~ "Private reply"
+    refute Jason.encode!(outside) =~ "❤️"
+    {:ok, _} = RiverPublishing.policy(ga, room, %{"event_id"=>post,"visibility"=>"members","comments_policy"=>"members","txn_id"=>"hide-post"})
+    {:ok, private} = RiverPublishing.show(gb, post)
+    assert [%{key: "❤️", count: 1}] = private.reaction_summary
+    assert {:error, :not_found} = RiverPublishing.show(nil, post)
+  end
+
 end
