@@ -99,6 +99,6 @@ defmodule LakehouseMatrix.ClientUia do
     do:
       params
       |> Map.delete("auth")
-      |> LakehouseMatrix.Federation.Signing.canonical()
+      |> :erlang.term_to_binary([:deterministic])
       |> ClientStore.hash()
 end

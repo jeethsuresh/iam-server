@@ -213,6 +213,10 @@ defmodule LakehouseWeb.Router do
     post "/v3/user_directory/search", ProtocolController, :user_directory
     get "/v1/mutual_rooms", ProtocolController, :mutual_rooms
     get "/v3/account/whoami", ProtocolController, :whoami
+    post "/v3/user/:userId/openid/request_token", ProtocolController, :openid_token
+    post "/v3/rooms/:roomId/report/:eventId", ProtocolController, :report
+    post "/v3/rooms/:roomId/report", ProtocolController, :report
+    post "/v3/users/:userId/report", ProtocolController, :report
     post "/v3/logout", ProtocolController, :logout
     post "/v3/logout/all", ProtocolController, :logout_all
     post "/v1/login/get_token", ProtocolController, :login_token
@@ -324,6 +328,11 @@ defmodule LakehouseWeb.Router do
     get "/key/v2/query/:serverName", FederationController, :query_keys
     get "/key/v2/query/:serverName/:keyId", FederationController, :query_keys
     post "/key/v2/query", FederationController, :query_keys
+  end
+
+  scope "/_matrix/federation", LakehouseWeb.Matrix do
+    pipe_through :api
+    get "/v1/openid/userinfo", FederationController, :openid_userinfo
   end
 
   scope "/_matrix/federation", LakehouseWeb.Matrix do

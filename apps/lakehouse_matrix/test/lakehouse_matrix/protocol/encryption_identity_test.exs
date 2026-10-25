@@ -64,6 +64,27 @@ defmodule LakehouseMatrix.Protocol.EncryptionIdentityTest do
     assert CrossSigning.keys(ctx.alice.id) == %{}
   end
 
+  test "UIA binds ordinary JSON numeric values without requiring PDU canonical JSON", ctx do
+    body = %{"extra" => %{"number" => 0.5, "other" => [1, true]}}
+
+    {:error, {:uia, challenge}} =
+      ClientUia.perform(ctx.alice.id, "A", "numeric-json", body, fn ->
+        flunk("not authenticated")
+      end)
+
+    auth = %{
+      "type" => "m.login.password",
+      "user" => "cryptoalice",
+      "password" => "password123",
+      "session" => challenge["session"]
+    }
+
+    authorized = Map.put(body, "auth", auth)
+
+    assert {:ok, %{}} =
+             ClientUia.perform(ctx.alice.id, "A", "numeric-json", authorized, fn -> {:ok, %{}} end)
+  end
+
   test "uploaded device signatures are verified and cannot change the key object", ctx do
     assert {:ok, _} =
              ClientKeys.upload(ctx.alice.id, "A", ctx.alice.username, %{

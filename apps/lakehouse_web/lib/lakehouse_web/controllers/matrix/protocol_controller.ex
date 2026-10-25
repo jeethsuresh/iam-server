@@ -160,6 +160,34 @@ defmodule LakehouseWeb.Matrix.ProtocolController do
         "is_guest" => false
       })
 
+  def openid_token(conn, %{"userId" => user}) do
+    conn = put_resp_header(conn, "cache-control", "no-store")
+
+    respond(
+      conn,
+      if(user == Identity.user_id(conn.assigns.username),
+        do: LakehouseMatrix.OpenId.issue(principal(conn)),
+        else: {:error, :forbidden}
+      )
+    )
+  end
+
+  def report(conn, _) do
+    params = conn.path_params
+
+    {kind, target} =
+      cond do
+        params["eventId"] -> {"event", params["roomId"]}
+        params["roomId"] -> {"room", params["roomId"]}
+        true -> {"user", params["userId"]}
+      end
+
+    respond(
+      conn,
+      LakehouseMatrix.Reports.submit(principal(conn), kind, target, body(conn), params["eventId"])
+    )
+  end
+
   def logout(conn, _), do: json(conn, ClientStore.logout(principal(conn), device(conn)))
   def logout_all(conn, _), do: json(conn, ClientStore.logout(principal(conn), device(conn), true))
   def devices(conn, _), do: json(conn, %{"devices" => ClientStore.devices(principal(conn))})
@@ -635,6 +663,9 @@ defmodule LakehouseWeb.Matrix.ProtocolController do
         "soft_logout" => true
       })
 
+  def respond(conn, {:error, :invalid_openid_token}),
+    do: error(conn, 401, "M_UNKNOWN_TOKEN", "OpenID token unknown or expired")
+
   def respond(conn, {:error, :rate_limited}),
     do:
       conn
@@ -642,7 +673,7 @@ defmodule LakehouseWeb.Matrix.ProtocolController do
       |> put_resp_header("retry-after", "60")
       |> json(%{
         "errcode" => "M_LIMIT_EXCEEDED",
-        "error" => "Please wait before requesting another login token",
+        "error" => "Too many requests; please try again later",
         "retry_after_ms" => 60_000
       })
 

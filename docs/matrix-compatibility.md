@@ -99,8 +99,17 @@ clients does not mean River client E2EE is complete.
   only display name/avatar enter room memberships and presence. Private room
   tags preserve fractional ordering and mutual-room pages bind user/device and
   recheck current membership without including new joins in an older page.
+- Short-lived OpenID identity attestations use separate hashed credentials;
+  they cannot authenticate Matrix clients. Room, event and user reports are
+  retained privately with bounded reasons and per-user limits. Event reports
+  require current membership; unknown targets can be concealed without accepting
+  inaccessible event evidence.
 - Authenticated local/remote media and multipart federation downloads, with
   separate visibility for private River uploads and standard Matrix media.
+  Raw JSON files retain their bytes and MIME type through client upload and
+  federation. Matrix requests accept JSON without a mandatory Content-Type and
+  return JSON-object/parse errors with CORS; browser SSO and legacy uploads retain
+  their existing request handling.
 - Matrix 1.19 policy-server requests and signature validation. Local operations
   retry outside database transactions; unapproved inbound events soft-fail.
 
@@ -111,7 +120,7 @@ reuse the IAM JWT key or rotate a seed under an existing key ID.
 
 ## Remaining release and conformance work
 
-- Complete remaining account-management, search, reporting, OpenID, third-party,
+- Complete remaining account-management, search, third-party,
   media and administration work. Audit every Matrix 1.19 module and required
   behavior, document server policies and optional operations, and return honest
   Matrix errors for unsupported endpoints.

@@ -10,16 +10,8 @@ defmodule LakehouseWeb.Plugs.MatrixAuth do
   def init(opts), do: opts
 
   def call(conn, _opts) do
-    authorization =
-      case get_req_header(conn, "authorization") do
-        [] ->
-          if is_binary(conn.params["access_token"]),
-            do: ["Bearer " <> conn.params["access_token"]],
-            else: []
-
-        headers ->
-          headers
-      end
+    conn = fetch_query_params(conn)
+    authorization = if raw = token(conn), do: ["Bearer " <> raw], else: []
 
     case authorization do
       ["Bearer " <> token] ->
@@ -51,6 +43,23 @@ defmodule LakehouseWeb.Plugs.MatrixAuth do
 
       _ ->
         matrix_error(conn, 401, "M_MISSING_TOKEN", "Missing access token")
+    end
+  end
+
+  def token(conn) do
+    case get_req_header(conn, "authorization") do
+      [] ->
+        params = fetch_query_params(conn).query_params
+        if is_binary(params["access_token"]), do: params["access_token"]
+
+      [header] ->
+        case Regex.run(~r/\ABearer +([^\s]+)\z/i, header) do
+          [_, raw] -> raw
+          _ -> nil
+        end
+
+      _ ->
+        nil
     end
   end
 

@@ -52,6 +52,21 @@ try {
   const alice = await start(native, a);
   const bob = await start(reference, b);
   console.log('CRYPTO PASS both Rust-backed SDK clients initialized');
+  const jsonBytes = new TextEncoder().encode('{ "base64": "SGVsbG8=", "_json": [1, 2] }\n');
+  const jsonUpload = await fetch(native + '/_matrix/media/v3/upload?filename=metadata.json', {
+    method: 'POST', headers: {Authorization: 'Bearer ' + a.access_token, 'Content-Type': 'application/json'}, body: jsonBytes
+  });
+  assert.equal(jsonUpload.status, 200);
+  const jsonUri = (await jsonUpload.json()).content_uri;
+  const [jsonServer, jsonId] = jsonUri.slice('mxc://'.length).split('/');
+  const jsonDownload = await fetch(reference + '/_matrix/client/v1/media/download/' + encodeURIComponent(jsonServer) + '/' + encodeURIComponent(jsonId), {
+    headers: {Authorization: 'Bearer ' + b.access_token}
+  });
+  assert.equal(jsonDownload.status, 200);
+  assert.ok(jsonDownload.headers.get('content-type').startsWith('application/json'));
+  assert.deepEqual(new Uint8Array(await jsonDownload.arrayBuffer()), jsonBytes);
+  console.log('CRYPTO PASS JSON media bytes and MIME type survive upload and federated download');
+
   for (const client of [alice, bob]) {
     await client.getCrypto().userHasCrossSigningKeys(client.getUserId(), true);
     await client.getCrypto().bootstrapSecretStorage({setupNewSecretStorage: true,

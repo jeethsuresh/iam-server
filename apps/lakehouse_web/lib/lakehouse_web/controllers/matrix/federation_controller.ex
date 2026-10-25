@@ -55,6 +55,12 @@ defmodule LakehouseWeb.Matrix.FederationController do
 
   def profile(conn, _), do: ProtocolController.respond(conn, {:error, :invalid_param})
 
+  def openid_userinfo(conn, params),
+    do:
+      conn
+      |> put_resp_header("cache-control", "no-store")
+      |> ProtocolController.respond(LakehouseMatrix.OpenId.userinfo(params["access_token"]))
+
   def directory(conn, %{"room_alias" => ref}),
     do:
       ProtocolController.respond(

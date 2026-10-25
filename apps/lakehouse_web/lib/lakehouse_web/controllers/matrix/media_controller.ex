@@ -66,9 +66,11 @@ defmodule LakehouseWeb.Matrix.MediaController do
           end
 
         type =
-          if header_type in [nil, "application/json", "application/x-www-form-urlencoded"],
-            do: guess_from_name(filename),
-            else: header_type
+          if is_nil(header_type) or
+               (conn.assigns.matrix_device_id == "legacy" and
+                  header_type in ["application/json", "application/x-www-form-urlencoded"]),
+             do: guess_from_name(filename),
+             else: header_type
 
         {body, type}
     end

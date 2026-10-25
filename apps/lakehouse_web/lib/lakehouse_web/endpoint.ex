@@ -26,14 +26,14 @@ defmodule LakehouseWeb.Endpoint do
     event_prefix: [:phoenix, :endpoint]
 
   plug Plug.Session, @session_options
+  plug LakehouseWeb.Plugs.AppCors
 
-  plug Plug.Parsers,
+  plug LakehouseWeb.Plugs.MatrixParsers,
     parsers: [:urlencoded, :multipart, :json],
     pass: ["*/*"],
     json_decoder: Jason
 
   plug Plug.MethodOverride
   plug Plug.Head
-  plug LakehouseWeb.Plugs.AppCors
   plug LakehouseWeb.Router
 end
