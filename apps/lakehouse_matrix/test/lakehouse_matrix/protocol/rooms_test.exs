@@ -69,6 +69,62 @@ defmodule LakehouseMatrix.Protocol.RoomsTest do
     assert {:ok, _} = Matrix.leave_room(ctx.bob.id, ref)
   end
 
+  test "departed users retain eligible history without access to later events", ctx do
+    {:ok, %{"room_id" => ref}} = ClientRooms.create(ctx.alice.id, %{"preset" => "public_chat"})
+    {:ok, local} = Identity.parse_room_id(ref)
+    {:ok, _} = Matrix.join_room(ctx.bob.id, ref)
+
+    {:ok, before} =
+      ClientRooms.send(ctx.alice.id, "A", ref, "m.room.message", "before", %{
+        "body" => "before departure"
+      })
+
+    {:ok, _} = Matrix.leave_room(ctx.bob.id, ref)
+
+    {:ok, after_event} =
+      ClientRooms.send(ctx.alice.id, "A", ref, "m.room.message", "after", %{
+        "body" => "after departure"
+      })
+
+    assert {:ok, _} = ClientRooms.event(ctx.bob.id, ref, before["event_id"])
+    assert {:error, :not_found} = ClientRooms.event(ctx.bob.id, ref, after_event["event_id"])
+    assert {:ok, history} = ClientSync.history(ctx.bob.id, "B", local, %{"limit" => 100})
+    assert Enum.any?(history["chunk"], &(&1["event_id"] == before["event_id"]))
+    refute Enum.any?(history["chunk"], &(&1["event_id"] == after_event["event_id"]))
+
+    assert {:error, _} =
+             ClientRooms.send(ctx.bob.id, "B", ref, "m.room.message", "denied", %{
+               "body" => "cannot publish after leaving"
+             })
+  end
+
+  test "sync membership and summaries stop at the device-delivery high watermark", ctx do
+    alias LakehouseMatrix.ClientStore
+
+    {:ok, %{"room_id" => ref}} =
+      ClientRooms.create(ctx.alice.id, %{"invite" => [Identity.user_id("bob")]})
+
+    rows =
+      for _ <- 1..101,
+          do: %{
+            principal_id: ClientStore.dump_id(ctx.bob.id),
+            device_id: "B",
+            sender: Identity.user_id("alice"),
+            type: "m.test",
+            content: %{}
+          }
+
+    Repo.insert_all("matrix_to_device", rows)
+    {:ok, _} = Matrix.join_room(ctx.bob.id, ref)
+    assert {:ok, first} = ClientSync.sync(ctx.bob.id, "B", %{})
+    assert length(first["to_device"]["events"]) == 100
+    assert get_in(first, ["rooms", "invite", ref])
+    refute get_in(first, ["rooms", "join", ref])
+    assert {:ok, second} = ClientSync.sync(ctx.bob.id, "B", %{"since" => first["next_batch"]})
+    assert get_in(second, ["rooms", "join", ref])
+    refute get_in(second, ["rooms", "invite", ref])
+  end
+
   test "River spaces and channels share signed events, stable retries and restricted membership with Matrix clients",
        ctx do
     alias LakehouseMatrix.{DelegatedGroups, Memberships, State}

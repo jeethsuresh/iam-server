@@ -45,7 +45,7 @@ defmodule LakehouseMatrix.Federation.RoomAccess do
     state = state(metadata)
 
     allowed?(metadata, server) and
-      (joined?(state, server) or
+      (joined?(state, server) or historical_join?(metadata, server) or
          get_in(state, [{"m.room.history_visibility", ""}, "content", "history_visibility"]) ==
            "world_readable")
   end
@@ -53,7 +53,10 @@ defmodule LakehouseMatrix.Federation.RoomAccess do
   def visible_event?(metadata, server, id) do
     record = Graph.event(id)
 
-    with true <- not is_nil(record) and record.local_room_id == metadata.local_room_id,
+    with true <-
+           not is_nil(record) and record.local_room_id == metadata.local_room_id and
+             not record.auth_rejected and not record.state_rejected and not record.soft_failed and
+             not record.outlier,
          true <- allowed?(metadata, server) do
       event = record.pdu
       graph = Graph.load_graph(metadata.local_room_id, [id])
@@ -64,6 +67,14 @@ defmodule LakehouseMatrix.Federation.RoomAccess do
       visibility =
         get_in(before, [{"m.room.history_visibility", ""}, "content", "history_visibility"]) ||
           "shared"
+
+      visibility =
+        if event["type"] == "m.room.history_visibility" and event["state_key"] == "" do
+          after_visibility = event["content"]["history_visibility"] || "shared"
+          Enum.min_by([visibility, after_visibility], &visibility_rank/1)
+        else
+          visibility
+        end
 
       own_member =
         event["type"] == "m.room.member" and
@@ -88,12 +99,43 @@ defmodule LakehouseMatrix.Federation.RoomAccess do
             end)
 
           _ ->
-            joined?(state(metadata), server) or joined?(before, server)
+            joined?(state(metadata), server) or joined?(before, server) or
+              historical_join?(metadata, server, id)
         end
     else
       _ -> false
     end
   end
+
+  # A shared-history event remains readable after departure only when it was
+  # before a valid join in the DAG. Arrival order and depth do not prove this.
+  def historical_join?(metadata, server, ancestor \\ nil) do
+    joins =
+      LakehouseIam.Repo.all(
+        from p in LakehouseMatrix.Schema.Pdu,
+          where:
+            p.local_room_id == ^metadata.local_room_id and not p.auth_rejected and
+              not p.state_rejected and not p.soft_failed and not p.outlier and
+              fragment(
+                "?->>'type' = 'm.room.member' AND ?->'content'->>'membership' = 'join'",
+                p.pdu,
+                p.pdu
+              ),
+          select: {p.event_id, p.pdu}
+      )
+      |> Enum.flat_map(fn {id, event} ->
+        if Event.user_domain(event["state_key"]) == {:ok, server}, do: [id], else: []
+      end)
+
+    if is_nil(ancestor),
+      do: joins != [],
+      else: Graph.ancestor?(metadata.local_room_id, ancestor, joins)
+  end
+
+  defp visibility_rank("world_readable"), do: 0
+  defp visibility_rank("shared"), do: 1
+  defp visibility_rank("invited"), do: 2
+  defp visibility_rank(_), do: 3
 
   def restricted_join(metadata, user, template) do
     state = state(metadata)

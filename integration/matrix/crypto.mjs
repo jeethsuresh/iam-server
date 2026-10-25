@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { createClient, ClientEvent, RoomEvent } from 'matrix-js-sdk';
+import { Attachment, EncryptedAttachment } from '@matrix-org/matrix-sdk-crypto-wasm';
 import { logger } from 'matrix-js-sdk/lib/logger.js';
 logger.setLevel('warn');
 const clients = [];
@@ -91,6 +92,34 @@ try {
     assert(!JSON.stringify(wire).includes(plainB));
   }
   console.log('CRYPTO PASS homeserver event API exposes ciphertext only');
+  for (const [sender, receiver, source, target, session] of [[alice, bob, native, reference, b], [bob, alice, reference, native, a]]) {
+    const plain = new TextEncoder().encode('private attachment from ' + source + ' ' + suffix);
+    const encrypted = Attachment.encrypt(plain);
+    const info = JSON.parse(encrypted.mediaEncryptionInfo);
+    const cipher = encrypted.encryptedData;
+    const uploaded = await fetch(source + '/_matrix/media/v3/upload?filename=encrypted.bin', {method: 'POST',
+      headers: {Authorization: 'Bearer ' + sender.getAccessToken(), 'Content-Type': 'application/octet-stream'}, body: cipher});
+    assert(uploaded.ok, 'encrypted attachment upload failed: ' + uploaded.status);
+    const {content_uri: url} = await uploaded.json();
+    const sent = await sender.sendMessage(room, {msgtype: 'm.file', body: 'private.bin', file: {...info, url}});
+    let content;
+    await until('peer receives encrypted attachment metadata from ' + source, async () => {
+      const event = receiver.getRoom(room)?.getLiveTimeline().getEvents().find(e => e.getId() === sent.event_id);
+      if (event) await receiver.decryptEventIfNeeded(event);
+      content = event?.getContent();
+      return content?.file?.url === url;
+    });
+    const [server, id] = url.slice('mxc://'.length).split('/');
+    const downloaded = await fetch(target + '/_matrix/client/v1/media/download/' + encodeURIComponent(server) + '/' + encodeURIComponent(id),
+      {headers: {Authorization: 'Bearer ' + session.access_token}});
+    assert(downloaded.ok, 'federated attachment download failed: ' + downloaded.status + ' ' + await (downloaded.ok ? Promise.resolve('') : downloaded.text()));
+    const received = new Uint8Array(await downloaded.arrayBuffer());
+    assert.deepEqual(received, cipher);
+    const restored = Attachment.decrypt(new EncryptedAttachment(received, JSON.stringify(content.file)));
+    assert.deepEqual(restored, plain);
+    encrypted.free();
+    console.log('CRYPTO PASS encrypted attachment transfers and decrypts from ' + source);
+  }
   await alice.getCrypto().resetKeyBackup();
   await until('client-encrypted session backup reaches Gravitas', async () => {
     const version = await json(native, '/_matrix/client/v3/room_keys/version', null, a.access_token);

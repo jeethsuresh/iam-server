@@ -77,6 +77,8 @@ defmodule LakehouseMatrix.Protocol.ImportTest do
   end
 
   test "an incoming invite is an outlier until the subsequent verified remote join", ctx do
+    {:ok, before} = ClientSync.sync(ctx.user.id, "A", %{})
+
     {invite, invited} =
       F.append(ctx.remote, "m.room.member", %{"membership" => "invite"}, key: ctx.mxid)
 
@@ -101,6 +103,11 @@ defmodule LakehouseMatrix.Protocol.ImportTest do
     metadata = Graph.room_by_id(ctx.remote.room)
     assert Memberships.invited?(metadata.local_room_id, ctx.user.id)
     assert Graph.event(invite["event_id"]).outlier
+
+    assert {:ok, incremental} =
+             ClientSync.sync(ctx.user.id, "A", %{"since" => before["next_batch"]})
+
+    assert get_in(incremental, ["rooms", "invite", ctx.remote.room, "invite_state", "events"])
     assert {:ok, sync} = ClientSync.sync(ctx.user.id, "A", %{})
     assert get_in(sync, ["rooms", "invite", ctx.remote.room, "invite_state", "events"])
 

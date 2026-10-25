@@ -2,10 +2,10 @@ defmodule LakehouseMatrix.ClientSync do
   @moduledoc "Commit-ordered sync over the same events used by River, including private device and account data."
   import Ecto.Query
   alias LakehouseIam.Repo
-  alias LakehouseMatrix.{ClientStore, Cursor, Events, Identity, Memberships}
+  alias LakehouseMatrix.{ClientStore, Cursor, Events, Identity}
   alias LakehouseMatrix.Schema.RoomEvent
 
-  def sync(principal, device, params) do
+  def sync(principal, device, params, options \\ []) do
     params =
       if device == "legacy" and is_binary(params["since"]) and
            Regex.match?(~r/\As[0-9]+\z/, params["since"]),
@@ -21,11 +21,13 @@ defmodule LakehouseMatrix.ClientSync do
       filter = Map.put(filter, "_use_state_after", params["use_state_after"] in [true, "true"])
       full = is_nil(params["since"]) or params["full_state"] in [true, "true"]
 
-      LakehouseMatrix.Ephemeral.set_presence(
-        principal,
-        %{"presence" => params["set_presence"] || "online"},
-        true
-      )
+      if Keyword.get(options, :update_presence, true),
+        do:
+          LakehouseMatrix.Ephemeral.set_presence(
+            principal,
+            %{"presence" => params["set_presence"] || "online"},
+            true
+          )
 
       LakehouseMatrix.Ephemeral.expire()
       ClientStore.acknowledge(principal, device, since)
@@ -46,9 +48,10 @@ defmodule LakehouseMatrix.ClientSync do
     {:ok, result} =
       Repo.transaction(fn ->
         high = ClientStore.lock!() |> delivery_position(principal, device, since)
-        joined = Memberships.joined_room_ids(principal)
-        invited = Memberships.invited_room_ids(principal)
-        left = Memberships.left_room_ids(principal)
+        memberships = memberships_at(principal, high)
+        joined = memberships.join
+        invited = memberships.invite
+        left = memberships.leave
 
         join =
           for room <- joined, into: %{} do
@@ -136,12 +139,22 @@ defmodule LakehouseMatrix.ClientSync do
       |> filter_events(get_in(filter, ["room", "timeline"]) || %{})
 
     account = ClientStore.account_data(principal, Identity.room_id(room), lower, high)
+    summary_state = state_at(room, high)
 
     %{
       "timeline" => %{
         "events" => events,
         "limited" => limited,
-        "prev_batch" => Cursor.encode("history", principal, device, boundary + 1, room)
+        "prev_batch" =>
+          if(LakehouseMatrix.Protocol.Graph.room(room),
+            do:
+              if(rows == [],
+                do: LakehouseMatrix.ClientHistory.at_stream(principal, device, room, high),
+                else:
+                  LakehouseMatrix.ClientHistory.before(principal, device, room, hd(rows).event_id)
+              ),
+            else: Cursor.encode("history", principal, device, boundary + 1, room)
+          )
       },
       "account_data" => %{"events" => account},
       "ephemeral" => %{
@@ -150,8 +163,16 @@ defmodule LakehouseMatrix.ClientSync do
             LakehouseMatrix.Ephemeral.typing_events(room, lower, high)
       },
       "summary" => %{
-        "m.joined_member_count" => Memberships.member_count(room),
-        "m.invited_member_count" => Memberships.invited_count(room)
+        "m.joined_member_count" =>
+          Enum.count(
+            summary_state,
+            &(&1["type"] == "m.room.member" and &1["content"]["membership"] == "join")
+          ),
+        "m.invited_member_count" =>
+          Enum.count(
+            summary_state,
+            &(&1["type"] == "m.room.member" and &1["content"]["membership"] == "invite")
+          )
       }
     }
     |> Map.put(if(filter["_use_state_after"], do: "state_after", else: "state"), %{
@@ -190,21 +211,39 @@ defmodule LakehouseMatrix.ClientSync do
         [e],
         fragment(
           """
-          (SELECT CASE COALESCE(h.pdu->'content'->>'history_visibility', 'shared')
-            WHEN 'world_readable' THEN TRUE
-            WHEN 'joined' THEN COALESCE(m.pdu->'content'->>'membership', '') = 'join'
-            WHEN 'invited' THEN COALESCE(m.pdu->'content'->>'membership', '') IN ('join','invite')
+          (SELECT CASE LEAST(
+            CASE COALESCE(h.pdu->'content'->>'history_visibility', 'shared')
+              WHEN 'world_readable' THEN 0 WHEN 'shared' THEN 1 WHEN 'invited' THEN 2 ELSE 3 END,
+            CASE WHEN ev.pdu->>'type' = 'm.room.history_visibility' AND ev.pdu->>'state_key' = '' THEN
+              CASE ev.pdu->'content'->>'history_visibility'
+                WHEN 'world_readable' THEN 0 WHEN 'shared' THEN 1 WHEN 'invited' THEN 2 ELSE 3 END
+              ELSE 3 END)
+            WHEN 0 THEN TRUE
+            WHEN 3 THEN COALESCE(m.pdu->'content'->>'membership', '') = 'join'
+            WHEN 2 THEN COALESCE(m.pdu->'content'->>'membership', '') IN ('join','invite')
             ELSE COALESCE(m.pdu->'content'->>'membership', '') = 'join' OR EXISTS (
-              SELECT 1 FROM matrix_state_changes c JOIN matrix_pdus j ON j.event_id = c.event_id
-              WHERE c.local_room_id = ev.local_room_id AND c.type = 'm.room.member' AND c.state_key = ?
-                AND c.stream_id >= ? AND j.pdu->'content'->>'membership' = 'join') END
+              SELECT 1 FROM matrix_protocol_rooms r JOIN matrix_pdus current_member
+                ON current_member.event_id = r.current_state->>?
+              WHERE r.local_room_id = ev.local_room_id AND current_member.pdu->'content'->>'membership' = 'join'
+            ) OR EXISTS (
+              WITH RECURSIVE ancestry(event_id) AS (
+                SELECT j.event_id FROM matrix_pdus j
+                WHERE j.local_room_id = ev.local_room_id AND j.pdu->>'type' = 'm.room.member'
+                  AND j.pdu->>'state_key' = ? AND j.pdu->'content'->>'membership' = 'join'
+                  AND NOT j.auth_rejected AND NOT j.state_rejected AND NOT j.soft_failed AND NOT j.outlier
+                UNION
+                SELECT parent.id FROM ancestry a JOIN matrix_pdus p ON p.event_id = a.event_id
+                CROSS JOIN LATERAL jsonb_array_elements_text(p.pdu->'prev_events') parent(id)
+                WHERE p.local_room_id = ev.local_room_id
+              ) SELECT 1 FROM ancestry WHERE event_id = ev.event_id
+            ) END
            FROM matrix_pdus ev
            LEFT JOIN matrix_pdus h ON h.event_id = ev.state_before->>?
            LEFT JOIN matrix_pdus m ON m.event_id = ev.state_before->>?
            WHERE ev.event_id = ?)
           """,
+          ^member_key,
           ^user,
-          e.stream_id,
           ^history_key,
           ^member_key,
           e.event_id
@@ -308,13 +347,20 @@ defmodule LakehouseMatrix.ClientSync do
   end
 
   def history(principal, device, room, params) do
-    with true <- Memberships.joined?(room, principal),
+    if LakehouseMatrix.Protocol.Graph.room(room),
+      do: LakehouseMatrix.ClientHistory.page(principal, device, room, params),
+      else: legacy_history(principal, device, room, params)
+  end
+
+  defp legacy_history(principal, device, room, params) do
+    with {:ok, _, boundary} <-
+           LakehouseMatrix.ClientRooms.history_access(principal, Identity.room_id(room)),
          {:ok, limit} <- integer(params["limit"], 10, 0, 100),
          true <- params["dir"] in [nil, "b", "f"],
          {:ok, from} <- history_cursor(params["from"], principal, device, room),
          {:ok, to} <- history_cursor(params["to"], principal, device, room) do
       direction = params["dir"] || "b"
-      high = ClientStore.position()
+      high = min(ClientStore.position(), boundary)
       from = if params["from"], do: from, else: if(direction == "b", do: high + 1, else: 0)
 
       query =
@@ -495,7 +541,52 @@ defmodule LakehouseMatrix.ClientSync do
     )
   end
 
-  defp last_membership(principal, room, high) do
+  def memberships_at(principal, high) do
+    user = mxid(principal)
+
+    candidates =
+      Repo.all(
+        from e in RoomEvent,
+          where: e.type == "m.room.member" and e.state_key == ^user,
+          distinct: e.room_id,
+          select: e.room_id
+      )
+
+    Enum.reduce(candidates, %{join: [], invite: [], leave: [], knock: []}, fn room, acc ->
+      case last_membership(principal, room, high) do
+        %{content: %{"membership" => membership}}
+        when membership in ~w(join invite leave ban knock) ->
+          bucket =
+            case membership do
+              "join" -> :join
+              "invite" -> :invite
+              "knock" -> :knock
+              _ -> :leave
+            end
+
+          allowed =
+            bucket != :join or
+              (LakehouseMatrix.RiverRtc.chat_allowed?(room, principal) and
+                 LakehouseMatrix.RiverPublishing.reader_allowed?(room, principal))
+
+          if allowed, do: Map.update!(acc, bucket, &[room | &1]), else: acc
+
+        _ ->
+          acc
+      end
+    end)
+  end
+
+  def ever_joined?(principal, room, high) do
+    query = membership_events(principal, room)
+
+    Repo.exists?(
+      from e in subquery(query),
+        where: e.stream_id <= ^high and fragment("?->>'membership' = 'join'", e.content)
+    )
+  end
+
+  def last_membership(principal, room, high) do
     query = membership_events(principal, room)
 
     Repo.one(

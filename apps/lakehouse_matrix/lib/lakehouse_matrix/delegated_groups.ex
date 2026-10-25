@@ -103,6 +103,11 @@ defmodule LakehouseMatrix.DelegatedGroups do
             content = %{"creator" => creator, "room_version" => "11"}
 
             content =
+              if params["kind"] in ["call_chat", "post_comments"],
+                do: Map.put(content, "m.federate", false),
+                else: content
+
+            content =
               if params["kind"] == "space", do: Map.put(content, "type", "m.space"), else: content
 
             event!(grant, id, "m.room.create", content, "")

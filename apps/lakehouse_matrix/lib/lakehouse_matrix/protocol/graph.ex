@@ -12,6 +12,25 @@ defmodule LakehouseMatrix.Protocol.Graph do
   def room_by_id(id), do: Repo.get_by(ProtocolRoom, room_id: id)
   def event(id), do: Repo.get(Pdu, id)
 
+  def ancestor?(local_id, ancestor, descendants) do
+    if descendants == [] do
+      false
+    else
+      Repo.query!(
+        """
+        WITH RECURSIVE ancestors(event_id) AS (
+          SELECT event_id FROM matrix_pdus WHERE local_room_id = $1 AND event_id = ANY($2::text[])
+          UNION
+          SELECT parent.id FROM ancestors a JOIN matrix_pdus p ON p.event_id = a.event_id
+          CROSS JOIN LATERAL jsonb_array_elements_text(p.pdu->'prev_events') parent(id)
+          WHERE p.local_room_id = $1
+        ) SELECT EXISTS (SELECT 1 FROM ancestors WHERE event_id = $3)
+        """,
+        [ClientStore.dump_id(local_id), descendants, ancestor]
+      ).rows == [[true]]
+    end
+  end
+
   def encode_state(state),
     do: Map.new(state, fn {{type, key}, id} -> {Jason.encode!([type, key]), id} end)
 
@@ -267,7 +286,7 @@ defmodule LakehouseMatrix.Protocol.Graph do
     graph = load_graph(local_id, Map.keys(snapshot.graph)) |> Map.merge(snapshot.graph)
 
     current_auth =
-      if metadata.extremities == [],
+      if metadata.extremities == [] or mode == :backfill,
         do: :ok,
         else: Authorization.check(event, materialize(current, graph), version)
 

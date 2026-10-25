@@ -224,6 +224,7 @@ defmodule LakehouseWeb.Router do
     get "/v3/rooms/:roomId/state/:eventType/:stateKey", ProtocolController, :get_state
     put "/v3/rooms/:roomId/state/:eventType/:stateKey", ProtocolController, :put_state
     get "/v3/rooms/:roomId/event/:eventId", ProtocolController, :event
+    get "/v3/rooms/:roomId/context/:eventId", ProtocolController, :context
     get "/v3/rooms/:roomId/members", ProtocolController, :members
     get "/v3/rooms/:roomId/joined_members", ProtocolController, :joined_members
     put "/v3/rooms/:roomId/redact/:eventId/:txnId", ProtocolController, :redact

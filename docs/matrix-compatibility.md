@@ -14,7 +14,7 @@ Images, dependencies and test peers are pinned. The suite verifies signed joins
 in both directions, two-way message delivery and leave, federated encrypted-room
 invites, Olm key sharing, Megolm decryption in both directions, cross-signing,
 encrypted secret storage, client-encrypted key backups and fresh-device recovery.
-The native event API exposes ciphertext only. Synapse is a test peer and is not
+The suite also transfers and decrypts client-encrypted attachments in both directions. The native event API exposes ciphertext only. Synapse is a test peer and is not
 part of the production deployment.
 
 CI runs this suite after the existing unit, API and real-browser test gate.
@@ -57,8 +57,12 @@ clients does not mean River client E2EE is complete.
   recovery and room keys are generated and held by clients.
 - Ordinary sync with state-after support and native MSC4186 sliding sync,
   scoped cursors, device/account data, resolved-state updates and receipts.
+  Native history uses DAG order and verified backfill, retaining eligible history
+  after leaving without exposing later private events.
 - Local aliases, explicitly published room directories with filtering and
   pagination, native membership moderation, typing and presence with expiry.
+- Authenticated local/remote media and multipart federation downloads, with
+  separate visibility for private River uploads and standard Matrix media.
 - Matrix 1.19 policy-server requests and signature validation. Local operations
   retry outside database transactions; unapproved inbound events soft-fail.
 
@@ -69,8 +73,8 @@ reuse the IAM JWT key or rotate a seed under an existing key ID.
 
 ## Remaining release and conformance work
 
-- Complete authenticated local/remote media, history/backfill pagination and
-  room visibility semantics; exercise them against an independent homeserver.
+- Complete the remaining history/context/relations/threads APIs and audit
+  visibility semantics, with independent interop coverage for pagination.
 - Complete core client room lifecycle, context/relations/threads, space
   hierarchy, profile/directory and notification/push-rule APIs and audit the
   remaining Matrix 1.19 required behavior. Optional modules must be documented

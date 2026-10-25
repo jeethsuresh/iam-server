@@ -72,6 +72,17 @@ defmodule LakehouseMatrix.Federation.Invites do
             }
 
             {:ok, _} = Events.persist(ctx, %{"content" => signed["content"]})
+            # Publish only the authenticated recipient's invitation into the
+            # client membership stream. Unverified stripped room state remains
+            # outside the protocol graph's resolved authorization state.
+            Repo.insert_all("matrix_state_changes", [
+              %{
+                local_room_id: ClientStore.dump_id(metadata.local_room_id),
+                type: "m.room.member",
+                state_key: signed["state_key"],
+                event_id: id
+              }
+            ])
 
             {:ok, _} =
               Memberships.upsert_membership(metadata.local_room_id, target.id, "invite", ctx)

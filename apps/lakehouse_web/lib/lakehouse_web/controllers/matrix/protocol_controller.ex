@@ -206,6 +206,14 @@ defmodule LakehouseWeb.Matrix.ProtocolController do
     do:
       json(conn, %{
         "capabilities" => %{
+          "m.room_versions" => %{
+            "default" => if(LakehouseMatrix.Protocol.Rooms.enabled?(), do: "12", else: "11"),
+            "available" =>
+              if(LakehouseMatrix.Protocol.Rooms.enabled?(),
+                do: %{"11" => "stable", "12" => "stable"},
+                else: %{"11" => "stable"}
+              )
+          },
           "m.change_password" => %{"enabled" => false},
           "m.set_displayname" => %{"enabled" => false},
           "m.set_avatar_url" => %{"enabled" => false},
@@ -221,8 +229,8 @@ defmodule LakehouseWeb.Matrix.ProtocolController do
       })
 
   def get_state(conn, %{"roomId" => ref} = params) do
-    with {:ok, room} <- ClientRooms.readable(principal(conn), ref) do
-      events = ClientSync.state_at(room.id, ClientStore.position())
+    with {:ok, room, boundary} <- ClientRooms.history_access(principal(conn), ref) do
+      events = ClientSync.state_at(room.id, boundary)
 
       if type = params["eventType"] do
         case Enum.find(
@@ -261,31 +269,26 @@ defmodule LakehouseWeb.Matrix.ProtocolController do
     do: respond(conn, ClientRooms.event(principal(conn), ref, event))
 
   def messages(conn, %{"roomId" => ref} = params) do
-    with {:ok, room} <- ClientRooms.readable(principal(conn), ref) do
+    with {:ok, room, _} <- ClientRooms.history_access(principal(conn), ref) do
       respond(conn, ClientSync.history(principal(conn), device(conn), room.id, params))
     else
       _ -> respond(conn, {:error, :forbidden})
     end
   end
 
-  def members(conn, %{"roomId" => ref} = params) do
-    with {:ok, room} <- ClientRooms.readable(principal(conn), ref) do
-      events =
-        ClientSync.state_at(room.id, ClientStore.position())
-        |> Enum.filter(&(&1["type"] == "m.room.member"))
+  def members(conn, %{"roomId" => ref} = params),
+    do:
+      respond(
+        conn,
+        LakehouseMatrix.ClientContext.members(principal(conn), device(conn), ref, params)
+      )
 
-      events =
-        Enum.filter(events, fn e ->
-          (is_nil(params["membership"]) or e["content"]["membership"] == params["membership"]) and
-            (is_nil(params["not_membership"]) or
-               e["content"]["membership"] != params["not_membership"])
-        end)
-
-      json(conn, %{"chunk" => events})
-    else
-      _ -> respond(conn, {:error, :forbidden})
-    end
-  end
+  def context(conn, %{"roomId" => ref, "eventId" => id} = params),
+    do:
+      respond(
+        conn,
+        LakehouseMatrix.ClientContext.context(principal(conn), device(conn), ref, id, params)
+      )
 
   def joined_members(conn, %{"roomId" => ref}) do
     with {:ok, room} <- ClientRooms.readable(principal(conn), ref) do

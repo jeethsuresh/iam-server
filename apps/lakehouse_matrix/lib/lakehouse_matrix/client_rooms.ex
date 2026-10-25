@@ -206,6 +206,38 @@ defmodule LakehouseMatrix.ClientRooms do
          do: {:ok, room}
   end
 
+  def history_access(principal, ref) do
+    alias LakehouseMatrix.ClientSync
+
+    with {:ok, room} <- room(ref),
+         true <-
+           LakehouseMatrix.RiverRtc.chat_allowed?(room.id, principal) and
+             LakehouseMatrix.RiverPublishing.reader_allowed?(room.id, principal) do
+      high = ClientStore.position()
+      membership = ClientSync.last_membership(principal, room.id, high)
+
+      world =
+        get_in(State.get(room.id, "m.room.history_visibility") || %{}, [
+          "content",
+          "history_visibility"
+        ]) == "world_readable"
+
+      cond do
+        world or (membership && membership.content["membership"] == "join") ->
+          {:ok, room, high}
+
+        not is_nil(membership) and membership.content["membership"] in ~w(leave ban) and
+            ClientSync.ever_joined?(principal, room.id, high) ->
+          {:ok, room, membership.stream_id}
+
+        true ->
+          {:error, :forbidden}
+      end
+    else
+      _ -> {:error, :not_found}
+    end
+  end
+
   def readable(principal, ref) do
     with {:ok, room} <- room(ref),
          true <- Memberships.joined?(room.id, principal),
@@ -367,8 +399,21 @@ defmodule LakehouseMatrix.ClientRooms do
   end
 
   def event(principal, ref, event) do
-    with {:ok, room} <- readable(principal, ref),
-         query <- from(e in RoomEvent, where: e.room_id == ^room.id and e.event_id == ^event),
+    with {:ok, room} <- room(ref) do
+      if LakehouseMatrix.Protocol.Graph.room(room.id),
+        do: LakehouseMatrix.ClientHistory.event(principal, room.id, event),
+        else: legacy_event(principal, ref, event)
+    else
+      _ -> {:error, :not_found}
+    end
+  end
+
+  defp legacy_event(principal, ref, event) do
+    with {:ok, room, boundary} <- history_access(principal, ref),
+         query <-
+           from(e in RoomEvent,
+             where: e.room_id == ^room.id and e.event_id == ^event and e.stream_id <= ^boundary
+           ),
          %{} = e <- Repo.one(LakehouseMatrix.ClientSync.visible_query(query, principal)) do
       {:ok, Map.put(Events.to_client_event(e), "room_id", Identity.room_id(room.id))}
     else

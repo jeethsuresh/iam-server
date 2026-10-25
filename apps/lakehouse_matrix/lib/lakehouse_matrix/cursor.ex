@@ -9,6 +9,7 @@ defmodule LakehouseMatrix.Cursor do
   end
 
   def decode(token, kind, principal, device, room \\ "")
+  def decode(nil, "topology", _, _, _), do: {:ok, nil}
   def decode(nil, _, _, _, _), do: {:ok, 0}
 
   def decode(token, kind, principal, device, room)
@@ -17,10 +18,7 @@ defmodule LakehouseMatrix.Cursor do
          true <- Plug.Crypto.secure_compare(signature(body), sig),
          {:ok, raw} <- Base.url_decode64(body, padding: false),
          {:ok, [^kind, ^principal, ^device, position, ^room]} <- Jason.decode(raw),
-         true <-
-           is_integer(position) and position >= 0 and
-             position <=
-               LakehouseMatrix.ClientStore.position() + if(kind == "history", do: 1, else: 0) do
+         true <- valid_position?(kind, position) do
       {:ok, position}
     else
       _ -> {:error, :invalid_cursor}
@@ -28,6 +26,18 @@ defmodule LakehouseMatrix.Cursor do
   end
 
   def decode(_, _, _, _, _), do: {:error, :invalid_cursor}
+
+  defp valid_position?("topology", [depth, id]),
+    do:
+      is_integer(depth) and depth in -1..9_007_199_254_740_992 and is_binary(id) and
+        byte_size(id) <= 255
+
+  defp valid_position?("topology", _), do: false
+
+  defp valid_position?(kind, position),
+    do:
+      is_integer(position) and position >= 0 and
+        position <= LakehouseMatrix.ClientStore.position() + if(kind == "history", do: 1, else: 0)
 
   defp signature(body) do
     secret = Application.fetch_env!(:lakehouse_iam, :jwt_secret)

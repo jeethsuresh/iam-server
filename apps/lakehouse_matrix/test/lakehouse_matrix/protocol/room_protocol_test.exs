@@ -88,6 +88,20 @@ defmodule LakehouseMatrix.Federation.RoomProtocolTest do
              )
 
     refute RoomAccess.joined?(RoomAccess.state(Graph.room(ctx.room.id)), "remote.org")
+    assert {:ok, %{"pdus" => [_]}} = RoomProtocol.event("remote.org", id)
+    assert {:ok, %{"pdus" => history}} = RoomProtocol.backfill("remote.org", ctx.ref, [id], 100)
+    assert Enum.any?(history, &(&1["type"] == "m.room.create"))
+
+    {:ok, future} =
+      Graph.send(ctx.room.id, ctx.alice, "m.room.message", %{
+        "body" => "after the remote server left"
+      })
+
+    assert {:error, :not_found} = RoomProtocol.event("remote.org", future["event_id"])
+    assert {:error, :not_found} = RoomProtocol.state("remote.org", ctx.ref, future["event_id"])
+
+    assert {:error, :not_found} =
+             RoomProtocol.event_auth("remote.org", ctx.ref, future["event_id"])
   end
 
   test "private rooms, origin spoofing and ACLs block unauthorized joins and reads", ctx do

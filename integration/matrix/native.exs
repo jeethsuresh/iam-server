@@ -12,6 +12,28 @@ defmodule Interop do
     request(method, server, path, body, [{"authorization", header}])
   end
 
+  def federation_media("reference.test:8448" = server, path) do
+    {:ok, authorization} = Signing.authorization("GET", path, server, nil)
+
+    case Req.get("https://" <> server <> path,
+           headers: [{"authorization", authorization}],
+           retry: false,
+           redirect: false,
+           decode_body: false,
+           receive_timeout: 30_000,
+           connect_options: [transport_opts: [cacertfile: "/fixtures/ca.pem"]]
+         ) do
+      {:ok, %{status: 200, body: body, headers: headers}} ->
+        {:ok, %{body: body, headers: headers}}
+
+      {:ok, %{status: status, body: body}} ->
+        {:error, {:http, status, body}}
+
+      error ->
+        error
+    end
+  end
+
   defp request(method, server, path, body, headers) do
     options = [
       method: method,
@@ -126,6 +148,7 @@ Application.put_env(:lakehouse_app_demo, :enabled, false)
 Application.put_env(:lakehouse_matrix, :homeserver_domain, "native.test:8448")
 Application.put_env(:lakehouse_matrix, :native_event_graph, true)
 Application.put_env(:lakehouse_matrix, :federation_requester, &Interop.federation/4)
+Application.put_env(:lakehouse_matrix, :federation_media_requester, &Interop.federation_media/2)
 Application.put_env(:lakehouse_matrix, :signing_key, Base.encode64(<<0::256>>, padding: false))
 Application.put_env(:lakehouse_matrix, :signing_key_id, "ed25519:interop")
 
@@ -228,9 +251,34 @@ if System.get_env("INTEROP_SERVE_ONLY") != "1" do
 
   remote_ref = remote["room_id"]
 
+  {:ok, old_message} =
+    Interop.send_event(
+      "reference.test:8448",
+      bt,
+      remote_ref,
+      "before_join",
+      "history before the native server joined"
+    )
+
   Interop.check("native joins Synapse version 12", fn ->
     {:ok, %{"room_id" => ^remote_ref}} =
       RemoteJoin.join(alice.id, remote_ref, ["reference.test:8448"], %{}, &Interop.federation/4)
+  end)
+
+  Interop.check("native scrolls back verified pre-join Synapse history", fn ->
+    {:ok, sync} =
+      Interop.http(:get, "native.test:8448", "/_matrix/client/v3/sync?timeout=0", nil, at)
+
+    token = get_in(sync, ["rooms", "join", remote_ref, "timeline", "prev_batch"])
+
+    path =
+      "/_matrix/client/v3/rooms/" <>
+        Interop.escape(remote_ref) <> "/messages?dir=b&limit=100&from=" <> Interop.escape(token)
+
+    {:ok, page} = Interop.http(:get, "native.test:8448", path, nil, at)
+
+    unless Enum.any?(page["chunk"], &(&1["event_id"] == old_message["event_id"])),
+      do: raise("Verified pre-join history was missing")
   end)
 
   Interop.check("native publishes in the remote room", fn ->

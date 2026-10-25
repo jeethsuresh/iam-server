@@ -127,7 +127,9 @@ defmodule LakehouseMatrix.Federation.RoomProtocol do
   def state(origin, ref, id, ids_only \\ false) do
     with {:ok, metadata} <- readable(origin, ref),
          record when not is_nil(record) <- Graph.event(id),
-         true <- record.local_room_id == metadata.local_room_id,
+         true <-
+           record.local_room_id == metadata.local_room_id and
+             RoomAccess.visible_event?(metadata, origin, id),
          {:ok, state} <- Graph.state_at(id),
          graph <- Graph.load_graph(metadata.local_room_id, [id]) do
       ids = Map.values(state)
@@ -144,7 +146,9 @@ defmodule LakehouseMatrix.Federation.RoomProtocol do
   def event_auth(origin, ref, id) do
     with {:ok, metadata} <- readable(origin, ref),
          record when not is_nil(record) <- Graph.event(id),
-         true <- record.local_room_id == metadata.local_room_id do
+         true <-
+           record.local_room_id == metadata.local_room_id and
+             RoomAccess.visible_event?(metadata, origin, id) do
       graph = Graph.load_graph(metadata.local_room_id, [id])
 
       {:ok,

@@ -117,8 +117,9 @@ defmodule LakehouseMatrix.SlidingSync do
     high = ClientStore.lock!()
     since = if previous, do: previous.position, else: 0
     known = (previous && previous.state["rooms"]) || %{}
-    joined = Memberships.joined_room_ids(principal)
-    invited = Memberships.invited_room_ids(principal)
+    memberships = ClientSync.memberships_at(principal, high)
+    joined = memberships.join
+    invited = memberships.invite
     available = Enum.uniq(joined ++ invited)
 
     activity =
