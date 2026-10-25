@@ -19,14 +19,17 @@ defmodule LakehouseIam.Bootstrap do
     else
       canonical = Accounts.normalize_username(username)
 
-      case Repo.one(from p in Principal, where: p.username == ^canonical, select: p.id) do
+      case Repo.one(from p in Principal, where: p.username == ^canonical) do
         nil ->
           case Accounts.register_user(canonical, password, approve: true) do
             {:ok, _} -> :ok
             {:error, _} -> :ok
           end
 
-        id ->
+        %Principal{matrix_deactivated: true} ->
+          :ok
+
+        %Principal{id: id} ->
           _ = Accounts.set_password(id, password)
           _ = Accounts.set_active(id, true)
           _ = LakehouseIam.IAM.assign_role(id, "member")

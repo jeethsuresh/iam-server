@@ -38,6 +38,73 @@ defmodule LakehouseMatrix.Protocol.SlidingTest do
     %{alice: Fixtures.user_fixture("alice"), bob: Fixtures.user_fixture("bob")}
   end
 
+  test "archived River discussions respect current parent access in classic and sliding sync",
+       ctx do
+    {:ok, %{"room_id" => ref}} =
+      room(ctx, %{"preset" => "public_chat", "name" => "Private discussion"})
+
+    {:ok, local} = Identity.parse_room_id(ref)
+    {:ok, _} = Matrix.join_room(ctx.bob.id, ref)
+
+    {:ok, message} =
+      ClientRooms.send(ctx.alice.id, "A", ref, "m.room.message", "private", %{
+        "body" => "Archived private content"
+      })
+
+    {:ok, _} = Matrix.leave_room(ctx.bob.id, ref)
+    {:ok, %{"room_id" => parent_ref}} = room(ctx, %{})
+    {:ok, parent} = Identity.parse_room_id(parent_ref)
+
+    {:ok, post} =
+      Graph.send(parent, Identity.user_id("alice"), "cool.gravitas.river.post.v1", %{
+        "body" => "Parent"
+      })
+
+    Repo.insert!(%LakehouseMatrix.Schema.RiverPublication{
+      id: post["event_id"],
+      space_id: parent,
+      author_id: ctx.alice.id,
+      thread_id: local,
+      anchor_id: message["event_id"]
+    })
+
+    assert {:error, :not_found} = ClientHistory.page(ctx.bob.id, "B", local, %{})
+
+    assert {:ok, classic} =
+             ClientSync.sync(ctx.bob.id, "B", %{
+               "filter" => Jason.encode!(%{"room" => %{"include_leave" => true}})
+             })
+
+    departed = classic["rooms"]["leave"][ref]
+
+    assert [%{"state_key" => user, "content" => %{"membership" => "leave"}}] =
+             departed["timeline"]["events"]
+
+    assert user == Identity.user_id("bob")
+    assert departed["state"]["events"] == []
+    refute Map.has_key?(departed, "summary")
+
+    for format <- [:msc4186, :v4] do
+      assert {:ok, sliding} =
+               SlidingSync.sync(
+                 ctx.bob.id,
+                 "B",
+                 %{
+                   "room_subscriptions" => %{
+                     ref => %{"timeline_limit" => 100, "required_state" => [["*", "*"]]}
+                   }
+                 },
+                 format
+               )
+
+      payload = sliding["rooms"][ref]
+      assert [%{"content" => %{"membership" => "leave"}}] = payload["timeline"]
+      assert Map.get(payload, "required_state", []) == []
+      refute Map.has_key?(payload, "name")
+      refute Map.has_key?(payload, "joined_count")
+    end
+  end
+
   defp list,
     do: %{
       "lists" => %{

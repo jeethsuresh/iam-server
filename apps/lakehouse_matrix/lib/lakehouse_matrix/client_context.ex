@@ -55,7 +55,7 @@ defmodule LakehouseMatrix.ClientContext do
              "filter" => params["filter"]
            }) do
       last = List.last(after_events["chunk"]) || target
-      state = state_events(Graph.event(last["event_id"]).state_after)
+      state = state_events(Graph.event(last["event_id"]).state_after, principal)
       filter = if params["filter"], do: Jason.decode!(params["filter"]), else: %{}
       earliest = List.last(before["chunk"]) || target
       latest = List.last(after_events["chunk"]) || target
@@ -75,7 +75,8 @@ defmodule LakehouseMatrix.ClientContext do
     end
   end
 
-  defp state_at(_, _, room, boundary, nil), do: {:ok, ClientSync.state_at(room, boundary)}
+  defp state_at(principal, _, room, boundary, nil),
+    do: {:ok, ClientSync.state_at(room, boundary, principal)}
 
   defp state_at(principal, device, room, boundary, token) do
     case Cursor.decode(token, "topology", principal, device, room) do
@@ -85,21 +86,25 @@ defmodule LakehouseMatrix.ClientContext do
 
         with {:ok, _} <- ClientHistory.event(principal, room, id),
              %Pdu{local_room_id: ^room} = event <- Graph.event(id) do
-          {:ok, state_events(if(after_event, do: event.state_after, else: event.state_before))}
+          {:ok,
+           state_events(
+             if(after_event, do: event.state_after, else: event.state_before),
+             principal
+           )}
         else
           _ -> {:error, :invalid_cursor}
         end
 
       _ ->
         with {:ok, stream} <- ClientSync.history_cursor(token, principal, device, room),
-             do: {:ok, ClientSync.state_at(room, min(stream, boundary))}
+             do: {:ok, ClientSync.state_at(room, min(stream, boundary), principal)}
     end
   end
 
-  defp state_events(state) do
+  defp state_events(state, principal) do
     ids = Map.values(state)
 
     Repo.all(from p in Pdu, where: p.event_id in ^ids, order_by: p.event_id)
-    |> Enum.map(&ClientHistory.client_event/1)
+    |> Enum.map(&ClientHistory.client_event(&1, principal))
   end
 end

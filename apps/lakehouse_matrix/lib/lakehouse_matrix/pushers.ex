@@ -42,6 +42,7 @@ defmodule LakehouseMatrix.Pushers do
          Map.has_key?(params, "kind") and (is_nil(params["kind"]) or valid_config?(params)) do
       Repo.transaction(fn ->
         ClientStore.lock!()
+        LakehouseMatrix.AccountModeration.require!(principal, :read)
 
         if is_nil(params["kind"]) do
           Repo.delete_all(

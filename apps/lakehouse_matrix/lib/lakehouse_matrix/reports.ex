@@ -42,6 +42,7 @@ defmodule LakehouseMatrix.Reports do
       true ->
         Repo.transaction(fn ->
           ClientStore.lock!()
+          LakehouseMatrix.AccountModeration.require!(principal, :read)
           recent = DateTime.add(ClientStore.now(), -60, :second)
 
           count =

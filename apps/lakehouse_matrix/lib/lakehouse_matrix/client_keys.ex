@@ -8,6 +8,7 @@ defmodule LakehouseMatrix.ClientKeys do
   def upload(principal, device, username, params) do
     Repo.transaction(fn ->
       ClientStore.lock!()
+      LakehouseMatrix.AccountModeration.require!(principal, :read)
 
       if keys = params["device_keys"] do
         unless is_map(keys) and keys["user_id"] == Identity.user_id(username) and

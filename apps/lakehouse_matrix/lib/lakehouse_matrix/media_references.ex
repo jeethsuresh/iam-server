@@ -73,7 +73,7 @@ defmodule LakehouseMatrix.MediaReferences do
         LakehouseMatrix.RiverRtc.chat_allowed?(event.room_id, principal) and
           LakehouseMatrix.RiverPublishing.reader_allowed?(event.room_id, principal)
 
-      allowed and record.id in ids(Events.to_client_event(event)) and
+      allowed and record.id in ids(Events.to_client_event(event, principal)) and
         (current_state?(event) or
            match?(
              {:ok, _},

@@ -229,6 +229,38 @@ try {
   assert(masterSecret.encrypted && Object.keys(masterSecret.encrypted).length > 0);
   for (const key of alice.interopSecretKeys.values()) assert(!JSON.stringify(masterSecret).includes(Buffer.from(key).toString('base64')));
   console.log('CRYPTO PASS secret-storage API contains only encrypted secrets');
+  const d = await json(native, '/_matrix/client/v3/login', {type: 'm.login.password', user: 'deactclient', password: 'password123', device_id: 'DEACT_' + suffix});
+  const doomed = await start(native, d);
+  const {room_id: erasedRoom} = await doomed.createRoom({name: 'Account erasure interoperability', preset: 'public_chat', room_version: '12', invite: [b.user_id]});
+  await alice.joinRoom(erasedRoom);
+  await until('disposable account invitation reaches the federated client', () => bob.getRoom(erasedRoom)?.getMyMembership() === 'invite');
+  await bob.joinRoom(erasedRoom);
+  await until('both prior homeservers join before erasure', () => doomed.getRoom(erasedRoom)?.getMember(b.user_id)?.membership === 'join' && doomed.getRoom(erasedRoom)?.getMember(a.user_id)?.membership === 'join');
+  const erasedText = 'history retained for prior members ' + suffix;
+  const erasedEvent = await doomed.sendTextMessage(erasedRoom, erasedText);
+  await until('federated client receives the disposable account message', () => bob.getRoom(erasedRoom)?.getLiveTimeline().getEvents().some(event => event.getId() === erasedEvent.event_id));
+  doomed.stopClient();
+  let deactivationSession;
+  try {
+    await doomed.deactivateAccount(undefined, true);
+    assert.fail('Account deactivation must require fresh UIA');
+  } catch (error) {
+    assert.equal(error.httpStatus, 401);
+    deactivationSession = error.data.session;
+  }
+  const deactivated = await doomed.deactivateAccount({type: 'm.login.password', user: d.user_id, password: 'password123', session: deactivationSession}, true);
+  assert.equal(deactivated.id_server_unbind_result, 'success');
+  await assert.rejects(json(native, '/_matrix/client/v3/account/whoami', null, d.access_token), error => error.status === 401 && error.data.errcode === 'M_UNKNOWN_TOKEN');
+  await until('deactivation leaves the native and federated room', () => alice.getRoom(erasedRoom)?.getMember(d.user_id)?.membership === 'leave' && bob.getRoom(erasedRoom)?.getMember(d.user_id)?.membership === 'leave');
+  const eventPath = '/_matrix/client/v3/rooms/' + encodeURIComponent(erasedRoom) + '/event/' + encodeURIComponent(erasedEvent.event_id);
+  assert.equal((await json(native, eventPath, null, a.access_token)).content.body, erasedText);
+  assert.equal((await json(reference, eventPath, null, b.access_token)).content.body, erasedText);
+  const fresh = await json(native, '/_matrix/client/v3/login', {type: 'm.login.password', user: 'deactlater', password: 'password123', device_id: 'LATER_' + suffix});
+  const laterClient = await start(native, fresh);
+  await laterClient.joinRoom(erasedRoom);
+  assert.deepEqual((await json(native, eventPath, null, fresh.access_token)).content, {});
+  assert.deepEqual(await json(native, '/_matrix/client/v3/user/' + encodeURIComponent(a.user_id) + '/account_data/m.cross_signing.master', null, a.access_token), masterSecret);
+  console.log('CRYPTO PASS SDK deactivation requires UIA, leaves federated rooms, revokes access and prunes history only for later native members');
   console.log('CRYPTO COMPLETE');
 } finally {
   for (const client of clients) client.stopClient();

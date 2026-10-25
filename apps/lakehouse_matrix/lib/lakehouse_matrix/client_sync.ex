@@ -130,6 +130,51 @@ defmodule LakehouseMatrix.ClientSync do
   end
 
   def room_payload(principal, device, room, since, high, full, filter \\ %{}) do
+    if reader_allowed?(room, principal),
+      do: readable_room_payload(principal, device, room, since, high, full, filter),
+      else: departure_payload(principal, device, room, high, filter)
+  end
+
+  def reader_allowed?(room, principal),
+    do:
+      LakehouseMatrix.RiverRtc.chat_allowed?(room, principal) and
+        LakehouseMatrix.RiverPublishing.reader_allowed?(room, principal)
+
+  # A departed River discussion can also lose access through its parent. Keep
+  # the membership transition, without returning its archived content or state.
+  def departure_events(principal, room, high) do
+    case last_membership(principal, room, high) do
+      %{content: %{"membership" => membership}} = event when membership in ["leave", "ban"] ->
+        [
+          Events.to_client_event(
+            Repo.get_by!(RoomEvent, room_id: room, event_id: event.event_id),
+            principal
+          )
+        ]
+
+      _ ->
+        []
+    end
+  end
+
+  defp departure_payload(principal, device, room, high, filter) do
+    events = departure_events(principal, room, high)
+    events = ClientFilters.render(events, filter["event_format"])
+
+    %{
+      "timeline" => %{
+        "events" => events,
+        "limited" => false,
+        "prev_batch" => Cursor.encode("history", principal, device, high, room)
+      },
+      "account_data" => %{"events" => []},
+      "unread_notifications" => %{"notification_count" => 0, "highlight_count" => 0},
+      "ephemeral" => %{"events" => []}
+    }
+    |> Map.put(if(filter["_use_state_after"], do: "state_after", else: "state"), %{"events" => []})
+  end
+
+  defp readable_room_payload(principal, device, room, since, high, full, filter) do
     limit = get_in(filter, ["room", "timeline", "limit"]) || 20
     limit = if is_integer(limit), do: min(max(limit, 0), 100), else: 20
     lower = if full, do: 0, else: since
@@ -145,7 +190,7 @@ defmodule LakehouseMatrix.ClientSync do
       end
 
     state_boundary = if filter["_use_state_after"], do: high, else: boundary
-    state = state_at(room, state_boundary)
+    state = state_at(room, state_boundary, principal)
 
     state =
       if filter["_use_state_after"],
@@ -154,7 +199,7 @@ defmodule LakehouseMatrix.ClientSync do
           classic_state(
             room,
             state,
-            state_at(room, high),
+            state_at(room, high, principal),
             rows,
             since,
             high,
@@ -178,7 +223,7 @@ defmodule LakehouseMatrix.ClientSync do
 
     events =
       rows
-      |> Enum.map(&Events.to_client_event/1)
+      |> Enum.map(&Events.to_client_event(&1, principal))
       |> ClientFilters.events(timeline_filter, Identity.room_id(room))
 
     events =
@@ -263,7 +308,7 @@ defmodule LakehouseMatrix.ClientSync do
 
   def timeline(room, since, high, limit, principal, filter \\ %{}) do
     query =
-      from e in RoomEvent,
+      from e in LakehouseMatrix.Erasure.event_query(principal),
         where:
           e.room_id == ^room and e.timeline_visible == true and e.stream_id > ^since and
             e.stream_id <= ^high,
@@ -381,6 +426,9 @@ defmodule LakehouseMatrix.ClientSync do
     from e in query, where: ^condition
   end
 
+  def state_at(room, high, principal),
+    do: Enum.map(state_at(room, high), &LakehouseMatrix.Erasure.client(&1, principal))
+
   def state_at(room, high) do
     if LakehouseMatrix.Protocol.Graph.room(room) do
       ids = LakehouseMatrix.Protocol.Graph.state_at_stream(room, high) |> Map.values()
@@ -417,10 +465,15 @@ defmodule LakehouseMatrix.ClientSync do
   def stripped(room, high, principal) do
     case LakehouseMatrix.Federation.Invites.pending(room, mxid(principal)) do
       %{state: %{"events" => events}} ->
-        events
+        LakehouseMatrix.Erasure.stripped(
+          events,
+          room,
+          {:user, principal},
+          LakehouseMatrix.Protocol.Graph.room(room).version
+        )
 
       nil ->
-        state_at(room, high)
+        state_at(room, high, principal)
         |> Enum.filter(
           &(&1["type"] in ~w(m.room.create m.room.name m.room.avatar m.room.topic m.room.join_rules m.room.canonical_alias m.room.member m.room.encryption))
         )
@@ -448,7 +501,7 @@ defmodule LakehouseMatrix.ClientSync do
       from = if params["from"], do: from, else: if(direction == "b", do: high + 1, else: 0)
 
       query =
-        from e in RoomEvent,
+        from e in LakehouseMatrix.Erasure.event_query(principal),
           where: e.room_id == ^room and e.timeline_visible == true and e.stream_id <= ^high
 
       query = visible_query(query, principal) |> ClientFilters.sql(history_filter)
@@ -472,7 +525,7 @@ defmodule LakehouseMatrix.ClientSync do
 
       response = %{
         "start" => params["from"] || Cursor.encode("history", principal, device, from, room),
-        "chunk" => Enum.map(chunk, &Events.to_client_event/1),
+        "chunk" => Enum.map(chunk, &Events.to_client_event(&1, principal)),
         "state" => []
       }
 
@@ -622,8 +675,7 @@ defmodule LakehouseMatrix.ClientSync do
             allowed =
               (bucket != :invite or sender not in ignored) and
                 (bucket != :join or
-                   (LakehouseMatrix.RiverRtc.chat_allowed?(room, principal) and
-                      LakehouseMatrix.RiverPublishing.reader_allowed?(room, principal)))
+                   reader_allowed?(room, principal))
 
             if allowed, do: Map.update!(acc, bucket, &[room | &1]), else: acc
 

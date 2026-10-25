@@ -51,12 +51,14 @@ defmodule LakehouseMatrix.ClientHistory do
          {:ok, filter} <- event_filter(params["filter"]) do
       metadata = Graph.room(room)
       direction = params["dir"] || "b"
-      candidates = records(room, lower, if(params["to"], do: upper), direction)
+      candidates = records(room, lower, if(params["to"], do: upper), direction, principal)
       gap = if direction == "b", do: frontier(room, lower, List.last(candidates))
       if gap && limit > 0, do: backfill(metadata, gap, request, lookup)
 
       candidates =
-        if gap, do: records(room, lower, if(params["to"], do: upper), direction), else: candidates
+        if gap,
+          do: records(room, lower, if(params["to"], do: upper), direction, principal),
+          else: candidates
 
       gap = if direction == "b", do: frontier(room, lower, List.last(candidates))
 
@@ -71,7 +73,7 @@ defmodule LakehouseMatrix.ClientHistory do
       selected =
         visible(safe, metadata, principal)
         |> Enum.filter(&(Map.has_key?(&1.pdu, "state_key") or &1.pdu["sender"] not in ignored))
-        |> Enum.map(&client_event/1)
+        |> Enum.map(&client_event(&1, principal))
         |> ClientSync.filter_events(Map.delete(filter, "limit"))
 
       chunk = Enum.take(selected, limit)
@@ -144,15 +146,18 @@ defmodule LakehouseMatrix.ClientHistory do
     end
   end
 
-  def query(room) do
-    from p in Pdu,
+  def query(room, principal \\ nil) do
+    source = LakehouseMatrix.Erasure.pdu_query(principal)
+
+    from p in source,
       where:
         p.local_room_id == ^room and not p.outlier and not p.auth_rejected and
           not p.state_rejected and not p.soft_failed and
           fragment("?->>'type' <> 'm.room.redaction' OR ?", p.pdu, p.redaction_applied)
   end
 
-  defp records(room, lower, upper, direction), do: ordered(query(room), lower, upper, direction)
+  defp records(room, lower, upper, direction, principal),
+    do: ordered(query(room, principal), lower, upper, direction)
 
   def ordered(query, [depth, id], upper, direction, limit \\ 1000) do
     query = from p in query, limit: ^limit
@@ -410,11 +415,14 @@ defmodule LakehouseMatrix.ClientHistory do
              not record.state_rejected and not record.soft_failed and
              (record.pdu["type"] != "m.room.redaction" or record.redaction_applied),
          [_] <- visible([record], Graph.room(room), principal) do
-      {:ok, client_event(record)}
+      {:ok, client_event(record, principal)}
     else
       _ -> {:error, :not_found}
     end
   end
+
+  def client_event(record, principal),
+    do: record |> client_event() |> LakehouseMatrix.Erasure.client(principal)
 
   def client_event(record) do
     case Repo.get_by(RoomEvent, event_id: record.event_id) do

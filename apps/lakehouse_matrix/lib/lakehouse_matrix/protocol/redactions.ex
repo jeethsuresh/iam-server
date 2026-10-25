@@ -75,6 +75,8 @@ defmodule LakehouseMatrix.Protocol.Redactions do
           set: [content: pruned["content"]]
         )
 
+        Repo.delete_all(from a in "matrix_erased_events", where: a.event_id == ^target.event_id)
+
         state_content =
           Map.merge(pruned["content"], %{
             "_event_id" => target.event_id,

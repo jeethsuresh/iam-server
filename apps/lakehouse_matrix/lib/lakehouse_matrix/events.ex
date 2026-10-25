@@ -50,6 +50,10 @@ defmodule LakehouseMatrix.Events do
       timeline_visible: Map.get(event_map, "timeline_visible", true)
     })
     |> Repo.insert()
+    |> then(fn
+      {:ok, record} -> {:ok, LakehouseMatrix.Erasure.capture_projection(record)}
+      error -> error
+    end)
     |> tap(fn
       {:ok, e} ->
         if is_nil(LakehouseMatrix.Protocol.Graph.room(e.room_id)),
@@ -72,7 +76,7 @@ defmodule LakehouseMatrix.Events do
     to_ts = Keyword.get(opts, :to_ts)
 
     query =
-      from e in RoomEvent,
+      from e in LakehouseMatrix.Erasure.event_query(opts[:principal]),
         where: e.room_id == ^room_id and e.type == "m.room.message",
         order_by: [desc: e.origin_server_ts],
         limit: ^limit
@@ -90,18 +94,18 @@ defmodule LakehouseMatrix.Events do
     query
     |> Repo.all()
     |> Enum.reverse()
-    |> Enum.map(&to_client_event/1)
+    |> Enum.map(&to_client_event(&1, opts[:principal]))
   end
 
-  def list_all_timeline(room_id, limit \\ 100) do
+  def list_all_timeline(room_id, limit \\ 100, principal \\ nil) do
     Repo.all(
-      from e in RoomEvent,
+      from e in LakehouseMatrix.Erasure.event_query(principal),
         where: e.room_id == ^room_id and is_nil(e.state_key),
         order_by: [desc: e.inserted_at, desc: e.id],
         limit: ^limit
     )
     |> Enum.reverse()
-    |> Enum.map(&to_client_event/1)
+    |> Enum.map(&to_client_event(&1, principal))
   end
 
   @doc """
@@ -111,14 +115,14 @@ defmodule LakehouseMatrix.Events do
   def list_file_messages(room_id, opts \\ []) do
     limit = Keyword.get(opts, :limit, 100)
 
-    from(e in RoomEvent,
+    from(e in LakehouseMatrix.Erasure.event_query(opts[:principal]),
       where: e.room_id == ^room_id and e.type == "m.room.message",
       where: fragment("?->>'msgtype' IN ('m.file', 'm.image')", e.content),
       order_by: [desc: e.origin_server_ts],
       limit: ^limit
     )
     |> Repo.all()
-    |> Enum.map(&to_client_event/1)
+    |> Enum.map(&to_client_event(&1, opts[:principal]))
   end
 
   @spec list_since(integer() | nil, keyword()) :: [RoomEvent.t()]
@@ -141,6 +145,9 @@ defmodule LakehouseMatrix.Events do
   end
 
   @spec to_client_event(RoomEvent.t() | map()) :: map()
+  def to_client_event(event, principal),
+    do: event |> to_client_event() |> LakehouseMatrix.Erasure.client(principal)
+
   def to_client_event(%RoomEvent{} = e) do
     base = %{
       "event_id" => e.event_id,

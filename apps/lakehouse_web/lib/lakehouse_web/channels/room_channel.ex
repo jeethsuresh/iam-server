@@ -34,7 +34,7 @@ defmodule LakehouseWeb.RoomChannel do
   @impl true
   def handle_info({:room_event, _room_id, msg}, socket) do
     if allowed?(socket) do
-      push(socket, "event", msg)
+      push(socket, "event", LakehouseMatrix.Erasure.client(msg, socket.assigns.principal_id))
       {:noreply, socket}
     else
       {:stop, :normal, socket}

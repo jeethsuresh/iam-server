@@ -19,6 +19,7 @@ config :lakehouse_web, LakehouseWeb.Endpoint,
   check_origin: false
 
 config :logger, level: :warning
+config :lakehouse_matrix, :account_worker_enabled, false
 
 config :lakehouse_iam,
   admin_username: "admin",

@@ -1,6 +1,5 @@
 defmodule LakehouseWeb.Matrix.ProtocolController do
   use LakehouseWeb, :controller
-  alias LakehouseIam.Repo
   alias LakehouseMatrix.{ClientKeys, ClientRooms, ClientStore, ClientSync, Identity, Memberships}
 
   def resolve_alias(conn, %{"roomAlias" => ref}),
@@ -192,6 +191,14 @@ defmodule LakehouseWeb.Matrix.ProtocolController do
   end
 
   def logout(conn, _), do: json(conn, ClientStore.logout(principal(conn), device(conn)))
+
+  def deactivate(conn, params),
+    do:
+      respond(
+        conn,
+        LakehouseMatrix.Deactivation.deactivate(principal(conn), device(conn), params)
+      )
+
   def logout_all(conn, _), do: json(conn, ClientStore.logout(principal(conn), device(conn), true))
   def devices(conn, _), do: json(conn, %{"devices" => ClientStore.devices(principal(conn))})
 
@@ -332,7 +339,7 @@ defmodule LakehouseWeb.Matrix.ProtocolController do
 
   def get_state(conn, %{"roomId" => ref} = params) do
     with {:ok, room, boundary} <- ClientRooms.history_access(principal(conn), ref) do
-      events = ClientSync.state_at(room.id, boundary)
+      events = ClientSync.state_at(room.id, boundary, principal(conn))
 
       if type = params["eventType"] do
         case Enum.find(
@@ -412,7 +419,7 @@ defmodule LakehouseWeb.Matrix.ProtocolController do
   def joined_members(conn, %{"roomId" => ref}) do
     with {:ok, room} <- ClientRooms.readable(principal(conn), ref) do
       joined =
-        for p <- Memberships.list_members(room.id),
+        for p <- Memberships.list_members(room.id, principal(conn)),
             into: %{},
             do:
               {Map.get(p, :user_id) || Identity.user_id(p.username),
@@ -467,14 +474,7 @@ defmodule LakehouseWeb.Matrix.ProtocolController do
         respond(conn, {:error, :invalid_param})
 
       true ->
-        {1, [row]} =
-          Repo.insert_all(
-            "matrix_filters",
-            [%{principal_id: ClientStore.dump_id(principal(conn)), content: body(conn)}],
-            returning: [:id]
-          )
-
-        json(conn, %{"filter_id" => to_string(row.id)})
+        respond(conn, ClientStore.create_filter(principal(conn), body(conn)))
     end
   end
 
@@ -668,6 +668,9 @@ defmodule LakehouseWeb.Matrix.ProtocolController do
 
   def respond(conn, {:error, :user_suspended}),
     do: error(conn, 403, "M_USER_SUSPENDED", "This account has been suspended")
+
+  def respond(conn, {:error, :user_deactivated}),
+    do: error(conn, 403, "M_USER_DEACTIVATED", "This account has been deactivated")
 
   def respond(conn, {:error, :unknown_token}),
     do:

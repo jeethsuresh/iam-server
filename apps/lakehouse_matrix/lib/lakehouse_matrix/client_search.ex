@@ -112,8 +112,39 @@ defmodule LakehouseMatrix.ClientSearch do
   end
 
   defp query(principal, high, rooms, types, term, ordering, filter) do
-    query =
+    ordinary =
       from e in RoomEvent,
+        where: e.room_id in ^rooms and e.stream_id <= ^high and e.type in ^types,
+        where:
+          fragment(
+            "to_tsvector('english', matrix_search_text(?, ?)) @@ websearch_to_tsquery('english', ?)",
+            e.type,
+            e.content,
+            ^term
+          ),
+        select: %{id: e.id}
+
+    archived =
+      from a in "matrix_erased_events",
+        join: e in RoomEvent,
+        on: e.event_id == a.event_id,
+        where: e.room_id in ^rooms and e.stream_id <= ^high and a.event_type in ^types,
+        where: fragment("matrix_erasure_access(?, ?)", a.event_id, type(^principal, :binary_id)),
+        where:
+          fragment(
+            "to_tsvector('english', matrix_search_text(?, ?)) @@ websearch_to_tsquery('english', ?)",
+            a.event_type,
+            a.original_content,
+            ^term
+          ),
+        select: %{id: e.id}
+
+    candidates = union(ordinary, ^archived)
+
+    query =
+      from e in LakehouseMatrix.Erasure.event_query(principal),
+        join: candidate in subquery(candidates),
+        on: candidate.id == e.id,
         where: e.room_id in ^rooms and e.stream_id <= ^high and e.type in ^types,
         where:
           fragment(
@@ -197,7 +228,7 @@ defmodule LakehouseMatrix.ClientSearch do
         Map.put(
           value,
           "profile_info",
-          profiles(room, Enum.reverse(before) ++ [event] ++ after_events)
+          profiles(room, Enum.reverse(before) ++ [event] ++ after_events, principal)
         ),
       else: value
   end
@@ -226,7 +257,7 @@ defmodule LakehouseMatrix.ClientSearch do
     end
   end
 
-  defp profiles(room, events) do
+  defp profiles(room, events, principal) do
     Map.new(events, fn event ->
       member =
         if Graph.room(room) do
@@ -234,10 +265,10 @@ defmodule LakehouseMatrix.ClientSearch do
                id when is_binary(id) <-
                  record.state_before[Jason.encode!(["m.room.member", event["sender"]])],
                member when not is_nil(member) <- Graph.event(id),
-               do: member.pdu["content"]
+               do: ClientHistory.client_event(member, principal)["content"]
         else
           record = Repo.get_by!(RoomEvent, event_id: event["event_id"])
-          state = ClientSync.state_at(room, record.stream_id)
+          state = ClientSync.state_at(room, record.stream_id, principal)
 
           member =
             Enum.find(
@@ -265,8 +296,11 @@ defmodule LakehouseMatrix.ClientSearch do
     |> Enum.uniq()
     |> Enum.flat_map(fn ref ->
       case ClientRooms.history_access(principal, ref) do
-        {:ok, room, boundary} -> [{ref, ClientSync.state_at(room.id, min(boundary, high))}]
-        _ -> []
+        {:ok, room, boundary} ->
+          [{ref, ClientSync.state_at(room.id, min(boundary, high), principal)}]
+
+        _ ->
+          []
       end
     end)
     |> Map.new()

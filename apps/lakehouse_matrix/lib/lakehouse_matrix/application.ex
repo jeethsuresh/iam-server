@@ -12,6 +12,11 @@ defmodule LakehouseMatrix.Application do
     ]
 
     children =
+      if Application.get_env(:lakehouse_matrix, :account_worker_enabled, true),
+        do: children ++ [LakehouseMatrix.DeactivationWorker],
+        else: children
+
+    children =
       if Application.get_env(:lakehouse_matrix, :federation_enabled, false),
         do: children ++ [LakehouseMatrix.Federation.Outbox, LakehouseMatrix.Federation.Inbox],
         else: children

@@ -76,6 +76,17 @@ E2EE is complete.
   also respect these restrictions, and locked accounts receive no HTTP pushes.
   Whois is private to the account and administrators; connection metadata which
   the server does not retain is omitted.
+- Password-reauthenticated account deactivation permanently closes the shared
+  Gravitas identity, revokes IAM, app and Matrix credentials, and removes private
+  client state and encrypted backups. IAM approval and bootstrap configuration
+  cannot reopen it. Leased room departures continue after the response, retry
+  failures and rotate through rooms so one unavailable peer cannot block others.
+  Erasure prunes room content for later members and servers while retaining
+  original copies for prior members. It preserves canonical authorization and
+  ACL state, filters search and relation data, and covers River read models,
+  invitations, late history and federation retrieval/delivery. A real redaction
+  removes the preserved original. Erasure is not broadcast to other servers,
+  which may retain their existing copies, as specified by Matrix.
 - Atomic v11/v12 room upgrades, tombstones, predecessor links and moved local
   aliases. Replacement rooms transfer standard settings and invite members
   without impersonating joins; tags, direct-room links and room push rules are

@@ -41,6 +41,7 @@ defmodule LakehouseMatrix.ClientUia do
       result =
         Repo.transaction(fn ->
           ClientStore.lock!()
+          LakehouseMatrix.AccountModeration.require!(principal, :read)
 
           session =
             Repo.one(

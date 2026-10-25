@@ -525,7 +525,7 @@ defmodule LakehouseMatrix.ClientRooms do
              where: e.room_id == ^room.id and e.event_id == ^event and e.stream_id <= ^boundary
            ),
          %{} = e <- Repo.one(LakehouseMatrix.ClientSync.visible_query(query, principal)) do
-      {:ok, Map.put(Events.to_client_event(e), "room_id", Identity.room_id(room.id))}
+      {:ok, Map.put(Events.to_client_event(e, principal), "room_id", Identity.room_id(room.id))}
     else
       _ -> {:error, :not_found}
     end
@@ -586,6 +586,7 @@ defmodule LakehouseMatrix.ClientRooms do
          true <- valid_receipt_thread?(principal, room.id, target, data["thread_id"]) do
       LakehouseMatrix.Protocol.Policy.transaction(fn ->
         ClientStore.lock!()
+        LakehouseMatrix.AccountModeration.require!(principal, :read)
         thread = data["thread_id"] || ""
 
         unless LakehouseMatrix.Notifications.receipt_forward?(

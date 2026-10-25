@@ -192,7 +192,7 @@ defmodule LakehouseMatrix.LegacySync do
               # Private invitations expose only the recipient's membership event.
               if own_membership or (is_integer(boundary) and item.position <= boundary) do
                 [
-                  Events.to_client_event(event)
+                  Events.to_client_event(event, principal)
                   |> Map.put("room_id", Identity.room_id(event.room_id))
                 ]
               else

@@ -79,8 +79,8 @@ defmodule LakehouseMatrix.Federation.RoomProtocol do
 
             %{
               "origin" => Identity.homeserver_domain(),
-              "state" => pdus(ids, graph),
-              "auth_chain" => pdus(auth, graph),
+              "state" => pdus(ids, graph, origin),
+              "auth_chain" => pdus(auth, graph, origin),
               "event" => Map.delete(accepted, "event_id"),
               "members_omitted" => false
             }
@@ -89,6 +89,7 @@ defmodule LakehouseMatrix.Federation.RoomProtocol do
             stripped =
               RoomAccess.state(Graph.room(metadata.local_room_id))
               |> Map.values()
+              |> Enum.map(&LakehouseMatrix.Erasure.federation(&1["event_id"], origin, &1))
               |> Enum.filter(
                 &(&1["type"] in ~w(m.room.create m.room.name m.room.avatar m.room.topic m.room.join_rules m.room.encryption))
               )
@@ -117,7 +118,7 @@ defmodule LakehouseMatrix.Federation.RoomProtocol do
        %{
          "origin" => Identity.homeserver_domain(),
          "origin_server_ts" => System.system_time(:millisecond),
-         "pdus" => [record.pdu]
+         "pdus" => [LakehouseMatrix.Erasure.federation(record.event_id, origin, record.pdu)]
        }}
     else
       _ -> {:error, :not_found}
@@ -137,7 +138,8 @@ defmodule LakehouseMatrix.Federation.RoomProtocol do
 
       if ids_only,
         do: {:ok, %{"pdu_ids" => Enum.sort(ids), "auth_chain_ids" => Enum.sort(auth)}},
-        else: {:ok, %{"pdus" => pdus(ids, graph), "auth_chain" => pdus(auth, graph)}}
+        else:
+          {:ok, %{"pdus" => pdus(ids, graph, origin), "auth_chain" => pdus(auth, graph, origin)}}
     else
       _ -> {:error, :not_found}
     end
@@ -154,7 +156,7 @@ defmodule LakehouseMatrix.Federation.RoomProtocol do
       {:ok,
        %{
          "auth_chain" =>
-           pdus(Enum.uniq([metadata.create_id | Graph.auth_chain([id], graph)]), graph)
+           pdus(Enum.uniq([metadata.create_id | Graph.auth_chain([id], graph)]), graph, origin)
        }}
     else
       _ -> {:error, :not_found}
@@ -180,7 +182,8 @@ defmodule LakehouseMatrix.Federation.RoomProtocol do
        %{
          "origin" => Identity.homeserver_domain(),
          "origin_server_ts" => System.system_time(:millisecond),
-         "pdus" => Enum.map(records, & &1.pdu)
+         "pdus" =>
+           Enum.map(records, &LakehouseMatrix.Erasure.federation(&1.event_id, origin, &1.pdu))
        }}
     else
       false -> {:error, :invalid_param}
@@ -220,7 +223,11 @@ defmodule LakehouseMatrix.Federation.RoomProtocol do
         walk(roots, metadata.local_room_id, MapSet.new(earliest ++ latest), [], limit, depth)
         |> Enum.filter(&RoomAccess.visible_event?(metadata, origin, &1.event_id))
 
-      {:ok, %{"events" => Enum.map(records, & &1.pdu)}}
+      {:ok,
+       %{
+         "events" =>
+           Enum.map(records, &LakehouseMatrix.Erasure.federation(&1.event_id, origin, &1.pdu))
+       }}
     else
       false -> {:error, :invalid_param}
       error -> error
@@ -282,6 +289,12 @@ defmodule LakehouseMatrix.Federation.RoomProtocol do
 
   defp check_restricted(_, _, _), do: :ok
 
-  defp pdus(ids, graph),
-    do: ids |> Enum.sort() |> Enum.map(&Map.drop(graph[&1], ["event_id", :auth_rejected]))
+  defp pdus(ids, graph, origin),
+    do:
+      ids
+      |> Enum.sort()
+      |> Enum.map(fn id ->
+        LakehouseMatrix.Erasure.federation(id, origin, graph[id])
+        |> Map.drop(["event_id", :auth_rejected])
+      end)
 end

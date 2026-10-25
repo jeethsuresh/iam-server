@@ -41,7 +41,7 @@ defmodule LakehouseMatrix.Federation.RemoteMembership do
          :ok <- Event.validate(event, metadata.version) do
       Repo.transaction(fn ->
         ClientStore.lock!()
-        LakehouseMatrix.AccountModeration.require!(principal, :read)
+        LakehouseMatrix.AccountModeration.require!(principal, :leave)
         current = Invites.pending(local, user)
 
         unless current && current.event_id == pending.event_id,

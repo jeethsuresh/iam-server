@@ -76,12 +76,14 @@ defmodule LakehouseMatrix.Memberships do
   end
 
   @spec list_members(Ecto.UUID.t()) :: [%{username: String.t(), principal_id: Ecto.UUID.t()}]
-  def list_members(room_id) do
+  def list_members(room_id, principal \\ nil) do
     if LakehouseMatrix.Protocol.Graph.room(room_id) do
       members =
         LakehouseMatrix.Federation.RoomAccess.state(LakehouseMatrix.Protocol.Graph.room(room_id))
 
       for {{"m.room.member", user}, event} <- members, event["content"]["membership"] == "join" do
+        event = LakehouseMatrix.Erasure.client(event, principal)
+
         local =
           with {:ok, name} <- LakehouseMatrix.Identity.parse_user_id(user),
                {:ok, principal} <- LakehouseIam.Accounts.fetch_user(name),
@@ -141,6 +143,24 @@ defmodule LakehouseMatrix.Memberships do
       ) do
     if membership in ~w(join invite knock),
       do: LakehouseMatrix.ClientStore.restore_room!(principal_id, room_id)
+
+    if membership in ~w(join invite knock) and
+         Repo.exists?(
+           from p in LakehouseIam.Schema.Principal,
+             where: p.id == ^principal_id and p.matrix_deactivated == true
+         ) do
+      Repo.insert_all(
+        "matrix_deactivation_jobs",
+        [
+          %{
+            principal_id: LakehouseMatrix.ClientStore.dump_id(principal_id),
+            available_at: LakehouseMatrix.ClientStore.now(),
+            attempts: 0
+          }
+        ],
+        on_conflict: :nothing
+      )
+    end
 
     state = %{
       "membership" => membership,

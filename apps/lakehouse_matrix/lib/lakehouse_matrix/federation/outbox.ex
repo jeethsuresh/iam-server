@@ -48,7 +48,7 @@ defmodule LakehouseMatrix.Federation.Outbox do
             end
           end
 
-        result = request.(:put, item.destination, path, item.payload)
+        result = request.(:put, item.destination, path, LakehouseMatrix.Erasure.outbox(item))
 
         case result do
           {:ok, body} ->

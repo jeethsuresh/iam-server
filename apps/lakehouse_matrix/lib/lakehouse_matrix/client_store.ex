@@ -185,15 +185,34 @@ defmodule LakehouseMatrix.ClientStore do
     )
   end
 
-  def put_data(principal, room, type, content) when is_map(content) do
-    Repo.insert_all(
-      "matrix_account_data",
-      [%{principal_id: dump_id(principal), room_id: room, type: type, content: content}],
-      on_conflict: [set: [content: content]],
-      conflict_target: [:principal_id, :room_id, :type]
-    )
+  def create_filter(principal, content) do
+    Repo.transaction(fn ->
+      lock!()
+      LakehouseMatrix.AccountModeration.require!(principal, :read)
 
-    {:ok, %{}}
+      {1, [row]} =
+        Repo.insert_all("matrix_filters", [%{principal_id: dump_id(principal), content: content}],
+          returning: [:id]
+        )
+
+      %{"filter_id" => to_string(row.id)}
+    end)
+  end
+
+  def put_data(principal, room, type, content) when is_map(content) do
+    Repo.transaction(fn ->
+      lock!()
+      LakehouseMatrix.AccountModeration.require!(principal, :read)
+
+      Repo.insert_all(
+        "matrix_account_data",
+        [%{principal_id: dump_id(principal), room_id: room, type: type, content: content}],
+        on_conflict: [set: [content: content]],
+        conflict_target: [:principal_id, :room_id, :type]
+      )
+
+      %{}
+    end)
   end
 
   def link_direct(first, second, room) do

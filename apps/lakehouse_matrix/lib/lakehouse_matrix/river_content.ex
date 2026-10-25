@@ -12,13 +12,13 @@ defmodule LakehouseMatrix.RiverContent do
 
   def thread(g, id, p) do
     DelegatedGroups.with_room(g, id, "chats.read", fn ->
-      root = target!(id, p["event_id"])
+      root = target!(id, p["event_id"]) |> LakehouseMatrix.Erasure.record(g.principal_id)
       unless root.type in ["m.room.message" | @entry_types], do: Repo.rollback(:invalid_event)
-      root = thread_root(id, root)
+      root = thread_root(id, root) |> LakehouseMatrix.Erasure.record(g.principal_id)
       unless root.type in ["m.room.message" | @entry_types], do: Repo.rollback(:invalid_event)
 
       query =
-        from e in RoomEvent,
+        from e in LakehouseMatrix.Erasure.event_query(g.principal_id),
           where:
             e.room_id == ^id and e.type == "m.room.message" and
               (fragment("? #>> '{m.relates_to,event_id}'", e.content) == ^root.event_id or
@@ -156,13 +156,14 @@ defmodule LakehouseMatrix.RiverContent do
   def decorate([], _), do: []
 
   def decorate(rows, actor) do
+    rows = Enum.map(rows, &LakehouseMatrix.Erasure.record(&1, actor))
     room = hd(rows).room_id
     ids = Enum.map(rows, & &1.event_id)
     publications = LakehouseMatrix.RiverPublishing.summaries(ids)
 
     edits =
       Repo.all(
-        from e in RoomEvent,
+        from e in LakehouseMatrix.Erasure.event_query(actor),
           where:
             e.room_id == ^room and e.type == ^@edit and
               fragment("? #>> '{m.relates_to,event_id}'", e.content) in ^ids,
@@ -186,11 +187,11 @@ defmodule LakehouseMatrix.RiverContent do
     {:ok, actor_uuid} = Ecto.UUID.dump(actor)
 
     sql = """
-    SELECT r.content #>> '{m.relates_to,event_id}', r.content #>> '{m.relates_to,key}',
+    SELECT matrix_view_content(r.event_id, $3) #>> '{m.relates_to,event_id}', matrix_view_content(r.event_id, $3) #>> '{m.relates_to,key}',
            COUNT(DISTINCT r.sender), BOOL_OR(r.principal_id = $3)
     FROM room_events r
     WHERE r.room_id = ANY($1::uuid[]) AND r.type = 'm.reaction'
-      AND r.content #>> '{m.relates_to,event_id}' = ANY($2::text[])
+      AND matrix_view_content(r.event_id, $3) #>> '{m.relates_to,event_id}' = ANY($2::text[])
       AND NOT EXISTS (SELECT 1 FROM room_events d WHERE d.room_id = r.room_id
         AND d.type = 'm.room.redaction' AND d.content->>'redacts' = r.event_id)
     GROUP BY 1, 2 ORDER BY 1, 2
@@ -204,7 +205,7 @@ defmodule LakehouseMatrix.RiverContent do
 
     replies =
       Repo.all(
-        from e in RoomEvent,
+        from e in LakehouseMatrix.Erasure.event_query(actor),
           where:
             e.room_id in ^rooms and e.type == "m.room.message" and
               fragment(
@@ -230,7 +231,7 @@ defmodule LakehouseMatrix.RiverContent do
     for e <- rows do
       edit = edits[e.event_id]
 
-      Events.to_client_event(e)
+      Events.to_client_event(e, actor)
       |> Map.put(
         "publication",
         Map.get(publications, e.event_id, %{

@@ -9,6 +9,8 @@ defmodule LakehouseMatrix.AccountModeration do
 
   def check(id, mode \\ :write) do
     case status(id) do
+      %Principal{matrix_deactivated: true} when mode == :leave -> :ok
+      %Principal{matrix_deactivated: true} when mode != :leave -> {:error, :user_deactivated}
       %Principal{matrix_locked: true} -> {:error, :user_locked}
       %Principal{matrix_suspended: true} when mode == :write -> {:error, :user_suspended}
       _ -> :ok
@@ -88,6 +90,11 @@ defmodule LakehouseMatrix.AccountModeration do
            do: p
 
     case account do
+      %Principal{matrix_deactivated: true} ->
+        if type == "m.room.member" and key == sender and content["membership"] == "leave",
+          do: :ok,
+          else: {:error, :user_deactivated}
+
       %Principal{matrix_locked: true} ->
         {:error, :user_locked}
 

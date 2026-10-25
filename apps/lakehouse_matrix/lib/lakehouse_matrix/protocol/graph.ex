@@ -328,6 +328,7 @@ defmodule LakehouseMatrix.Protocol.Graph do
       )
 
     record = if existing, do: Repo.update!(record), else: Repo.insert!(record)
+    LakehouseMatrix.Erasure.capture_pdus!([record.event_id])
 
     if mode != :backfill and current_auth == :ok and not policy_rejected do
       graph = Map.put(graph, id, event)
@@ -387,6 +388,8 @@ defmodule LakehouseMatrix.Protocol.Graph do
             on_conflict: :nothing,
             conflict_target: [:event_id]
           )
+
+      LakehouseMatrix.Erasure.capture_pdus!(Enum.map(entries, & &1.event_id))
     end
 
     :ok
@@ -570,10 +573,18 @@ defmodule LakehouseMatrix.Protocol.Graph do
   end
 
   defp persist_record!(nil, room, id, attrs),
-    do: %Pdu{event_id: id, local_room_id: room} |> Ecto.Changeset.change(attrs) |> Repo.insert!()
+    do:
+      %Pdu{event_id: id, local_room_id: room}
+      |> Ecto.Changeset.change(attrs)
+      |> Repo.insert!()
+      |> tap(fn _ -> LakehouseMatrix.Erasure.capture_pdus!([id]) end)
 
   defp persist_record!(record, _, _, attrs),
-    do: record |> Ecto.Changeset.change(attrs) |> Repo.update!()
+    do:
+      record
+      |> Ecto.Changeset.change(attrs)
+      |> Repo.update!()
+      |> tap(fn updated -> LakehouseMatrix.Erasure.capture_pdus!([updated.event_id]) end)
 
   # A pruned copy received later must not destroy an already verified body.
   # Signatures from the newly verified envelope still apply to the same reference

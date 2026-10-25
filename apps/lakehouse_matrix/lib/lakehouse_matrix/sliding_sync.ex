@@ -263,113 +263,136 @@ defmodule LakehouseMatrix.SlidingSync do
         if initial or expanded or changed_config or (activity[id] || 0) > last or data_changed or
              LakehouseMatrix.Notifications.changed?(principal, id, last, high) do
           payload =
-            if membership in ["invite", "knock"] or
-                 not ClientSync.ever_joined?(principal, id, high) do
-              key =
-                if format == :v4,
-                  do: "stripped_state",
-                  else: if(membership == "knock", do: "knock_state", else: "invite_state")
+            cond do
+              not ClientSync.reader_allowed?(id, principal) ->
+                %{
+                  "initial" => initial,
+                  "membership" => membership,
+                  "timeline" => ClientSync.departure_events(principal, id, high),
+                  "required_state" => [],
+                  "notification_count" => 0,
+                  "highlight_count" => 0,
+                  "num_live" => if(member.stream_id > since, do: 1, else: 0)
+                }
 
-              %{
-                key => ClientSync.stripped(id, high, principal),
-                "membership" => membership,
-                "initial" => initial
-              }
-            else
-              lower = if initial or expanded, do: 0, else: last
-              room_high = if membership in ["leave", "ban"], do: member.stream_id, else: high
-              limit = config["timeline_limit"]
-              rows = ClientSync.timeline(id, lower, room_high, limit + 1, principal)
-              limited = length(rows) > limit
-              rows = rows |> Enum.take(limit) |> Enum.reverse()
-              timeline = Enum.map(rows, &LakehouseMatrix.Events.to_client_event/1)
+              membership in ["invite", "knock"] or
+                  not ClientSync.ever_joined?(principal, id, high) ->
+                key =
+                  if format == :v4,
+                    do: "stripped_state",
+                    else: if(membership == "knock", do: "knock_state", else: "invite_state")
 
-              timeline =
-                if limited,
-                  do: LakehouseMatrix.ClientRelations.bundle(principal, id, timeline, room_high),
-                  else: timeline
+                %{
+                  key => ClientSync.stripped(id, high, principal),
+                  "membership" => membership,
+                  "initial" => initial
+                }
 
-              state = ClientSync.state_at(id, room_high)
+              true ->
+                lower = if initial or expanded, do: 0, else: last
+                room_high = if membership in ["leave", "ban"], do: member.stream_id, else: high
+                limit = config["timeline_limit"]
+                rows = ClientSync.timeline(id, lower, room_high, limit + 1, principal)
+                limited = length(rows) > limit
+                rows = rows |> Enum.take(limit) |> Enum.reverse()
+                timeline = Enum.map(rows, &LakehouseMatrix.Events.to_client_event(&1, principal))
 
-              required =
-                Enum.filter(state, fn event ->
-                  Enum.any?(config["state"], &required?(event, &1, principal, timeline)) or
-                    (not limited and not initial and event["type"] == "m.room.member" and
-                       Enum.any?(config["state"], &(is_map(&1) and &1["lazy_members"] == true)) and
-                       ClientSync.state_position(id, event["event_id"], room_high) > last)
-                end)
-
-              required =
-                if initial or changed_config,
-                  do: required,
-                  else:
-                    Enum.filter(required, fn e ->
-                      ClientSync.state_position(id, e["event_id"], room_high) > last or
-                        (e["type"] == "m.room.member" and
-                           Enum.any?(
-                             timeline,
-                             &(&1["sender"] == e["state_key"] or &1["state_key"] == e["state_key"])
-                           ))
-                    end)
-
-              before = if rows == [], do: room_high, else: hd(rows).stream_id
-
-              removed =
-                removed_state(id, last, room_high, config["state"], principal, timeline, initial)
-
-              %{
-                "initial" => initial,
-                "notification_count" =>
-                  LakehouseMatrix.Notifications.counts(principal, id, room_high)[
-                    "notification_count"
-                  ],
-                "highlight_count" =>
-                  LakehouseMatrix.Notifications.counts(principal, id, room_high)[
-                    "highlight_count"
-                  ],
-                "membership" => membership,
-                "name" => state_content(state, "m.room.name")["name"],
-                "avatar" => state_content(state, "m.room.avatar")["url"],
-                "is_dm" => ref in direct_rooms,
-                "joined_count" =>
-                  Enum.count(
-                    state,
-                    &(&1["type"] == "m.room.member" and &1["content"]["membership"] == "join")
-                  ),
-                "invited_count" =>
-                  Enum.count(
-                    state,
-                    &(&1["type"] == "m.room.member" and &1["content"]["membership"] == "invite")
-                  ),
-                "bump_stamp" => activity[id] || 0,
-                "timeline" => timeline,
-                "required_state" => required ++ removed,
-                "limited" => limited,
-                "num_live" =>
-                  if(previous, do: Enum.count(rows, &(&1.stream_id > since)), else: 0),
-                "prev_batch" =>
-                  if(LakehouseMatrix.Protocol.Graph.room(id),
+                timeline =
+                  if limited,
                     do:
-                      if(rows == [],
-                        do: ClientHistory.at_stream(principal, device, id, room_high),
-                        else: ClientHistory.before(principal, device, id, hd(rows).event_id)
-                      ),
-                    else: Cursor.encode("history", principal, device, before, id)
+                      LakehouseMatrix.ClientRelations.bundle(principal, id, timeline, room_high),
+                    else: timeline
+
+                state = ClientSync.state_at(id, room_high, principal)
+
+                required =
+                  Enum.filter(state, fn event ->
+                    Enum.any?(config["state"], &required?(event, &1, principal, timeline)) or
+                      (not limited and not initial and event["type"] == "m.room.member" and
+                         Enum.any?(config["state"], &(is_map(&1) and &1["lazy_members"] == true)) and
+                         ClientSync.state_position(id, event["event_id"], room_high) > last)
+                  end)
+
+                required =
+                  if initial or changed_config,
+                    do: required,
+                    else:
+                      Enum.filter(required, fn e ->
+                        ClientSync.state_position(id, e["event_id"], room_high) > last or
+                          (e["type"] == "m.room.member" and
+                             Enum.any?(
+                               timeline,
+                               &(&1["sender"] == e["state_key"] or
+                                   &1["state_key"] == e["state_key"])
+                             ))
+                      end)
+
+                before = if rows == [], do: room_high, else: hd(rows).stream_id
+
+                removed =
+                  removed_state(
+                    id,
+                    last,
+                    room_high,
+                    config["state"],
+                    principal,
+                    timeline,
+                    initial
                   )
-              }
-              |> then(fn p ->
-                if expanded,
-                  do:
-                    Map.put(
-                      p,
-                      if(format == :v4,
-                        do: "expanded_timeline",
-                        else: "unstable_expanded_timeline"
-                      ),
-                      true
+
+                %{
+                  "initial" => initial,
+                  "notification_count" =>
+                    LakehouseMatrix.Notifications.counts(principal, id, room_high)[
+                      "notification_count"
+                    ],
+                  "highlight_count" =>
+                    LakehouseMatrix.Notifications.counts(principal, id, room_high)[
+                      "highlight_count"
+                    ],
+                  "membership" => membership,
+                  "name" => state_content(state, "m.room.name")["name"],
+                  "avatar" => state_content(state, "m.room.avatar")["url"],
+                  "is_dm" => ref in direct_rooms,
+                  "joined_count" =>
+                    Enum.count(
+                      state,
+                      &(&1["type"] == "m.room.member" and &1["content"]["membership"] == "join")
                     ),
-                  else: p
-              end)
+                  "invited_count" =>
+                    Enum.count(
+                      state,
+                      &(&1["type"] == "m.room.member" and &1["content"]["membership"] == "invite")
+                    ),
+                  "bump_stamp" => activity[id] || 0,
+                  "timeline" => timeline,
+                  "required_state" => required ++ removed,
+                  "limited" => limited,
+                  "num_live" =>
+                    if(previous, do: Enum.count(rows, &(&1.stream_id > since)), else: 0),
+                  "prev_batch" =>
+                    if(LakehouseMatrix.Protocol.Graph.room(id),
+                      do:
+                        if(rows == [],
+                          do: ClientHistory.at_stream(principal, device, id, room_high),
+                          else: ClientHistory.before(principal, device, id, hd(rows).event_id)
+                        ),
+                      else: Cursor.encode("history", principal, device, before, id)
+                    )
+                }
+                |> then(fn p ->
+                  if expanded,
+                    do:
+                      Map.put(
+                        p,
+                        if(format == :v4,
+                          do: "expanded_timeline",
+                          else: "unstable_expanded_timeline"
+                        ),
+                        true
+                      ),
+                    else: p
+                end)
             end
 
           payload =
@@ -408,7 +431,7 @@ defmodule LakehouseMatrix.SlidingSync do
             else:
               Map.put(acc, ref, %{
                 "membership" => event.content["membership"],
-                "timeline" => [LakehouseMatrix.Events.to_client_event(event)],
+                "timeline" => [LakehouseMatrix.Events.to_client_event(event, principal)],
                 "num_live" => 1
               })
         else

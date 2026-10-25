@@ -19,7 +19,7 @@ defmodule LakehouseMatrix.ClientRelations do
          {:ok, upper} <-
            ClientHistory.cursor(params["to"], principal, device, room.id, params["dir"] || "b") do
       depth = if params["recurse"] in [true, "true"], do: 3, else: 1
-      query = related(room.id, target, depth) |> not_ignored(principal)
+      query = related(room.id, target, depth, principal) |> not_ignored(principal)
 
       query =
         if params["relType"],
@@ -43,12 +43,14 @@ defmodule LakehouseMatrix.ClientRelations do
         ClientHistory.ordered(query, lower, if(params["to"], do: upper), params["dir"] || "b")
 
       selected =
-        ClientHistory.visible(rows, metadata, principal) |> Enum.filter(&valid_relation?/1)
+        ClientHistory.visible(rows, metadata, principal)
+        |> Enum.filter(&valid_relation?(&1, principal))
 
       chunk = Enum.take(selected, limit)
 
       response = %{
-        "chunk" => bundle(principal, room.id, Enum.map(chunk, &ClientHistory.client_event/1))
+        "chunk" =>
+          bundle(principal, room.id, Enum.map(chunk, &ClientHistory.client_event(&1, principal)))
       }
 
       more = length(selected) > limit or length(rows) == 1000
@@ -97,7 +99,7 @@ defmodule LakehouseMatrix.ClientRelations do
       me = user(principal)
 
       query =
-        from p in ClientHistory.query(room.id),
+        from p in ClientHistory.query(room.id, principal),
           where: fragment("?->'content'->'m.relates_to'->>'rel_type' = 'm.thread'", p.pdu)
 
       roots =
@@ -134,7 +136,7 @@ defmodule LakehouseMatrix.ClientRelations do
 
       events =
         Enum.map(chunk, fn record ->
-          event = ClientHistory.client_event(record)
+          event = ClientHistory.client_event(record, principal)
           if event["sender"] in ignored, do: Map.put(event, "content", %{}), else: event
         end)
 
@@ -229,7 +231,7 @@ defmodule LakehouseMatrix.ClientRelations do
       cutoff = DateTime.utc_now()
 
       query =
-        from p in ClientHistory.query(room),
+        from p in ClientHistory.query(room, principal),
           left_join: e in RoomEvent,
           on: e.event_id == p.event_id,
           where:
@@ -294,7 +296,12 @@ defmodule LakehouseMatrix.ClientRelations do
 
             relations =
               if info.edit,
-                do: Map.put(relations, "m.replace", ClientHistory.client_event(info.edit)),
+                do:
+                  Map.put(
+                    relations,
+                    "m.replace",
+                    ClientHistory.client_event(info.edit, principal)
+                  ),
                 else: relations
 
             relations =
@@ -331,7 +338,7 @@ defmodule LakehouseMatrix.ClientRelations do
   # A thread child cannot be a thread root. Its edit/reference aggregates still
   # need including, without recursively following a hostile federation cycle.
   defp bundle_latest(principal, room, record, high) do
-    event = ClientHistory.client_event(record)
+    event = ClientHistory.client_event(record, principal)
 
     if relation(event)["rel_type"] == "m.thread",
       do: hd(bundle(principal, room, [event], high)),
@@ -351,9 +358,9 @@ defmodule LakehouseMatrix.ClientRelations do
       else: next
   end
 
-  defp related(room, target, 1),
+  defp related(room, target, 1, principal),
     do:
-      from(p in ClientHistory.query(room),
+      from(p in ClientHistory.query(room, principal),
         where:
           fragment(
             "?->'content'->'m.relates_to'->>'event_id' = ? AND jsonb_typeof(?->'content'->'m.relates_to'->'rel_type') = 'string'",
@@ -363,20 +370,22 @@ defmodule LakehouseMatrix.ClientRelations do
           )
       )
 
-  defp related(room, target, 3) do
-    from p in ClientHistory.query(room),
+  defp related(room, target, 3, principal) do
+    from p in ClientHistory.query(room, principal),
       where:
         fragment(
           """
-          ? IN (WITH RECURSIVE related(event_id, level) AS (
-            SELECT r.event_id, 1 FROM matrix_pdus r WHERE r.local_room_id = ? AND r.pdu->'content'->'m.relates_to'->>'event_id' = ? AND jsonb_typeof(r.pdu->'content'->'m.relates_to'->'rel_type') = 'string'
-            UNION SELECT r.event_id, related.level + 1 FROM matrix_pdus r JOIN related ON r.pdu->'content'->'m.relates_to'->>'event_id' = related.event_id WHERE r.local_room_id = ? AND related.level < 3 AND jsonb_typeof(r.pdu->'content'->'m.relates_to'->'rel_type') = 'string'
+          ? IN (WITH RECURSIVE source AS (
+            SELECT r.event_id, matrix_view_pdu(r.event_id, ?) AS pdu FROM matrix_pdus r WHERE r.local_room_id = ?
+          ), related(event_id, level) AS (
+            SELECT r.event_id, 1 FROM source r WHERE r.pdu->'content'->'m.relates_to'->>'event_id' = ? AND jsonb_typeof(r.pdu->'content'->'m.relates_to'->'rel_type') = 'string'
+            UNION SELECT r.event_id, related.level + 1 FROM source r JOIN related ON r.pdu->'content'->'m.relates_to'->>'event_id' = related.event_id WHERE related.level < 3 AND jsonb_typeof(r.pdu->'content'->'m.relates_to'->'rel_type') = 'string'
           ) SELECT event_id FROM related)
           """,
           p.event_id,
+          type(^principal, :binary_id),
           type(^room, :binary_id),
-          ^target,
-          type(^room, :binary_id)
+          ^target
         )
   end
 
@@ -390,11 +399,13 @@ defmodule LakehouseMatrix.ClientRelations do
     if is_map(value), do: Map.keys(value), else: []
   end
 
-  defp valid_relation?(record) do
+  defp valid_relation?(record, principal) do
     rel = relation(record.pdu)
 
     case Graph.event(rel["event_id"]) do
       %Pdu{local_room_id: room} = parent when room == record.local_room_id ->
+        parent = LakehouseMatrix.Erasure.pdu(parent, principal)
+
         case rel["rel_type"] do
           "m.replace" ->
             valid_edit?(parent.pdu, record.pdu)

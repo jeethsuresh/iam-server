@@ -233,6 +233,7 @@ defmodule LakehouseWeb.Router do
     post "/v3/rooms/:roomId/report", ProtocolController, :report
     post "/v3/users/:userId/report", ProtocolController, :report
     post "/v3/logout", ProtocolController, :logout
+    post "/v3/account/deactivate", ProtocolController, :deactivate
     post "/v3/logout/all", ProtocolController, :logout_all
     post "/v1/login/get_token", ProtocolController, :login_token
     get "/v3/capabilities", ProtocolController, :capabilities

@@ -5,7 +5,7 @@ defmodule LakehouseMatrix.KeyBackups do
   alias LakehouseMatrix.ClientStore
 
   def create(principal, params) do
-    transact(fn ->
+    transact(principal, fn ->
       validate_metadata!(params)
 
       {1, [%{id: id}]} =
@@ -26,10 +26,10 @@ defmodule LakehouseMatrix.KeyBackups do
   end
 
   def version(principal, version \\ nil),
-    do: transact(fn -> metadata(backup!(principal, version)) end)
+    do: transact(principal, fn -> metadata(backup!(principal, version)) end)
 
   def update(principal, version, params) do
-    transact(fn ->
+    transact(principal, fn ->
       validate_metadata!(params)
       backup = backup!(principal, version)
 
@@ -47,7 +47,7 @@ defmodule LakehouseMatrix.KeyBackups do
 
   def delete_version(principal, version),
     do:
-      transact(fn ->
+      transact(principal, fn ->
         case Integer.parse(version) do
           {id, ""} when id > 0 and id <= 9_223_372_036_854_775_807 ->
             Repo.delete_all(
@@ -63,7 +63,7 @@ defmodule LakehouseMatrix.KeyBackups do
       end)
 
   def get(principal, version, room \\ nil, session \\ nil) do
-    transact(fn ->
+    transact(principal, fn ->
       backup = backup!(principal, version)
 
       rows =
@@ -96,7 +96,7 @@ defmodule LakehouseMatrix.KeyBackups do
   end
 
   def put(principal, version, params, room \\ nil, session \\ nil) do
-    transact(fn ->
+    transact(principal, fn ->
       latest = backup!(principal, nil)
 
       if to_string(latest.id) != version,
@@ -148,7 +148,7 @@ defmodule LakehouseMatrix.KeyBackups do
 
   def delete(principal, version, room \\ nil, session \\ nil),
     do:
-      transact(fn ->
+      transact(principal, fn ->
         backup = backup!(principal, version)
         {changed, _} = Repo.delete_all(selection(backup.id, room, session))
 
@@ -251,10 +251,11 @@ defmodule LakehouseMatrix.KeyBackups do
 
   defp identifier?(value), do: is_binary(value) and byte_size(value) in 1..255
 
-  defp transact(fun),
+  defp transact(principal, fun),
     do:
       Repo.transaction(fn ->
         ClientStore.lock!()
+        LakehouseMatrix.AccountModeration.require!(principal, :read)
         fun.()
       end)
 end

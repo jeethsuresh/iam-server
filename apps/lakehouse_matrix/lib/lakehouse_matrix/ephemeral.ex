@@ -29,6 +29,7 @@ defmodule LakehouseMatrix.Ephemeral do
          {:ok, room} <- ClientRooms.readable(principal, ref) do
       Repo.transaction(fn ->
         ClientStore.lock!()
+        LakehouseMatrix.AccountModeration.require!(principal, :read)
 
         put!(
           room.id,
@@ -62,6 +63,8 @@ defmodule LakehouseMatrix.Ephemeral do
       Repo.transaction(fn ->
         ClientStore.lock!()
         now = ClientStore.now()
+
+        LakehouseMatrix.AccountModeration.require!(principal, :read)
 
         current =
           Repo.one(
@@ -132,6 +135,20 @@ defmodule LakehouseMatrix.Ephemeral do
     content = content |> Map.drop(~w(displayname avatar_url)) |> Map.merge(profile(principal))
     publish_presence!(principal, content, received_at)
     :ok
+  end
+
+  def deactivate_presence!(principal) do
+    Repo.transaction(fn ->
+      ClientStore.lock!()
+
+      publish_presence!(
+        principal,
+        %{"presence" => "offline", "currently_active" => false, "last_active_ago" => 0},
+        ClientStore.now()
+      )
+
+      %{}
+    end)
   end
 
   defp profile(principal),

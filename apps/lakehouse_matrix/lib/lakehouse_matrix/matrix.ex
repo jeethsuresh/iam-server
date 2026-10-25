@@ -412,7 +412,7 @@ defmodule LakehouseMatrix.Matrix do
       {:ok, room} ->
         if Memberships.joined?(room.id, principal_id) and
              (not delegated?(room.id) or creator?(room.id, principal_id)) do
-          Events.list_file_messages(room.id, opts)
+          Events.list_file_messages(room.id, Keyword.put(opts, :principal, principal_id))
         else
           []
         end
@@ -546,7 +546,7 @@ defmodule LakehouseMatrix.Matrix do
   @spec room_messages(Ecto.UUID.t(), Ecto.UUID.t(), keyword()) :: map()
   def room_messages(principal_id, room_id, opts \\ []) do
     if Memberships.joined?(room_id, principal_id) do
-      events = Events.list_timeline(room_id, opts)
+      events = Events.list_timeline(room_id, Keyword.put(opts, :principal, principal_id))
 
       %{
         "chunk" => events,

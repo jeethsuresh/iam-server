@@ -154,6 +154,7 @@ Application.put_env(:lakehouse_web, LakehouseWeb.Endpoint, endpoint)
 Application.put_env(:lakehouse_app_demo, :enabled, false)
 Application.put_env(:lakehouse_matrix, :homeserver_domain, "native.test:8448")
 Application.put_env(:lakehouse_matrix, :native_event_graph, true)
+Application.put_env(:lakehouse_matrix, :account_worker_enabled, true)
 Application.put_env(:lakehouse_matrix, :federation_requester, &Interop.federation/4)
 Application.put_env(:lakehouse_matrix, :federation_media_requester, &Interop.federation_media/2)
 Application.put_env(:lakehouse_matrix, :signing_key, Base.encode64(<<0::256>>, padding: false))
@@ -758,8 +759,10 @@ if System.get_env("INTEROP_SERVE_ONLY") != "1" do
 end
 
 if System.get_env("INTEROP_HOLD") == "1" do
-  unless match?({:ok, _}, LakehouseIam.Accounts.fetch_user("cryptoalice")),
-    do: LakehouseMatrix.Fixtures.user_fixture("cryptoalice")
+  for user <- ["cryptoalice", "deactclient", "deactlater"] do
+    unless match?({:ok, _}, LakehouseIam.Accounts.fetch_user(user)),
+      do: LakehouseMatrix.Fixtures.user_fixture(user)
+  end
 
   IO.puts("INTEROP CRYPTO SERVER READY")
   Process.sleep(:infinity)
