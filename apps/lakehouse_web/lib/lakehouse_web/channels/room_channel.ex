@@ -12,7 +12,8 @@ defmodule LakehouseWeb.RoomChannel do
       room ->
         principal_id = socket.assigns.principal_id
 
-        if Memberships.joined?(room.id, principal_id) do
+        if Memberships.joined?(room.id, principal_id) and
+             LakehouseMatrix.AccountModeration.check(principal_id, :read) == :ok do
           {:ok, _} = Rooms.ensure_started(room.id)
 
           Phoenix.PubSub.subscribe(LakehouseWeb.PubSub, "room:#{room.id}")
@@ -32,7 +33,7 @@ defmodule LakehouseWeb.RoomChannel do
 
   @impl true
   def handle_info({:room_event, _room_id, msg}, socket) do
-    if Memberships.joined?(socket.assigns.room_db_id, socket.assigns.principal_id) do
+    if allowed?(socket) do
       push(socket, "event", msg)
       {:noreply, socket}
     else
@@ -41,7 +42,7 @@ defmodule LakehouseWeb.RoomChannel do
   end
 
   def handle_info({:room_ephemeral, _room_id, msg}, socket) do
-    if Memberships.joined?(socket.assigns.room_db_id, socket.assigns.principal_id) do
+    if allowed?(socket) do
       push(socket, "ephemeral", msg)
       {:noreply, socket}
     else
@@ -50,7 +51,7 @@ defmodule LakehouseWeb.RoomChannel do
   end
 
   def handle_info({:room_presence, _room_id, presence}, socket) do
-    if Memberships.joined?(socket.assigns.room_db_id, socket.assigns.principal_id) do
+    if allowed?(socket) do
       push(socket, "presence_state", presence)
       {:noreply, socket}
     else
@@ -59,15 +60,15 @@ defmodule LakehouseWeb.RoomChannel do
   end
 
   def handle_info(:after_join, socket) do
-    if Memberships.joined?(socket.assigns.room_db_id, socket.assigns.principal_id) do
-    meta = %{
-      username: socket.assigns.username,
-      online_at: System.system_time(:second)
-    }
+    if allowed?(socket) do
+      meta = %{
+        username: socket.assigns.username,
+        online_at: System.system_time(:second)
+      }
 
-    _ = RoomServer.track_presence(socket.assigns.room_db_id, socket.assigns.principal_id, meta)
-    push(socket, "presence_state", RoomServer.presence_list(socket.assigns.room_db_id))
-    {:noreply, socket}
+      _ = RoomServer.track_presence(socket.assigns.room_db_id, socket.assigns.principal_id, meta)
+      push(socket, "presence_state", RoomServer.presence_list(socket.assigns.room_db_id))
+      {:noreply, socket}
     else
       {:stop, :normal, socket}
     end
@@ -79,16 +80,16 @@ defmodule LakehouseWeb.RoomChannel do
   end
 
   def handle_in("typing", %{"typing" => typing?}, socket) do
-    if Memberships.joined?(socket.assigns.room_db_id, socket.assigns.principal_id) do
-    _ =
-      RoomServer.set_typing(
-        socket.assigns.room_db_id,
-        socket.assigns.principal_id,
-        socket.assigns.username,
-        typing? in [true, "true", 1, "1"]
-      )
+    if allowed?(socket, :write) do
+      _ =
+        RoomServer.set_typing(
+          socket.assigns.room_db_id,
+          socket.assigns.principal_id,
+          socket.assigns.username,
+          typing? in [true, "true", 1, "1"]
+        )
 
-    {:noreply, socket}
+      {:noreply, socket}
     else
       {:stop, :normal, socket}
     end
@@ -112,6 +113,11 @@ defmodule LakehouseWeb.RoomChannel do
   def handle_in("event", _payload, socket) do
     {:noreply, socket}
   end
+
+  defp allowed?(socket, mode \\ :read),
+    do:
+      Memberships.joined?(socket.assigns.room_db_id, socket.assigns.principal_id) and
+        LakehouseMatrix.AccountModeration.check(socket.assigns.principal_id, mode) == :ok
 
   @impl true
   def terminate(_reason, socket) do

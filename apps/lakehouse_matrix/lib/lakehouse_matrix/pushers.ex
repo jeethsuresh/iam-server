@@ -251,7 +251,7 @@ defmodule LakehouseMatrix.Pushers do
             from p in "matrix_pushers",
               join: u in LakehouseIam.Schema.Principal,
               on: p.principal_id == u.id,
-              where: p.id == ^item.pusher and u.active == true,
+              where: p.id == ^item.pusher and u.active == true and u.matrix_locked == false,
               select: %{
                 principal: type(p.principal_id, :binary_id),
                 config: p.config,

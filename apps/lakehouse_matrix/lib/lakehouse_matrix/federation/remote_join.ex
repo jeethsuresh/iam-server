@@ -14,7 +14,8 @@ defmodule LakehouseMatrix.Federation.RemoteJoin do
         request \\ &Transport.request/4,
         lookup \\ &Keyring.key/3
       ) do
-    with true <- IAM.can?(principal, "matrix.room.join", nil),
+    with :ok <- LakehouseMatrix.AccountModeration.check(principal),
+         true <- IAM.can?(principal, "matrix.room.join", nil),
          {:ok, ref, servers} <- resolve(ref, servers, request),
          true <- is_binary(ref) and String.starts_with?(ref, "!") and byte_size(ref) <= 255 do
       account = Repo.get!(LakehouseIam.Schema.Principal, principal)
@@ -105,6 +106,18 @@ defmodule LakehouseMatrix.Federation.RemoteJoin do
 
       Repo.transaction(fn ->
         ClientStore.lock!()
+
+        case LakehouseMatrix.AccountModeration.event(
+               user,
+               nil,
+               "m.room.member",
+               %{"membership" => "join"},
+               user
+             ) do
+          :ok -> :ok
+          {:error, reason} -> Repo.rollback(reason)
+        end
+
         metadata = Graph.room_by_id(ref)
         local_id = if metadata, do: metadata.local_room_id, else: create_record(snapshot)
 

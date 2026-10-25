@@ -317,6 +317,32 @@ defmodule LakehouseMatrix.Protocol.RoomsTest do
     assert Graph.event(encrypted).pdu["type"] == "m.room.encrypted"
   end
 
+  test "the legacy browser sender cannot write plaintext into an encrypted native room", ctx do
+    assert {:ok, %{"room_id" => ref}} =
+             ClientRooms.create(ctx.alice.id, %{
+               "initial_state" => [
+                 %{
+                   "type" => "m.room.encryption",
+                   "state_key" => "",
+                   "content" => %{"algorithm" => "m.megolm.v1.aes-sha2"}
+                 }
+               ]
+             })
+
+    {:ok, local} = Identity.parse_room_id(ref)
+
+    assert {:error, :encryption_required} =
+             Matrix.send_message(ctx.alice.id, local, "legacy-plaintext", %{
+               "body" => "must stay private",
+               "msgtype" => "m.text"
+             })
+
+    refute Repo.exists?(
+             from e in LakehouseMatrix.Schema.RoomEvent,
+               where: e.room_id == ^local and e.type == "m.room.message"
+           )
+  end
+
   test "River spaces and channels share signed events, stable retries and restricted membership with Matrix clients",
        ctx do
     alias LakehouseMatrix.{DelegatedGroups, Memberships, State}

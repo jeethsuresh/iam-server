@@ -9,7 +9,7 @@ defmodule LakehouseWeb.Plugs.MatrixAuth do
 
   def init(opts), do: opts
 
-  def call(conn, _opts) do
+  def call(conn, opts) do
     conn = fetch_query_params(conn)
     authorization = if raw = token(conn), do: ["Bearer " <> raw], else: []
 
@@ -23,6 +23,7 @@ defmodule LakehouseWeb.Plugs.MatrixAuth do
             |> assign(:current_principal, principal)
             |> assign(:matrix_device_id, device)
             |> assign(:matrix_session_id, session)
+            |> LakehouseWeb.Plugs.MatrixAccountPolicy.call([])
 
           :expired ->
             conn
@@ -38,11 +39,13 @@ defmodule LakehouseWeb.Plugs.MatrixAuth do
             |> halt()
 
           :error ->
-            legacy(conn, token)
+            legacy(conn, token, opts)
         end
 
       _ ->
-        matrix_error(conn, 401, "M_MISSING_TOKEN", "Missing access token")
+        if opts[:optional],
+          do: conn,
+          else: matrix_error(conn, 401, "M_MISSING_TOKEN", "Missing access token")
     end
   end
 
@@ -63,7 +66,7 @@ defmodule LakehouseWeb.Plugs.MatrixAuth do
     end
   end
 
-  defp legacy(conn, token) do
+  defp legacy(conn, token, opts) do
     case LakehouseIam.Auth.Token.verify(token) do
       {:ok, claims} ->
         username = claims["username"]
@@ -77,16 +80,21 @@ defmodule LakehouseWeb.Plugs.MatrixAuth do
               |> assign(:principal_id, principal_id)
               |> assign(:current_principal, principal)
               |> assign(:matrix_device_id, "legacy")
+              |> LakehouseWeb.Plugs.MatrixAccountPolicy.call([])
             else
               matrix_error(conn, 401, "M_UNKNOWN_TOKEN", "Unknown access token")
             end
 
           :error ->
-            matrix_error(conn, 401, "M_UNKNOWN_TOKEN", "Unknown access token")
+            if opts[:optional],
+              do: conn,
+              else: matrix_error(conn, 401, "M_UNKNOWN_TOKEN", "Unknown access token")
         end
 
       :error ->
-        matrix_error(conn, 401, "M_UNKNOWN_TOKEN", "Unknown access token")
+        if opts[:optional],
+          do: conn,
+          else: matrix_error(conn, 401, "M_UNKNOWN_TOKEN", "Unknown access token")
     end
   end
 

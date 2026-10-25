@@ -67,6 +67,7 @@ defmodule LakehouseMatrix.ClientProfiles do
       true ->
         Policy.transaction(fn ->
           ClientStore.lock!()
+          LakehouseMatrix.AccountModeration.require!(principal)
 
           account =
             Repo.one!(

@@ -28,6 +28,10 @@ defmodule LakehouseWeb.Router do
     plug LakehouseWeb.Plugs.BearerAuth
   end
 
+  pipeline :matrix_optional do
+    plug LakehouseWeb.Plugs.MatrixAuth, optional: true
+  end
+
   pipeline :session_authenticated do
     plug LakehouseWeb.Plugs.SessionOrBearerAuth
   end
@@ -186,7 +190,7 @@ defmodule LakehouseWeb.Router do
   end
 
   scope "/_matrix/client", LakehouseWeb.Matrix, as: :matrix do
-    pipe_through :api
+    pipe_through [:api, :matrix_optional]
 
     get "/versions", ClientController, :versions
     get "/v3/directory/room/:roomAlias", ProtocolController, :resolve_alias
@@ -228,6 +232,11 @@ defmodule LakehouseWeb.Router do
     post "/v3/logout/all", ProtocolController, :logout_all
     post "/v1/login/get_token", ProtocolController, :login_token
     get "/v3/capabilities", ProtocolController, :capabilities
+    get "/v3/admin/whois/:userId", AdminController, :whois
+    get "/v1/admin/lock/:userId", AdminController, :locked
+    put "/v1/admin/lock/:userId", AdminController, :locked
+    get "/v1/admin/suspend/:userId", AdminController, :suspended
+    put "/v1/admin/suspend/:userId", AdminController, :suspended
     get "/v3/devices", ProtocolController, :devices
     get "/v3/devices/:device", ProtocolController, :get_device
     put "/v3/devices/:device", ProtocolController, :update_device

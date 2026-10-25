@@ -98,58 +98,62 @@ defmodule LakehouseMatrix.SlidingSync do
   end
 
   defp poll(principal, device, params, previous, format, deadline) do
-    {:ok, {response, state, high}} =
-      Repo.transaction(fn -> build(principal, device, params, previous, format) end)
+    with {:ok, {response, state, high}} <-
+           Repo.transaction(fn -> build(principal, device, params, previous, format) end) do
+      remaining = deadline - System.monotonic_time(:millisecond)
 
-    remaining = deadline - System.monotonic_time(:millisecond)
+      if not is_nil(previous) and remaining > 0 and map_size(response["rooms"]) == 0 and
+           extensions_empty?(response["extensions"]) and
+           response["lists"] == (previous.state["lists"] || %{}) do
+        Process.sleep(min(remaining, 200))
+        poll(principal, device, params, previous, format, deadline)
+      else
+        token = ClientStore.random()
 
-    if not is_nil(previous) and remaining > 0 and map_size(response["rooms"]) == 0 and
-         extensions_empty?(response["extensions"]) and
-         response["lists"] == (previous.state["lists"] || %{}) do
-      Process.sleep(min(remaining, 200))
-      poll(principal, device, params, previous, format, deadline)
-    else
-      token = ClientStore.random()
+        Repo.transaction(fn ->
+          ClientStore.lock!()
+          LakehouseMatrix.AccountModeration.require!(principal, :read)
 
-      Repo.transaction(fn ->
-        Repo.delete_all(
-          from c in "matrix_sync_connections", where: c.expires_at <= ^ClientStore.now()
-        )
-
-        # Keep the requested position for cancelled/retried requests. Older states
-        # for this connection can be retired once the client acknowledges its pos.
-        if previous do
           Repo.delete_all(
-            from c in "matrix_sync_connections",
-              where:
-                c.principal_id == type(^principal, :binary_id) and c.device_id == ^device and
-                  c.conn_id == ^(params["conn_id"] || "") and c.id < ^previous.id
+            from c in "matrix_sync_connections", where: c.expires_at <= ^ClientStore.now()
           )
 
-          if get_in(params, ["extensions", "to_device", "enabled"]) == true do
-            ClientStore.acknowledge(principal, device, params["_to_device_since"])
+          # Keep the requested position for cancelled/retried requests. Older states
+          # for this connection can be retired once the client acknowledges its pos.
+          if previous do
+            Repo.delete_all(
+              from c in "matrix_sync_connections",
+                where:
+                  c.principal_id == type(^principal, :binary_id) and c.device_id == ^device and
+                    c.conn_id == ^(params["conn_id"] || "") and c.id < ^previous.id
+            )
+
+            if get_in(params, ["extensions", "to_device", "enabled"]) == true do
+              ClientStore.acknowledge(principal, device, params["_to_device_since"])
+            end
           end
-        end
 
-        Repo.insert_all("matrix_sync_connections", [
-          %{
-            principal_id: ClientStore.dump_id(principal),
-            device_id: device,
-            conn_id: params["conn_id"] || "",
-            token: token,
-            position: high,
-            state: state,
-            expires_at: DateTime.add(ClientStore.now(), 1800, :second)
-          }
-        ])
+          Repo.insert_all("matrix_sync_connections", [
+            %{
+              principal_id: ClientStore.dump_id(principal),
+              device_id: device,
+              conn_id: params["conn_id"] || "",
+              token: token,
+              position: high,
+              state: state,
+              expires_at: DateTime.add(ClientStore.now(), 1800, :second)
+            }
+          ])
 
-        Map.put(response, "pos", token)
-      end)
+          Map.put(response, "pos", token)
+        end)
+      end
     end
   end
 
   defp build(principal, device, params, previous, format) do
     high = ClientStore.lock!()
+    LakehouseMatrix.AccountModeration.require!(principal, :read)
     since = if previous, do: previous.position, else: 0
     known = (previous && previous.state["rooms"]) || %{}
     memberships = ClientSync.memberships_at(principal, high)

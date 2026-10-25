@@ -17,6 +17,8 @@ defmodule LakehouseMatrix.ClientLogin do
       Repo.transaction(fn ->
         ClientStore.lock!()
 
+        LakehouseMatrix.AccountModeration.require!(principal.id, :read)
+
         unless Accounts.active?(Repo.get!(LakehouseIam.Schema.Principal, principal.id)),
           do: Repo.rollback(:invalid_credentials)
 
@@ -109,10 +111,12 @@ defmodule LakehouseMatrix.ClientLogin do
             join: p in LakehouseIam.Schema.Principal,
             on: s.principal_id == p.id,
             where: s.refresh_hash == ^digest and p.active == true,
-            select: s.id
+            select: {s.id, p.id}
         )
 
       unless session, do: Repo.rollback(:unknown_token)
+      {session, principal} = session
+      LakehouseMatrix.AccountModeration.require!(principal, :read)
       access = "mtx_" <> ClientStore.random()
 
       Repo.update_all(from(s in "matrix_sessions", where: s.id == ^session),
@@ -131,6 +135,7 @@ defmodule LakehouseMatrix.ClientLogin do
   def generate(principal, limit? \\ true, device \\ nil) do
     Repo.transaction(fn ->
       ClientStore.lock!()
+      LakehouseMatrix.AccountModeration.require!(principal, :read)
       recent = DateTime.add(ClientStore.now(), -60, :second)
 
       if limit? and

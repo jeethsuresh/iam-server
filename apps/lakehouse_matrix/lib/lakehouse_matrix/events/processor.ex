@@ -31,24 +31,33 @@ defmodule LakehouseMatrix.Events.Processor do
   @spec process(Context.t()) :: {:ok, map()} | {:error, term()}
   def process(%Context{} = ctx) do
     if LakehouseMatrix.Protocol.Graph.room(ctx.room_id) do
-      case LakehouseMatrix.Protocol.Graph.send(
-             ctx.room_id,
-             ctx.sender,
-             ctx.type,
-             ctx.content,
-             ctx.state_key
-           ) do
-        {:ok, pdu} ->
-          record =
-            LakehouseIam.Repo.get_by!(LakehouseMatrix.Schema.RoomEvent, event_id: pdu["event_id"])
+      result =
+        LakehouseMatrix.Protocol.Policy.transaction(fn ->
+          LakehouseMatrix.ClientStore.lock!()
+          require_plaintext_room!(ctx)
 
-          event = Events.to_client_event(record)
-          RoomServer.broadcast_event(ctx.room_id, event)
-          {:ok, event}
+          case LakehouseMatrix.Protocol.Graph.send(
+                 ctx.room_id,
+                 ctx.sender,
+                 ctx.type,
+                 ctx.content,
+                 ctx.state_key
+               ) do
+            {:ok, pdu} ->
+              record =
+                LakehouseIam.Repo.get_by!(LakehouseMatrix.Schema.RoomEvent,
+                  event_id: pdu["event_id"]
+                )
 
-        error ->
-          error
-      end
+              event = Events.to_client_event(record)
+              event
+
+            {:error, reason} ->
+              LakehouseIam.Repo.rollback(reason)
+          end
+        end)
+
+      broadcast(ctx.room_id, result)
     else
       process_legacy(ctx)
     end
@@ -58,6 +67,7 @@ defmodule LakehouseMatrix.Events.Processor do
     result =
       LakehouseIam.Repo.transaction(fn ->
         LakehouseMatrix.ClientStore.lock!()
+        require_plaintext_room!(ctx)
 
         with {:ok, event_map} <- dispatch(ctx),
              {:ok, _record} <- Events.persist(ctx, event_map) do
@@ -67,9 +77,19 @@ defmodule LakehouseMatrix.Events.Processor do
         end
       end)
 
+    broadcast(ctx.room_id, result)
+  end
+
+  defp require_plaintext_room!(ctx) do
+    if is_nil(ctx.state_key) and ctx.type not in ~w(m.room.encrypted m.room.redaction) and
+         LakehouseMatrix.State.get(ctx.room_id, "m.room.encryption"),
+       do: LakehouseIam.Repo.rollback(:encryption_required)
+  end
+
+  defp broadcast(room, result) do
     case result do
       {:ok, event_map} ->
-        RoomServer.broadcast_event(ctx.room_id, event_map)
+        RoomServer.broadcast_event(room, event_map)
         {:ok, event_map}
 
       error ->

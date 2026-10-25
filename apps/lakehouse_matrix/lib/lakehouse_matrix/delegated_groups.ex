@@ -13,7 +13,11 @@ defmodule LakehouseMatrix.DelegatedGroups do
   @types ~w(m.room.message m.reaction cool.gravitas.river.post.v1 cool.gravitas.river.discussion.v1)
 
   def authorized?(g, id, permission) do
-    permission in g.scopes and access(g, id) == :ok and
+    LakehouseMatrix.AccountModeration.check(
+      g.principal_id,
+      if(permission == "chats.write", do: :write, else: :read)
+    ) == :ok and
+      permission in g.scopes and access(g, id) == :ok and
       (permission != "chats.write" or
          (is_nil(State.get(id, "m.room.encryption")) and
             LakehouseMatrix.RiverPublishing.writer_allowed?(id, g.principal_id) and
@@ -303,6 +307,7 @@ defmodule LakehouseMatrix.DelegatedGroups do
             Repo.rollback(:forbidden)
 
         lock!(id)
+        LakehouseMatrix.AccountModeration.require!(grant.principal_id)
         owner!(grant, id)
         child = uuid("channel|#{grant.id}|#{id}|#{params["txn_id"]}")
 
@@ -669,6 +674,12 @@ defmodule LakehouseMatrix.DelegatedGroups do
     with :ok <- scope(grant, permission), :ok <- access(grant, id) do
       transact(fn ->
         lock!(id)
+
+        LakehouseMatrix.AccountModeration.require!(
+          grant.principal_id,
+          if(permission == "chats.write", do: :write, else: :read)
+        )
+
         unless access(grant, id) == :ok, do: Repo.rollback(:forbidden)
 
         if permission == "chats.write" do
@@ -943,6 +954,17 @@ defmodule LakehouseMatrix.DelegatedGroups do
       )
 
   defp event!(g, id, type, content, state_key, event_id \\ nil) do
+    case LakehouseMatrix.AccountModeration.event(
+           user_id(g.principal_id),
+           id,
+           type,
+           content,
+           state_key
+         ) do
+      :ok -> :ok
+      {:error, reason} -> Repo.rollback(reason)
+    end
+
     # River's delegated API carries plaintext content. A standard Matrix
     # client must encrypt timeline events itself once encryption is enabled.
     # Check under the stream/room transaction so enabling encryption cannot

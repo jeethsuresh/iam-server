@@ -69,6 +69,7 @@ defmodule LakehouseMatrix.Directory do
          {:ok, room} <- ClientRooms.readable(principal, room_ref) do
       Policy.transaction(fn ->
         ClientStore.lock!()
+        LakehouseMatrix.AccountModeration.require!(principal)
 
         case register(principal, room.id, name) do
           {:ok, result} -> result
@@ -85,6 +86,7 @@ defmodule LakehouseMatrix.Directory do
     with {:ok, name, server} <- parse(ref), true <- server == Identity.homeserver_domain() do
       Policy.transaction(fn ->
         ClientStore.lock!()
+        LakehouseMatrix.AccountModeration.require!(principal)
 
         row =
           Repo.one(
@@ -139,6 +141,7 @@ defmodule LakehouseMatrix.Directory do
   def visibility(principal, ref, visibility) when visibility in ["private", "public"] do
     Policy.transaction(fn ->
       ClientStore.lock!()
+      LakehouseMatrix.AccountModeration.require!(principal)
 
       room =
         case ClientRooms.room(ref) do

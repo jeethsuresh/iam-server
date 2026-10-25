@@ -42,7 +42,8 @@ identity credentials and global account secrets must survive a room reset.
 River itself still needs a maintained client crypto integration before it can
 read and send encrypted room content. Its delegated plaintext API rejects new
 messages, edits, reactions and attachment manifests after a room enables
-encryption; standard Matrix clients can send ciphertext through the Matrix API.
+encryption; the older browser chat sender applies the same safeguard. Standard
+Matrix clients can send ciphertext through the Matrix API.
 Server support verified by the reference clients does not mean River client
 E2EE is complete.
 
@@ -66,6 +67,15 @@ E2EE is complete.
   and browser-bound SSO with explicit full-account consent. Refresh credentials
   retain their identity until device revocation, so lost responses can be retried.
   Neither login flow changes existing delegated application grants.
+- Reversible account locks and suspensions through the standard administrator
+  endpoints. Locks retain credentials and return `M_USER_LOCKED` with soft
+  logout, while permitting explicit logout. Suspensions retain reading, new
+  sessions, device verification, key backup, own-event redaction and room leave;
+  they prevent room, profile and directory writes. Local graph and River writes
+  recheck moderation under the stream lock. Existing River sockets and app tokens
+  also respect these restrictions, and locked accounts receive no HTTP pushes.
+  Whois is private to the account and administrators; connection metadata which
+  the server does not retain is omitted.
 - Atomic v11/v12 room upgrades, tombstones, predecessor links and moved local
   aliases. Replacement rooms transfer standard settings and invite members
   without impersonating joins; tags, direct-room links and room push rules are

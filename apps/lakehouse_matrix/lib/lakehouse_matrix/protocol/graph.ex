@@ -48,6 +48,10 @@ defmodule LakehouseMatrix.Protocol.Graph do
 
       require_local_sender!(sender)
 
+      require_ok!(
+        LakehouseMatrix.AccountModeration.event(sender, local_id, "m.room.create", content, "")
+      )
+
       if not is_nil(room(local_id)) or
            Repo.exists?(from e in RoomEvent, where: e.room_id == ^local_id),
          do: Repo.rollback(:room_reset_required)
@@ -112,6 +116,11 @@ defmodule LakehouseMatrix.Protocol.Graph do
     transact(fn ->
       metadata = room(local_id) || Repo.rollback(:room_not_found)
       require_local_sender!(sender)
+
+      require_ok!(
+        LakehouseMatrix.AccountModeration.event(sender, local_id, type, content, state_key)
+      )
+
       graph = load_graph(metadata.local_room_id)
       current = materialize(decode_state(metadata.current_state), graph)
       event = template(metadata, graph, sender, type, content, state_key)

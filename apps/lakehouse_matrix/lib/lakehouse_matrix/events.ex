@@ -10,6 +10,32 @@ defmodule LakehouseMatrix.Events do
 
   @spec persist(Context.t(), map()) :: {:ok, RoomEvent.t()} | {:error, Ecto.Changeset.t()}
   def persist(%Context{} = ctx, event_map) do
+    if LakehouseMatrix.Protocol.Graph.room(ctx.room_id) do
+      persist_record(ctx, event_map)
+    else
+      Repo.transaction(fn ->
+        LakehouseMatrix.ClientStore.lock!()
+
+        case LakehouseMatrix.AccountModeration.event(
+               ctx.sender,
+               ctx.room_id,
+               ctx.type,
+               event_map["content"] || ctx.content,
+               ctx.state_key
+             ) do
+          :ok -> :ok
+          {:error, reason} -> Repo.rollback(reason)
+        end
+
+        case persist_record(ctx, event_map) do
+          {:ok, record} -> record
+          {:error, reason} -> Repo.rollback(reason)
+        end
+      end)
+    end
+  end
+
+  defp persist_record(ctx, event_map) do
     %RoomEvent{}
     |> RoomEvent.changeset(%{
       room_id: ctx.room_id,

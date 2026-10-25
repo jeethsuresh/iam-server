@@ -41,6 +41,7 @@ defmodule LakehouseMatrix.Federation.RemoteMembership do
          :ok <- Event.validate(event, metadata.version) do
       Repo.transaction(fn ->
         ClientStore.lock!()
+        LakehouseMatrix.AccountModeration.require!(principal, :read)
         current = Invites.pending(local, user)
 
         unless current && current.event_id == pending.event_id,
@@ -161,6 +162,7 @@ defmodule LakehouseMatrix.Federation.RemoteMembership do
                  Identity.homeserver_domain()
                ),
              :ok <- Event.validate(event, version),
+             :ok <- LakehouseMatrix.AccountModeration.check(principal),
              id <- Event.id(event, version),
              {:ok, %{"knock_room_state" => stripped}} <-
                request.(
@@ -172,6 +174,7 @@ defmodule LakehouseMatrix.Federation.RemoteMembership do
              true <- is_list(stripped) and length(stripped) <= 100 do
           Repo.transaction(fn ->
             ClientStore.lock!()
+            LakehouseMatrix.AccountModeration.require!(principal)
             metadata = Invites.ensure_metadata!(ref, version, stripped)
 
             unless Memberships.membership(metadata.local_room_id, principal) not in ~w(join invite ban),

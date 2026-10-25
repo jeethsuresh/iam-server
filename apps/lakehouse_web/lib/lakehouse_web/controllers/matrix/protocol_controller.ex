@@ -656,6 +656,19 @@ defmodule LakehouseWeb.Matrix.ProtocolController do
 
   def respond(conn, {:error, {:uia, body}}), do: conn |> put_status(401) |> json(body)
 
+  def respond(conn, {:error, :user_locked}),
+    do:
+      conn
+      |> put_status(401)
+      |> json(%{
+        "errcode" => "M_USER_LOCKED",
+        "error" => "This account has been locked",
+        "soft_logout" => true
+      })
+
+  def respond(conn, {:error, :user_suspended}),
+    do: error(conn, 403, "M_USER_SUSPENDED", "This account has been suspended")
+
   def respond(conn, {:error, :unknown_token}),
     do:
       conn
