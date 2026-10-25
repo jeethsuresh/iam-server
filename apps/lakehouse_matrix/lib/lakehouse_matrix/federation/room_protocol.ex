@@ -128,7 +128,7 @@ defmodule LakehouseMatrix.Federation.RoomProtocol do
     with {:ok, metadata} <- readable(origin, ref),
          record when not is_nil(record) <- Graph.event(id),
          true <-
-           record.local_room_id == metadata.local_room_id and
+           not record.outlier and record.local_room_id == metadata.local_room_id and
              RoomAccess.visible_event?(metadata, origin, id),
          {:ok, state} <- Graph.state_at(id),
          graph <- Graph.load_graph(metadata.local_room_id, [id]) do
@@ -258,7 +258,7 @@ defmodule LakehouseMatrix.Federation.RoomProtocol do
     end
   end
 
-  defp compatible(metadata, "join", versions),
+  defp compatible(metadata, membership, versions) when membership in ["join", "knock"],
     do:
       if(metadata.version in versions,
         do: :ok,

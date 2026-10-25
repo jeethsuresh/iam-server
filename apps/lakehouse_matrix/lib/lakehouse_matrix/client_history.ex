@@ -65,15 +65,25 @@ defmodule LakehouseMatrix.ClientHistory do
           do: Enum.take_while(candidates, &(&1.pdu["depth"] >= gap.pdu["depth"])),
           else: candidates
 
+      limit = min(limit, filter["limit"] || limit)
+      ignored = ClientSync.ignored_users(principal)
+
       selected =
         visible(safe, metadata, principal)
+        |> Enum.filter(&(Map.has_key?(&1.pdu, "state_key") or &1.pdu["sender"] not in ignored))
         |> Enum.map(&client_event/1)
-        |> ClientSync.filter_events(filter)
+        |> ClientSync.filter_events(Map.delete(filter, "limit"))
 
       chunk = Enum.take(selected, limit)
       start = params["from"] || Cursor.encode("topology", principal, device, lower, room)
       more = length(selected) > limit or length(candidates) >= 1000 or not is_nil(gap)
-      response = %{"start" => start, "chunk" => chunk, "state" => []}
+
+      response = %{
+        "start" => start,
+        "chunk" => LakehouseMatrix.ClientRelations.bundle(principal, room, chunk),
+        "state" => []
+      }
+
       last = if chunk != [], do: Graph.event(List.last(chunk)["event_id"]), else: List.last(safe)
 
       cond do
@@ -134,14 +144,18 @@ defmodule LakehouseMatrix.ClientHistory do
     end
   end
 
-  defp records(room, [depth, id], upper, direction) do
-    query =
-      from p in Pdu,
-        where:
-          p.local_room_id == ^room and not p.outlier and not p.auth_rejected and
-            not p.state_rejected and not p.soft_failed and
-            fragment("?->>'type' <> 'm.room.redaction' OR ?", p.pdu, p.redaction_applied),
-        limit: 1000
+  def query(room) do
+    from p in Pdu,
+      where:
+        p.local_room_id == ^room and not p.outlier and not p.auth_rejected and
+          not p.state_rejected and not p.soft_failed and
+          fragment("?->>'type' <> 'm.room.redaction' OR ?", p.pdu, p.redaction_applied)
+  end
+
+  defp records(room, lower, upper, direction), do: ordered(query(room), lower, upper, direction)
+
+  def ordered(query, [depth, id], upper, direction, limit \\ 1000) do
+    query = from p in query, limit: ^limit
 
     query =
       if direction == "b" do

@@ -4,7 +4,7 @@ defmodule LakehouseMatrix.Matrix do
   """
   require Logger
 
-  alias LakehouseIam.{Accounts, IAM}
+  alias LakehouseIam.{Accounts, IAM, Repo}
 
   alias LakehouseMatrix.{
     Events,
@@ -144,17 +144,35 @@ defmodule LakehouseMatrix.Matrix do
 
   defp remote_reference?(_), do: false
 
-  def leave_room(principal_id, room_ref) do
+  def leave_room(principal_id, room_ref, params \\ %{}) do
     with {:ok, room} <- resolve_room(room_ref) do
-      if delegated?(room.id) and
-           (is_nil(LakehouseMatrix.Protocol.Graph.room(room.id)) or
-              is_nil(LakehouseIam.Repo.get(LakehouseMatrix.Schema.RiverChannel, room.id))),
-         do: delegated_membership(principal_id, room.id, "leave"),
-         else:
-           if(LakehouseMatrix.Protocol.Graph.room(room.id),
-             do: LakehouseMatrix.Protocol.Rooms.membership(principal_id, room.id, "leave"),
-             else: legacy_leave_room(principal_id, room_ref)
-           )
+      metadata = LakehouseMatrix.Protocol.Graph.room(room.id)
+      user = Repo.get!(LakehouseIam.Schema.Principal, principal_id).username |> Identity.user_id()
+
+      cond do
+        metadata && metadata.extremities == [] &&
+            LakehouseMatrix.Federation.Invites.pending(room.id, user) ->
+          LakehouseMatrix.Federation.RemoteMembership.reject_invite(principal_id, room.id, params)
+
+        metadata && metadata.extremities == [] &&
+            Memberships.membership(room.id, principal_id) == "leave" ->
+          {:ok, %{}}
+
+        delegated?(room.id) &&
+            (is_nil(metadata) or is_nil(Repo.get(LakehouseMatrix.Schema.RiverChannel, room.id))) ->
+          delegated_membership(principal_id, room.id, "leave")
+
+        metadata ->
+          LakehouseMatrix.Protocol.Rooms.membership(
+            principal_id,
+            room.id,
+            "leave",
+            Map.take(params, ["reason"])
+          )
+
+        true ->
+          legacy_leave_room(principal_id, room_ref)
+      end
     end
   end
 

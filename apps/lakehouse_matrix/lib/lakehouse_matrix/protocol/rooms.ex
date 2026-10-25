@@ -47,7 +47,7 @@ defmodule LakehouseMatrix.Protocol.Rooms do
 
       room =
         case Rooms.create_room_record(%{
-               name: name,
+               name: if(String.trim(name) == "", do: "Room", else: name),
                topic: params["topic"],
                alias: alias_name,
                visibility: visibility
@@ -66,7 +66,8 @@ defmodule LakehouseMatrix.Protocol.Rooms do
           room.id,
           sender,
           "m.room.member",
-          %{"membership" => "join", "displayname" => principal.username},
+          Map.put(LakehouseMatrix.ClientProfiles.local(principal), "membership", "join")
+          |> Map.reject(fn {_, value} -> is_nil(value) end),
           sender
         )
       )
@@ -145,11 +146,24 @@ defmodule LakehouseMatrix.Protocol.Rooms do
     LakehouseMatrix.Protocol.Policy.transaction(fn ->
       ClientStore.lock!()
 
-      if membership == "join" and
+      if membership in ~w(join knock) and
            not IAM.can?(principal, "matrix.room.join", Identity.resource_arn(local_id)),
          do: Repo.rollback(:forbidden)
 
       metadata = Graph.room(local_id) || Repo.rollback(:room_not_found)
+
+      content =
+        if membership in ~w(join knock),
+          do:
+            Map.merge(
+              LakehouseMatrix.ClientProfiles.local(
+                Repo.get!(LakehouseIam.Schema.Principal, principal)
+              ),
+              content
+            ),
+          else: content
+
+      content = Map.reject(content, fn {_, value} -> is_nil(value) end)
 
       template = %{
         "type" => "m.room.member",

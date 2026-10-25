@@ -57,6 +57,42 @@ defmodule LakehouseWeb.Matrix.FederationTest do
     ~s(X-Matrix origin="#{ctx.remote}",key="#{ctx.key}",destination="#{destination}",sig="#{sig}")
   end
 
+  test "send_knock returns the JSON object required by federation v1", ctx do
+    alias LakehouseMatrix.{Identity, Rooms}
+    alias LakehouseMatrix.Protocol.{Event, Graph}
+    alice = MatrixFixtures.user_fixture("knockhost")
+    sender = Identity.user_id(alice.username)
+    {:ok, room} = Rooms.create_room_record(%{name: "Knock"})
+    {:ok, _} = Graph.create(room.id, sender)
+    {:ok, _} = Graph.send(room.id, sender, "m.room.member", %{"membership" => "join"}, sender)
+    {:ok, _} = Graph.send(room.id, sender, "m.room.join_rules", %{"join_rule" => "knock"}, "")
+    metadata = Graph.room(room.id)
+    remote = "@knocker:" <> ctx.remote
+
+    event =
+      Graph.template(
+        metadata,
+        Graph.load_graph(room.id),
+        remote,
+        "m.room.member",
+        %{"membership" => "knock"},
+        remote
+      )
+      |> Event.sign("12", ctx.seed, ctx.key, ctx.remote)
+
+    id = Event.id(event, "12")
+    path = "/_matrix/federation/v1/send_knock/" <> metadata.room_id <> "/" <> id
+
+    response =
+      build_conn()
+      |> put_req_header("authorization", header(ctx, "PUT", path, event))
+      |> put(path, event)
+      |> json_response(200)
+
+    assert %{"knock_room_state" => state} = response
+    assert is_list(state)
+  end
+
   test "canonical JSON orders keys, preserves Unicode and rejects floats or oversized integers" do
     assert Signing.canonical(%{"z" => 1, "a" => [true, nil, "火"]}) ==
              ~s({"a":[true,null,"火"],"z":1})

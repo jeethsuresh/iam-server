@@ -203,6 +203,8 @@ defmodule LakehouseWeb.Router do
     get "/v3/sync", ProtocolController, :sync
     post "/unstable/org.matrix.msc4186/sync", ProtocolController, :sliding_sync
     post "/v4/sync", ProtocolController, :sliding_sync
+    put "/v3/profile/:userId/:field", ProtocolController, :set_profile
+    post "/v3/user_directory/search", ProtocolController, :user_directory
     get "/v3/account/whoami", ProtocolController, :whoami
     post "/v3/logout", ProtocolController, :logout
     post "/v3/logout/all", ProtocolController, :logout_all
@@ -224,6 +226,10 @@ defmodule LakehouseWeb.Router do
     get "/v3/rooms/:roomId/state/:eventType/:stateKey", ProtocolController, :get_state
     put "/v3/rooms/:roomId/state/:eventType/:stateKey", ProtocolController, :put_state
     get "/v3/rooms/:roomId/event/:eventId", ProtocolController, :event
+    get "/v1/rooms/:roomId/relations/:eventId", ProtocolController, :relations
+    get "/v1/rooms/:roomId/relations/:eventId/:relType", ProtocolController, :relations
+    get "/v1/rooms/:roomId/relations/:eventId/:relType/:eventType", ProtocolController, :relations
+    get "/v1/rooms/:roomId/threads", ProtocolController, :threads
     get "/v3/rooms/:roomId/context/:eventId", ProtocolController, :context
     get "/v3/rooms/:roomId/members", ProtocolController, :members
     get "/v3/rooms/:roomId/joined_members", ProtocolController, :joined_members
@@ -265,8 +271,10 @@ defmodule LakehouseWeb.Router do
 
     post "/v3/createRoom", ProtocolController, :create_room
     post "/v3/join/:roomIdOrAlias", ClientController, :join_room
+    post "/v3/knock/:roomIdOrAlias", ProtocolController, :knock
     post "/v3/rooms/:roomId/invite", ClientController, :invite
     post "/v3/rooms/:roomId/leave", ClientController, :leave_room
+    post "/v3/rooms/:roomId/forget", ProtocolController, :forget
     post "/v3/rooms/:roomId/kick", ProtocolController, :moderate
     post "/v3/rooms/:roomId/ban", ProtocolController, :moderate
     post "/v3/rooms/:roomId/unban", ProtocolController, :moderate

@@ -62,7 +62,7 @@ defmodule LakehouseMatrix.ClientContext do
 
       {:ok,
        %{
-         "event" => target,
+         "event" => hd(LakehouseMatrix.ClientRelations.bundle(principal, room.id, [target])),
          "events_before" => before["chunk"],
          "events_after" => after_events["chunk"],
          "state" => ClientSync.filter_events(state, filter),

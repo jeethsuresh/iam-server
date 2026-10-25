@@ -62,6 +62,12 @@ defmodule LakehouseMatrix.Federation.RoomProtocolTest do
 
   test "join returns signed full state and auth chain, then supports retrieval and leave", ctx do
     {id, response} = join_remote(ctx.room, ctx.ref, ctx.alice)
+
+    refute Repo.exists?(
+             from o in "matrix_federation_outbox",
+               where: o.event_id == ^id and o.destination == "remote.org"
+           )
+
     assert response["members_omitted"] == false
     assert Enum.any?(response["state"], &(&1["type"] == "m.room.create"))
     assert {:ok, _} = Event.verify(response["event"], "12", &lookup/3)
@@ -127,6 +133,26 @@ defmodule LakehouseMatrix.Federation.RoomProtocolTest do
              RoomProtocol.make_membership("remote.org", ctx.ref, @remote, "leave")
 
     assert {:error, :not_found} = RoomProtocol.event("remote.org", id)
+  end
+
+  test "non-federating rooms reject foreign reads even with world-readable history", ctx do
+    {:ok, room} = Rooms.create_room_record(%{name: "Local-only"})
+    {:ok, _} = Graph.create(room.id, ctx.alice, "12", %{"m.federate" => false})
+
+    {:ok, _} =
+      Graph.send(room.id, ctx.alice, "m.room.member", %{"membership" => "join"}, ctx.alice)
+
+    {:ok, visible} =
+      Graph.send(
+        room.id,
+        ctx.alice,
+        "m.room.history_visibility",
+        %{"history_visibility" => "world_readable"},
+        ""
+      )
+
+    refute RoomAccess.allowed?(Graph.room(room.id), "remote.org")
+    assert {:error, :not_found} = RoomProtocol.event("remote.org", visible["event_id"])
   end
 
   test "ACLs ignore ports, are case-insensitive and handle IP literal policy" do

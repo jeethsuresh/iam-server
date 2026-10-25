@@ -2,7 +2,7 @@ defmodule LakehouseMatrix.ClientSync do
   @moduledoc "Commit-ordered sync over the same events used by River, including private device and account data."
   import Ecto.Query
   alias LakehouseIam.Repo
-  alias LakehouseMatrix.{ClientStore, Cursor, Events, Identity}
+  alias LakehouseMatrix.{ClientFilters, ClientStore, Cursor, Events, Identity}
   alias LakehouseMatrix.Schema.RoomEvent
 
   def sync(principal, device, params, options \\ []) do
@@ -49,9 +49,10 @@ defmodule LakehouseMatrix.ClientSync do
       Repo.transaction(fn ->
         high = ClientStore.lock!() |> delivery_position(principal, device, since)
         memberships = memberships_at(principal, high)
-        joined = memberships.join
-        invited = memberships.invite
-        left = memberships.leave
+        room_filter = filter["room"] || %{}
+        joined = ClientFilters.rooms(memberships.join, room_filter)
+        invited = ClientFilters.rooms(memberships.invite, room_filter)
+        left = ClientFilters.rooms(memberships.leave, room_filter)
 
         join =
           for room <- joined, into: %{} do
@@ -72,20 +73,35 @@ defmodule LakehouseMatrix.ClientSync do
 
         leave =
           for room <- left,
-              not full and membership_changed?(principal, room, since, high),
+              (not full and membership_changed?(principal, room, since, high)) or
+                (full and room_filter["include_leave"] == true),
               into: %{} do
             membership = last_membership(principal, room, high)
 
             {Identity.room_id(room),
-             room_payload(principal, device, room, since, membership.stream_id, false, filter)}
+             room_payload(principal, device, room, since, membership.stream_id, full, filter)}
           end
+
+        knock =
+          for room <- ClientFilters.rooms(memberships.knock, room_filter),
+              full or membership_changed?(principal, room, since, high),
+              into: %{},
+              do:
+                {Identity.room_id(room),
+                 %{"knock_state" => %{"events" => stripped(room, high, principal)}}}
+
+        room_sections = %{"join" => join, "invite" => invite, "leave" => leave}
+
+        room_sections =
+          if knock == %{}, do: room_sections, else: Map.put(room_sections, "knock", knock)
 
         %{
           "next_batch" => Cursor.encode("sync", principal, device, high),
-          "rooms" => %{"join" => join, "invite" => invite, "leave" => leave},
+          "rooms" => room_sections,
           "account_data" => %{
             "events" =>
               ClientStore.account_data(principal, "", if(full, do: 0, else: since), high)
+              |> ClientFilters.events(filter["account_data"] || %{})
           },
           "to_device" => %{"events" => ClientStore.to_device(principal, device, since, high)},
           "device_lists" => device_lists(principal, since, high),
@@ -99,6 +115,7 @@ defmodule LakehouseMatrix.ClientSync do
                 if(full, do: 0, else: since),
                 high
               )
+              |> ClientFilters.events(filter["presence"] || %{})
           }
         }
       end)
@@ -110,7 +127,8 @@ defmodule LakehouseMatrix.ClientSync do
     limit = get_in(filter, ["room", "timeline", "limit"]) || 20
     limit = if is_integer(limit), do: min(max(limit, 0), 100), else: 20
     lower = if full, do: 0, else: since
-    rows = timeline(room, lower, high, limit + 1, principal)
+    timeline_filter = get_in(filter, ["room", "timeline"]) || %{}
+    rows = timeline(room, lower, high, limit + 1, principal, timeline_filter)
     limited = length(rows) > limit
     rows = Enum.take(rows, limit) |> Enum.reverse()
     # State in /sync describes the point immediately before its timeline.
@@ -124,22 +142,62 @@ defmodule LakehouseMatrix.ClientSync do
     state = state_at(room, state_boundary)
 
     state =
+      if filter["_use_state_after"],
+        do: state,
+        else:
+          classic_state(
+            room,
+            state,
+            state_at(room, high),
+            rows,
+            since,
+            high,
+            full or joined_since?(principal, room, since, high)
+          )
+
+    state =
       if full or joined_since?(principal, room, since, high),
         do: state,
         else:
           Enum.filter(state, fn event ->
-            state_position(room, event["event_id"], state_boundary) > since
+            state_position(room, event["event_id"], high) > since
           end)
 
-    state = filter_events(state, get_in(filter, ["room", "state"]) || %{})
+    state =
+      ClientFilters.events(
+        state,
+        get_in(filter, ["room", "state"]) || %{},
+        Identity.room_id(room)
+      )
 
     events =
       rows
       |> Enum.map(&Events.to_client_event/1)
-      |> filter_events(get_in(filter, ["room", "timeline"]) || %{})
+      |> ClientFilters.events(timeline_filter, Identity.room_id(room))
 
-    account = ClientStore.account_data(principal, Identity.room_id(room), lower, high)
+    events =
+      if limited,
+        do: LakehouseMatrix.ClientRelations.bundle(principal, room, events, high),
+        else: events
+
+    account =
+      ClientStore.account_data(principal, Identity.room_id(room), lower, high)
+      |> ClientFilters.events(
+        get_in(filter, ["room", "account_data"]) || %{},
+        Identity.room_id(room)
+      )
+
     summary_state = state_at(room, high)
+    events = ClientFilters.render(events, filter["event_format"])
+    state = ClientFilters.render(state, filter["event_format"])
+
+    ephemeral =
+      (receipts(principal, room, lower, high) ++
+         LakehouseMatrix.Ephemeral.typing_events(room, lower, high))
+      |> ClientFilters.events(
+        get_in(filter, ["room", "ephemeral"]) || %{},
+        Identity.room_id(room)
+      )
 
     %{
       "timeline" => %{
@@ -158,9 +216,7 @@ defmodule LakehouseMatrix.ClientSync do
       },
       "account_data" => %{"events" => account},
       "ephemeral" => %{
-        "events" =>
-          receipts(principal, room, lower, high) ++
-            LakehouseMatrix.Ephemeral.typing_events(room, lower, high)
+        "events" => ephemeral
       },
       "summary" => %{
         "m.joined_member_count" =>
@@ -180,7 +236,25 @@ defmodule LakehouseMatrix.ClientSync do
     })
   end
 
-  def timeline(room, since, high, limit, principal) do
+  # State changes omitted from a filtered timeline must still reach the client.
+  # Keep the state preceding visible state events, and overlay current state for
+  # keys whose latest event is absent from that timeline. state_after avoids the
+  # classic format's ambiguity when filters remove a change in mid-timeline.
+  defp classic_state(room, initial, current, rows, since, high, full) do
+    in_timeline = MapSet.new(rows, & &1.event_id)
+    initial = Map.new(initial, &{{&1["type"], &1["state_key"]}, &1})
+
+    Enum.reduce(current, initial, fn event, result ->
+      if not MapSet.member?(in_timeline, event["event_id"]) and
+           (full or state_position(room, event["event_id"], high) > since),
+         do: Map.put(result, {event["type"], event["state_key"]}, event),
+         else: result
+    end)
+    |> Map.values()
+    |> Enum.sort_by(&{&1["type"], &1["state_key"]})
+  end
+
+  def timeline(room, since, high, limit, principal, filter \\ %{}) do
     query =
       from e in RoomEvent,
         where:
@@ -189,11 +263,13 @@ defmodule LakehouseMatrix.ClientSync do
         order_by: [desc: e.stream_id],
         limit: ^limit
 
-    Repo.all(visible_query(query, principal))
+    Repo.all(visible_query(query, principal) |> ClientFilters.sql(filter))
   end
 
   def visible_query(query, principal) do
     user = mxid(principal)
+    ignored = ignored_users(principal)
+    query = from e in query, where: not is_nil(e.state_key) or e.sender not in ^ignored
     history_key = Jason.encode!(["m.room.history_visibility", ""])
     member_key = Jason.encode!(["m.room.member", user])
 
@@ -358,7 +434,8 @@ defmodule LakehouseMatrix.ClientSync do
          {:ok, limit} <- integer(params["limit"], 10, 0, 100),
          true <- params["dir"] in [nil, "b", "f"],
          {:ok, from} <- history_cursor(params["from"], principal, device, room),
-         {:ok, to} <- history_cursor(params["to"], principal, device, room) do
+         {:ok, to} <- history_cursor(params["to"], principal, device, room),
+         {:ok, history_filter} <- ClientFilters.event_filter(params["filter"]) do
       direction = params["dir"] || "b"
       high = min(ClientStore.position(), boundary)
       from = if params["from"], do: from, else: if(direction == "b", do: high + 1, else: 0)
@@ -367,7 +444,7 @@ defmodule LakehouseMatrix.ClientSync do
         from e in RoomEvent,
           where: e.room_id == ^room and e.timeline_visible == true and e.stream_id <= ^high
 
-      query = visible_query(query, principal)
+      query = visible_query(query, principal) |> ClientFilters.sql(history_filter)
 
       query =
         if direction == "b",
@@ -413,8 +490,14 @@ defmodule LakehouseMatrix.ClientSync do
 
   def history_cursor(token, principal, device, room) do
     case Cursor.decode(token, "history", principal, device, room) do
-      {:ok, n} -> {:ok, n}
-      _ -> Cursor.decode(token, "sync", principal, device)
+      {:ok, n} ->
+        {:ok, n}
+
+      _ ->
+        case Cursor.decode(token, "sync", principal, device) do
+          {:ok, n} -> {:ok, n}
+          _ -> LakehouseMatrix.SlidingSync.position(token, principal, device)
+        end
     end
   end
 
@@ -446,48 +529,8 @@ defmodule LakehouseMatrix.ClientSync do
 
   def filter(_, _), do: {:error, :invalid_param}
 
-  def validate_filter(filter) when is_map(filter) do
-    room = filter["room"] || %{}
-
-    valid =
-      is_map(room) and
-        Enum.all?(~w(timeline state), fn field ->
-          config = room[field] || %{}
-
-          is_map(config) and
-            (is_nil(config["limit"]) or (is_integer(config["limit"]) and config["limit"] >= 0)) and
-            Enum.all?(~w(types not_types senders not_senders), fn key ->
-              values = config[key]
-
-              is_nil(values) or
-                (is_list(values) and length(values) <= 100 and Enum.all?(values, &is_binary/1))
-            end)
-        end)
-
-    if valid, do: {:ok, filter}, else: {:error, :invalid_param}
-  end
-
-  def validate_filter(_), do: {:error, :invalid_param}
-
-  def filter_events(events, filter) do
-    Enum.filter(events, fn event ->
-      types = filter["types"]
-      not_types = filter["not_types"] || []
-
-      (is_nil(types) or (is_list(types) and Enum.any?(types, &matches_type?(event["type"], &1)))) and
-        is_list(not_types) and not Enum.any?(not_types, &matches_type?(event["type"], &1)) and
-        (is_nil(filter["senders"]) or event["sender"] in filter["senders"]) and
-        event["sender"] not in (filter["not_senders"] || [])
-    end)
-  end
-
-  defp matches_type?(type, pattern) when is_binary(pattern),
-    do:
-      type == pattern or
-        (String.ends_with?(pattern, "*") and
-           String.starts_with?(type, String.trim_trailing(pattern, "*")))
-
-  defp matches_type?(_, _), do: false
+  def validate_filter(filter), do: ClientFilters.validate(filter)
+  def filter_events(events, filter), do: ClientFilters.events(events, filter)
 
   def integer(nil, default, _, _), do: {:ok, default}
   def integer(n, _, min, max) when is_integer(n) and n >= min, do: {:ok, Kernel.min(n, max)}
@@ -543,6 +586,7 @@ defmodule LakehouseMatrix.ClientSync do
 
   def memberships_at(principal, high) do
     user = mxid(principal)
+    ignored = ignored_users(principal)
 
     candidates =
       Repo.all(
@@ -553,28 +597,38 @@ defmodule LakehouseMatrix.ClientSync do
       )
 
     Enum.reduce(candidates, %{join: [], invite: [], leave: [], knock: []}, fn room, acc ->
-      case last_membership(principal, room, high) do
-        %{content: %{"membership" => membership}}
-        when membership in ~w(join invite leave ban knock) ->
-          bucket =
-            case membership do
-              "join" -> :join
-              "invite" -> :invite
-              "knock" -> :knock
-              _ -> :leave
-            end
+      if ClientStore.room_forgotten?(principal, room, high) do
+        acc
+      else
+        case last_membership(principal, room, high) do
+          %{content: %{"membership" => membership}, sender: sender}
+          when membership in ~w(join invite leave ban knock) ->
+            bucket =
+              case membership do
+                "join" -> :join
+                "invite" -> :invite
+                "knock" -> :knock
+                _ -> :leave
+              end
 
-          allowed =
-            bucket != :join or
-              (LakehouseMatrix.RiverRtc.chat_allowed?(room, principal) and
-                 LakehouseMatrix.RiverPublishing.reader_allowed?(room, principal))
+            allowed =
+              (bucket != :invite or sender not in ignored) and
+                (bucket != :join or
+                   (LakehouseMatrix.RiverRtc.chat_allowed?(room, principal) and
+                      LakehouseMatrix.RiverPublishing.reader_allowed?(room, principal)))
 
-          if allowed, do: Map.update!(acc, bucket, &[room | &1]), else: acc
+            if allowed, do: Map.update!(acc, bucket, &[room | &1]), else: acc
 
-        _ ->
-          acc
+          _ ->
+            acc
+        end
       end
     end)
+  end
+
+  def ignored_users(principal) do
+    value = (ClientStore.get_data(principal, "", "m.ignored_user_list") || %{})["ignored_users"]
+    if is_map(value), do: Map.keys(value), else: []
   end
 
   def ever_joined?(principal, room, high) do
@@ -607,11 +661,21 @@ defmodule LakehouseMatrix.ClientSync do
         where:
           c.local_room_id == type(^room, :binary_id) and c.type == "m.room.member" and
             c.state_key == ^user,
-        select: %{stream_id: c.stream_id, content: fragment("?->'content'", p.pdu)}
+        select: %{
+          stream_id: c.stream_id,
+          content: fragment("?->'content'", p.pdu),
+          sender: fragment("?->>'sender'", p.pdu),
+          event_id: p.event_id
+        }
     else
       from e in RoomEvent,
         where: e.room_id == ^room and e.type == "m.room.member" and e.state_key == ^user,
-        select: %{stream_id: e.stream_id, content: e.content}
+        select: %{
+          stream_id: e.stream_id,
+          content: e.content,
+          sender: e.sender,
+          event_id: e.event_id
+        }
     end
   end
 

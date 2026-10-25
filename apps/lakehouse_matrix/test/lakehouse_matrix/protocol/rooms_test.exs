@@ -98,6 +98,87 @@ defmodule LakehouseMatrix.Protocol.RoomsTest do
              })
   end
 
+  test "native knocking exposes stripped state until the user is invited and joins", ctx do
+    {:ok, %{"room_id" => ref}} = ClientRooms.create(ctx.alice.id, %{})
+
+    {:ok, _} =
+      ClientRooms.put_state(ctx.alice.id, ref, "m.room.join_rules", "", %{"join_rule" => "knock"})
+
+    assert {:ok, %{"room_id" => ^ref}} =
+             ClientRooms.knock(ctx.bob.id, ref, [], %{"reason" => "Please invite"})
+
+    assert {:ok, sync} = ClientSync.sync(ctx.bob.id, "B", %{})
+    assert get_in(sync, ["rooms", "knock", ref, "knock_state", "events"])
+    refute get_in(sync, ["rooms", "join", ref])
+    assert {:error, _} = ClientRooms.history_access(ctx.bob.id, ref)
+    assert {:ok, _} = Matrix.invite(ctx.alice.id, ref, "bob")
+    assert {:ok, _} = Matrix.join_room(ctx.bob.id, ref)
+    assert {:ok, joined} = ClientSync.sync(ctx.bob.id, "B", %{"since" => sync["next_batch"]})
+    assert get_in(joined, ["rooms", "join", ref])
+  end
+
+  test "native room names and topics can be unset and long valid metadata remains intact", ctx do
+    {:ok, %{"room_id" => ref}} =
+      ClientRooms.create(ctx.alice.id, %{"name" => "Before", "visibility" => "public"})
+
+    {:ok, room} = Identity.parse_room_id(ref)
+    long = String.duplicate("n", 1024)
+
+    assert {:ok, _} =
+             ClientRooms.put_state(ctx.alice.id, ref, "m.room.name", "", %{"name" => long})
+
+    assert LakehouseMatrix.Rooms.get_room(room).name == long
+
+    assert {:ok, _} =
+             ClientRooms.put_state(ctx.alice.id, ref, "m.room.name", "", %{"name" => nil})
+
+    assert LakehouseMatrix.Rooms.get_room(room).name == ""
+    assert {:ok, _} = ClientRooms.put_state(ctx.alice.id, ref, "m.room.topic", "", %{})
+    assert LakehouseMatrix.Rooms.get_room(room).topic == ""
+
+    assert {:ok, _} =
+             Graph.send(room, Identity.user_id("alice"), "m.room.name", %{"name" => 1}, "")
+
+    assert {:ok, %{"chunk" => [%{}]}} = LakehouseMatrix.Directory.public_rooms(%{})
+  end
+
+  test "forgetting is private, requires departure and is reversed by joining again", ctx do
+    alias LakehouseMatrix.ClientStore
+    {:ok, %{"room_id" => ref}} = ClientRooms.create(ctx.alice.id, %{"preset" => "public_chat"})
+    {:ok, room} = Identity.parse_room_id(ref)
+    {:ok, _} = Matrix.join_room(ctx.bob.id, ref)
+    {:ok, before} = ClientSync.sync(ctx.bob.id, "B", %{})
+    assert {:error, :forbidden} = ClientRooms.forget(ctx.bob.id, ref)
+    {:ok, _} = Matrix.leave_room(ctx.bob.id, ref)
+    assert {:ok, %{}} = ClientRooms.forget(ctx.bob.id, ref)
+    assert {:ok, %{}} = ClientRooms.forget(ctx.bob.id, ref)
+    assert ClientStore.room_forgotten?(ctx.bob.id, room)
+
+    assert {:ok, after_forget} =
+             ClientSync.sync(ctx.bob.id, "B", %{"since" => before["next_batch"]})
+
+    refute get_in(after_forget, ["rooms", "leave", ref])
+
+    {:ok, _} =
+      Graph.send(
+        room,
+        Identity.user_id("alice"),
+        "m.room.history_visibility",
+        %{"history_visibility" => "world_readable"},
+        ""
+      )
+
+    assert {:error, _} = ClientRooms.history_access(ctx.bob.id, ref)
+    assert {:ok, _, _} = ClientRooms.history_access(ctx.alice.id, ref)
+    assert {:ok, _} = Matrix.join_room(ctx.bob.id, ref)
+    refute ClientStore.room_forgotten?(ctx.bob.id, room)
+
+    assert {:ok, joined} =
+             ClientSync.sync(ctx.bob.id, "B", %{"since" => after_forget["next_batch"]})
+
+    assert get_in(joined, ["rooms", "join", ref])
+  end
+
   test "sync membership and summaries stop at the device-delivery high watermark", ctx do
     alias LakehouseMatrix.ClientStore
 

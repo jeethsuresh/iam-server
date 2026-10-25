@@ -276,10 +276,10 @@ defmodule LakehouseMatrix.Directory do
 
           result = %{
             "room_id" => metadata.room_id,
-            "name" => content.("m.room.name")["name"],
-            "topic" => content.("m.room.topic")["topic"],
-            "avatar_url" => content.("m.room.avatar")["url"],
-            "canonical_alias" => content.("m.room.canonical_alias")["alias"],
+            "name" => text(content.("m.room.name")["name"]),
+            "topic" => text(content.("m.room.topic")["topic"]),
+            "avatar_url" => text(content.("m.room.avatar")["url"]),
+            "canonical_alias" => text(content.("m.room.canonical_alias")["alias"]),
             "num_joined_members" =>
               Enum.count(state, fn {{type, _}, e} ->
                 type == "m.room.member" and e["content"]["membership"] == "join"
@@ -288,7 +288,7 @@ defmodule LakehouseMatrix.Directory do
               content.("m.room.history_visibility")["history_visibility"] == "world_readable",
             "guest_can_join" => content.("m.room.guest_access")["guest_access"] == "can_join",
             "join_rule" => content.("m.room.join_rules")["join_rule"] || "invite",
-            "room_type" => content.("m.room.create")["type"]
+            "room_type" => text(content.("m.room.create")["type"])
           }
 
           [Map.reject(result, fn {_, value} -> is_nil(value) end)]
@@ -297,6 +297,8 @@ defmodule LakehouseMatrix.Directory do
         end
     end
   end
+
+  defp text(value), do: if(is_binary(value), do: value)
 
   defp manager?(principal, room) do
     case Graph.room(room) do

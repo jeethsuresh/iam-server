@@ -45,6 +45,58 @@ defmodule LakehouseMatrix.Protocol.GraphTest do
     |> Event.sign(metadata.version, @remote_seed, "ed25519:test", "remote.org")
   end
 
+  test "promoting an outlier preserves an intact stored body when the received copy is pruned",
+       ctx do
+    join_and_open(ctx.room, ctx.sender)
+    join = remote_event(ctx.room, "m.room.member", %{"membership" => "join"}, @remote)
+    {:ok, _} = Graph.receive_pdu(ctx.room.id, join, &lookup/3)
+    original = remote_event(ctx.room, "m.room.message", %{"body" => "intact"})
+    id = Event.id(original, "12")
+
+    Repo.insert!(%LakehouseMatrix.Schema.Pdu{
+      event_id: id,
+      local_room_id: ctx.room.id,
+      pdu: original,
+      outlier: true,
+      received_at: DateTime.utc_now()
+    })
+
+    damaged = Map.put(original, "content", %{"body" => "changed without the signing key"})
+    assert {:ok, _} = Graph.receive_pdu(ctx.room.id, damaged, &lookup/3)
+    assert Graph.event(id).pdu["content"] == %{"body" => "intact"}
+    assert Event.content_intact?(Graph.event(id).pdu)
+    assert Repo.get_by!(RoomEvent, event_id: id).content == %{"body" => "intact"}
+  end
+
+  test "a previously projected state seed can be promoted without duplicating its client event",
+       ctx do
+    join_and_open(ctx.room, ctx.sender)
+    metadata = Graph.room(ctx.room.id)
+    id = Graph.decode_state(metadata.current_state)[{"m.room.join_rules", ""}]
+    record = Graph.event(id)
+    record |> Ecto.Changeset.change(outlier: true) |> Repo.update!()
+    client = Repo.get_by!(RoomEvent, event_id: id)
+    client |> Ecto.Changeset.change(timeline_visible: false) |> Repo.update!()
+    assert {:ok, _} = Graph.receive_pdu(ctx.room.id, record.pdu, &lookup/3)
+    refute Graph.event(id).outlier
+    assert Repo.aggregate(from(e in RoomEvent, where: e.event_id == ^id), :count) == 1
+    assert Graph.room(ctx.room.id).current_state == metadata.current_state
+  end
+
+  test "version-12 room identities remain distinct when creation timestamps coincide", ctx do
+    {:ok, other} = Rooms.create_room_record(%{name: "Second"})
+    {:ok, create} = Graph.create(other.id, ctx.sender)
+
+    fixed = fn event ->
+      event
+      |> Map.delete("event_id")
+      |> Map.put("origin_server_ts", 1_000_000)
+      |> Event.sign("12", @seed, "ed25519:test", "example.org")
+    end
+
+    refute Event.room_id(fixed.(ctx.create), "12") == Event.room_id(fixed.(create), "12")
+  end
+
   test "create PDU, hashed room identity, snapshots and client projection are atomic", %{
     room: room,
     create: create,

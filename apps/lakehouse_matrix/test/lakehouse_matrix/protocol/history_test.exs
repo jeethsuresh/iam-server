@@ -147,6 +147,15 @@ defmodule LakehouseMatrix.ClientHistoryTest do
 
     assert event["content"]["body"] == "old 5"
 
+    assert {:ok, %{}} =
+             ClientRooms.receipt(
+               ctx.user.id,
+               ctx.remote.room,
+               "m.read.private",
+               event["event_id"],
+               %{}
+             )
+
     assert {:error, :invalid_cursor} =
              ClientHistory.page(
                ctx.user.id,

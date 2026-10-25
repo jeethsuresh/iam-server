@@ -37,7 +37,7 @@ defmodule LakehouseMatrix.Federation.Invites do
 
       Repo.transaction(fn ->
         ClientStore.lock!()
-        metadata = metadata!(ref, version, stripped)
+        metadata = ensure_metadata!(ref, version, stripped)
 
         if metadata.extremities != [] do
           case Graph.receive_pdu(metadata.local_room_id, signed, lookup) do
@@ -138,7 +138,7 @@ defmodule LakehouseMatrix.Federation.Invites do
     )
   end
 
-  defp metadata!(ref, version, stripped) do
+  def ensure_metadata!(ref, version, stripped) do
     case Graph.room_by_id(ref) do
       nil ->
         name =

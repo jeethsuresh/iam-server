@@ -208,6 +208,8 @@ defmodule LakehouseMatrix.Protocol.Event do
 
   defp signed_by?(_, _, _, _), do: false
 
+  def content_intact?(event), do: hash_matches?(event)
+
   defp hash_matches?(event) do
     case Base.decode64(event["hashes"]["sha256"], padding: false) do
       {:ok, hash} -> Plug.Crypto.secure_compare(content_hash(event), hash)

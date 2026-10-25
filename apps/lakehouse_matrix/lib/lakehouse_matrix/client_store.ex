@@ -13,6 +13,28 @@ defmodule LakehouseMatrix.ClientStore do
         from s in "matrix_stream", where: s.id == 1, lock: "FOR UPDATE", select: s.position
       )
 
+  def room_forgotten?(principal, room, high \\ position()) do
+    Repo.one(
+      from f in "matrix_room_forgetting",
+        where:
+          f.principal_id == type(^principal, :binary_id) and
+            f.local_room_id == type(^room, :binary_id) and f.stream_id <= ^high,
+        order_by: [desc: f.stream_id],
+        limit: 1,
+        select: f.forgotten
+    ) == true
+  end
+
+  def restore_room!(principal, room) do
+    if room_forgotten?(principal, room),
+      do:
+        Repo.insert_all("matrix_room_forgetting", [
+          %{principal_id: dump_id(principal), local_room_id: dump_id(room), forgotten: false}
+        ])
+
+    :ok
+  end
+
   def hash(value), do: :crypto.hash(:sha256, value)
   def random, do: Base.url_encode64(:crypto.strong_rand_bytes(32), padding: false)
 

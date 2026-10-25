@@ -30,14 +30,22 @@ defmodule LakehouseMatrix.Federation.Outbox do
 
       item ->
         path =
-          if item.kind == "invite" do
+          if item.kind == "leave" do
             record = Graph.event(item.event_id)
             room = Graph.room(record.local_room_id)
 
-            "/_matrix/federation/v2/invite/" <>
+            "/_matrix/federation/v2/send_leave/" <>
               escape(room.room_id) <> "/" <> escape(item.event_id)
           else
-            "/_matrix/federation/v1/send/" <> escape(item.transaction_id)
+            if item.kind == "invite" do
+              record = Graph.event(item.event_id)
+              room = Graph.room(record.local_room_id)
+
+              "/_matrix/federation/v2/invite/" <>
+                escape(room.room_id) <> "/" <> escape(item.event_id)
+            else
+              "/_matrix/federation/v1/send/" <> escape(item.transaction_id)
+            end
           end
 
         result = request.(:put, item.destination, path, item.payload)
@@ -49,6 +57,9 @@ defmodule LakehouseMatrix.Federation.Outbox do
               {:rejected, reason} -> complete(item.id, :failed_at, reason)
               {:error, reason} -> retry(item, reason)
             end
+
+          {:error, {:http, status, _}} when status in [400, 403, 404, 405, 410, 413, 415, 422] ->
+            complete(item.id, :failed_at, "HTTP #{status}")
 
           {:error, reason} ->
             retry(item, reason)
@@ -103,7 +114,7 @@ defmodule LakehouseMatrix.Federation.Outbox do
 
   defp accept_response(_, body, _) when not is_map(body), do: {:error, :invalid_peer_response}
 
-  defp accept_response(%{kind: "invite"} = item, body, lookup) do
+  defp accept_response(%{kind: "invite"} = item, body, lookup) when is_map(body) do
     record = Graph.event(item.event_id)
     room = Graph.room(record.local_room_id)
 
@@ -125,18 +136,24 @@ defmodule LakehouseMatrix.Federation.Outbox do
     end
   end
 
-  defp accept_response(%{kind: "edu"}, body, _),
+  defp accept_response(%{kind: "leave"}, body, _) when is_map(body), do: :ok
+
+  defp accept_response(%{kind: "edu"}, body, _) when is_map(body),
     do: if(is_map(body["pdus"]), do: :ok, else: {:error, :invalid_transaction_response})
 
-  defp accept_response(item, body, _) do
-    result = if is_map(body["pdus"]), do: body["pdus"][item.event_id]
-
-    case result do
-      %{"error" => reason} -> {:rejected, inspect(reason) |> String.slice(0, 512)}
-      value when is_map(value) -> :ok
+  defp accept_response(item, %{"pdus" => results}, _) when is_map(results) do
+    case Map.fetch(results, item.event_id) do
+      {:ok, %{"error" => reason}} -> {:rejected, inspect(reason) |> String.slice(0, 512)}
+      {:ok, value} when is_map(value) -> :ok
+      # A peer may ignore an already-known event and omit its result. A 200
+      # transaction response still completes transport delivery; replaying that
+      # stable transaction forever cannot produce a different acknowledgement.
+      :error -> :ok
       _ -> {:error, :invalid_transaction_response}
     end
   end
+
+  defp accept_response(_, _, _), do: {:error, :invalid_transaction_response}
 
   defp recipient_signed?(event, version, server, lookup) do
     Enum.any?(event["signatures"][server] || %{}, fn {id, _} ->

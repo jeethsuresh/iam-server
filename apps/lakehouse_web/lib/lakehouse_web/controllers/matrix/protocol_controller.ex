@@ -215,11 +215,23 @@ defmodule LakehouseWeb.Matrix.ProtocolController do
               )
           },
           "m.change_password" => %{"enabled" => false},
-          "m.set_displayname" => %{"enabled" => false},
-          "m.set_avatar_url" => %{"enabled" => false},
+          "m.set_displayname" => %{"enabled" => true},
+          "m.set_avatar_url" => %{"enabled" => true},
           "m.3pid_changes" => %{"enabled" => false}
         }
       })
+
+  def knock(conn, %{"roomIdOrAlias" => ref} = params) do
+    peers =
+      URI.query_decoder(conn.query_string)
+      |> Enum.filter(fn {key, _} -> key in ["via", "via[]", "server_name", "server_name[]"] end)
+      |> Enum.map(&elem(&1, 1))
+
+    respond(conn, ClientRooms.knock(principal(conn), ref, peers, params))
+  end
+
+  def forget(conn, %{"roomId" => ref}),
+    do: respond(conn, ClientRooms.forget(principal(conn), ref))
 
   def joined_rooms(conn, _),
     do:
@@ -267,6 +279,20 @@ defmodule LakehouseWeb.Matrix.ProtocolController do
 
   def event(conn, %{"roomId" => ref, "eventId" => event}),
     do: respond(conn, ClientRooms.event(principal(conn), ref, event))
+
+  def relations(conn, %{"roomId" => ref, "eventId" => event} = params),
+    do:
+      respond(
+        conn,
+        LakehouseMatrix.ClientRelations.page(principal(conn), device(conn), ref, event, params)
+      )
+
+  def threads(conn, %{"roomId" => ref} = params),
+    do:
+      respond(
+        conn,
+        LakehouseMatrix.ClientRelations.threads(principal(conn), device(conn), ref, params)
+      )
 
   def messages(conn, %{"roomId" => ref} = params) do
     with {:ok, room, _} <- ClientRooms.history_access(principal(conn), ref) do
@@ -332,18 +358,25 @@ defmodule LakehouseWeb.Matrix.ProtocolController do
   end
 
   def create_filter(conn, %{"userId" => user}) do
-    if user == Identity.user_id(conn.assigns.username) and
-         byte_size(Jason.encode!(body(conn))) <= 65_536 do
-      {1, [row]} =
-        Repo.insert_all(
-          "matrix_filters",
-          [%{principal_id: ClientStore.dump_id(principal(conn)), content: body(conn)}],
-          returning: [:id]
-        )
+    cond do
+      user != Identity.user_id(conn.assigns.username) ->
+        respond(conn, {:error, :forbidden})
 
-      json(conn, %{"filter_id" => to_string(row.id)})
-    else
-      respond(conn, {:error, :forbidden})
+      byte_size(Jason.encode!(body(conn))) > 65_536 ->
+        respond(conn, {:error, :invalid_param})
+
+      not match?({:ok, _}, ClientSync.validate_filter(body(conn))) ->
+        respond(conn, {:error, :invalid_param})
+
+      true ->
+        {1, [row]} =
+          Repo.insert_all(
+            "matrix_filters",
+            [%{principal_id: ClientStore.dump_id(principal(conn)), content: body(conn)}],
+            returning: [:id]
+          )
+
+        json(conn, %{"filter_id" => to_string(row.id)})
     end
   end
 
@@ -407,15 +440,25 @@ defmodule LakehouseWeb.Matrix.ProtocolController do
     end
   end
 
-  def profile(conn, %{"userId" => user} = p) do
-    with {:ok, name} <- Identity.parse_user_id(user),
-         {:ok, _} <- LakehouseIam.Accounts.fetch_user(name) do
-      fields = %{"displayname" => name, "avatar_url" => nil}
-      json(conn, if(p["field"], do: Map.take(fields, [p["field"]]), else: fields))
-    else
-      _ -> respond(conn, {:error, :not_found})
+  def profile(conn, %{"userId" => user} = params) do
+    case LakehouseMatrix.ClientProfiles.get(user) do
+      {:ok, profile} ->
+        json(conn, if(params["field"], do: Map.take(profile, [params["field"]]), else: profile))
+
+      error ->
+        respond(conn, error)
     end
   end
+
+  def set_profile(conn, %{"userId" => user, "field" => field} = params),
+    do:
+      respond(
+        conn,
+        LakehouseMatrix.ClientProfiles.put(principal(conn), user, field, params[field])
+      )
+
+  def user_directory(conn, params),
+    do: respond(conn, LakehouseMatrix.ClientProfiles.search(principal(conn), params))
 
   def media_config(conn, _), do: json(conn, %{"m.upload.size" => 10 * 1024 * 1024})
 
@@ -472,6 +515,9 @@ defmodule LakehouseWeb.Matrix.ProtocolController do
 
         :invalid_param ->
           {400, "M_INVALID_PARAM", "Invalid request parameter"}
+
+        :duplicate_annotation ->
+          {400, "M_DUPLICATE_ANNOTATION", "An identical annotation already exists"}
 
         :limit_exceeded ->
           {413, "M_TOO_LARGE", "Request exceeds the server limit"}

@@ -11,11 +11,13 @@ work and release checks pass.
 `integration/matrix/run.sh` starts disposable, isolated instances of Gravitas,
 Synapse 1.163.2 and real Matrix JavaScript SDK 44 clients backed by Rust crypto.
 Images, dependencies and test peers are pinned. The suite verifies signed joins
-in both directions, two-way message delivery and leave, federated encrypted-room
+in both directions, two-way message delivery and leave, knocks in both directions,
+private invitation decline, federated thread relations and aggregates, federated encrypted-room
 invites, Olm key sharing, Megolm decryption in both directions, cross-signing,
 encrypted secret storage, client-encrypted key backups and fresh-device recovery.
-The suite also transfers and decrypts client-encrypted attachments in both directions. The native event API exposes ciphertext only. Synapse is a test peer and is not
-part of the production deployment.
+The suite also transfers and decrypts client-encrypted attachments in both
+directions. The native event API exposes ciphertext only. Synapse is a test peer
+and is not part of the production deployment.
 
 CI runs this suite after the existing unit, API and real-browser test gate.
 The state-resolution fixtures also compare eight version-11/12 fork scenarios
@@ -59,8 +61,17 @@ clients does not mean River client E2EE is complete.
   scoped cursors, device/account data, resolved-state updates and receipts.
   Native history uses DAG order and verified backfill, retaining eligible history
   after leaving without exposing later private events.
+- Relations with three-level recursive pagination, edit/reference/thread
+  aggregates, thread lists and participation filters, duplicate reaction
+  prevention, ignored-user filtering and redactions through the send endpoint.
+  Aggregates exclude hidden history, ignored senders and redacted relations.
+  Sliding positions work in history/relations; current proposal requests use
+  non-sticky parameters and include knocks, departures and removed-state stubs.
 - Local aliases, explicitly published room directories with filtering and
-  pagination, native membership moderation, typing and presence with expiry.
+  pagination, native membership moderation, profile updates, a shared-room user
+  directory, typing and presence with expiry. Declining a remote invitation
+  queues a stable signed leave without promoting stripped state. Forgetting
+  hides a departed room for that user and rejoining restores it.
 - Authenticated local/remote media and multipart federation downloads, with
   separate visibility for private River uploads and standard Matrix media.
 - Matrix 1.19 policy-server requests and signature validation. Local operations
@@ -73,10 +84,8 @@ reuse the IAM JWT key or rotate a seed under an existing key ID.
 
 ## Remaining release and conformance work
 
-- Complete the remaining history/context/relations/threads APIs and audit
-  visibility semantics, with independent interop coverage for pagination.
-- Complete core client room lifecycle, context/relations/threads, space
-  hierarchy, profile/directory and notification/push-rule APIs and audit the
+- Complete remaining room lifecycle/upgrade, space hierarchy, summary,
+  notification/push-rule and account/login APIs and audit the
   remaining Matrix 1.19 required behavior. Optional modules must be documented
   explicitly and unsupported endpoints must return honest Matrix errors.
 - Integrate maintained crypto and recovery into River without widening its

@@ -46,7 +46,7 @@ defmodule LakehouseWeb.Matrix.FederationController do
     with {:ok, local} <- Identity.parse_user_id(user),
          {:ok, p} <- LakehouseIam.Accounts.fetch_user(local),
          true <- p.active do
-      fields = %{"displayname" => local, "avatar_url" => nil}
+      fields = LakehouseMatrix.ClientProfiles.local(p)
       json(conn, if(params["field"], do: Map.take(fields, [params["field"]]), else: fields))
     else
       _ -> ProtocolController.respond(conn, {:error, :not_found})
@@ -118,7 +118,12 @@ defmodule LakehouseWeb.Matrix.FederationController do
       {:ok, body} ->
         json(
           conn,
-          if(String.contains?(conn.request_path, "/v1/send_"), do: [200, body], else: body)
+          if(
+            String.contains?(conn.request_path, "/v1/send_join/") or
+              String.contains?(conn.request_path, "/v1/send_leave/"),
+            do: [200, body],
+            else: body
+          )
         )
 
       error ->

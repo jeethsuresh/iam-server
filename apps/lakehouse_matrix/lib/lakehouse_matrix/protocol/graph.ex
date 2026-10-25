@@ -52,7 +52,11 @@ defmodule LakehouseMatrix.Protocol.Graph do
            Repo.exists?(from e in RoomEvent, where: e.room_id == ^local_id),
          do: Repo.rollback(:room_reset_required)
 
-      content = Map.put(content, "room_version", version) |> Map.delete("creator")
+      content =
+        content
+        |> Map.put("room_version", version)
+        |> Map.delete("creator")
+        |> Map.put("cool.gravitas.create_nonce", ClientStore.random())
 
       event = %{
         "type" => "m.room.create",
@@ -271,7 +275,7 @@ defmodule LakehouseMatrix.Protocol.Graph do
             else: metadata
       end
 
-    event = snapshot.event
+    event = preserve_content(event(snapshot.event["event_id"]), snapshot.event)
     id = event["event_id"]
     insert_outliers!(local_id, snapshot.graph, id)
     before = snapshot.state
@@ -424,6 +428,7 @@ defmodule LakehouseMatrix.Protocol.Graph do
   defp accept_locked(metadata, verified, graph) do
     id = verified["event_id"]
     existing = event(id)
+    verified = preserve_content(existing, verified)
 
     cond do
       existing &&
@@ -558,16 +563,37 @@ defmodule LakehouseMatrix.Protocol.Graph do
   defp persist_record!(record, _, _, attrs),
     do: record |> Ecto.Changeset.change(attrs) |> Repo.update!()
 
+  # A pruned copy received later must not destroy an already verified body.
+  # Signatures from the newly verified envelope still apply to the same reference
+  # hash, including its original content hash.
+  defp preserve_content(existing, verified) do
+    if not is_nil(existing) and is_nil(existing.redacted_by) and
+         Event.content_intact?(existing.pdu) and not Event.content_intact?(verified) do
+      existing.pdu
+      |> Map.put("event_id", existing.event_id)
+      |> Map.put("signatures", verified["signatures"])
+    else
+      verified
+    end
+  end
+
   defp project!(metadata, record, previous, resolved \\ nil) do
     event = Map.put(record.pdu, "event_id", record.event_id)
     ctx = context(metadata.local_room_id, event)
 
-    case Events.persist(ctx, %{
-           "content" => event["content"],
-           "timeline_visible" => event["type"] != "m.room.redaction"
-         }) do
-      {:ok, _} -> :ok
-      {:error, reason} -> Repo.rollback(reason)
+    case Repo.get_by(RoomEvent, event_id: record.event_id) do
+      nil ->
+        case Events.persist(ctx, %{
+               "content" => event["content"],
+               "timeline_visible" => event["type"] != "m.room.redaction"
+             }) do
+          {:ok, _} -> :ok
+          {:error, reason} -> Repo.rollback(reason)
+        end
+
+      existing ->
+        unless existing.room_id == metadata.local_room_id, do: Repo.rollback(:wrong_room)
+        existing |> Ecto.Changeset.change(content: event["content"]) |> Repo.update!()
     end
 
     resolved = resolved || decode_state(record.state_after)
@@ -646,10 +672,20 @@ defmodule LakehouseMatrix.Protocol.Graph do
   defp project_room!(room, event) do
     attrs =
       case {event["type"], event["state_key"]} do
-        {"m.room.name", ""} -> [name: event["content"]["name"] || ""]
-        {"m.room.topic", ""} -> [topic: event["content"]["topic"] || ""]
-        {"m.room.avatar", ""} -> [avatar_url: event["content"]["url"]]
-        _ -> []
+        {"m.room.name", ""} ->
+          [name: if(is_binary(event["content"]["name"]), do: event["content"]["name"], else: "")]
+
+        {"m.room.topic", ""} ->
+          [
+            topic:
+              if(is_binary(event["content"]["topic"]), do: event["content"]["topic"], else: "")
+          ]
+
+        {"m.room.avatar", ""} ->
+          [avatar_url: if(is_binary(event["content"]["url"]), do: event["content"]["url"])]
+
+        _ ->
+          []
       end
 
     if attrs != [], do: Repo.update_all(from(r in Room, where: r.id == ^room), set: attrs)
@@ -675,6 +711,7 @@ defmodule LakehouseMatrix.Protocol.Graph do
 
   defp enqueue!(metadata, event, resolved, graph) do
     local = Identity.homeserver_domain()
+    {:ok, author} = Event.user_domain(event["sender"])
     # Only a server that authored or co-signed an event sends it onward; received
     # transactions are never broadcast back around the federation graph.
     signed_locally =
@@ -698,7 +735,7 @@ defmodule LakehouseMatrix.Protocol.Graph do
         for {{"m.room.member", user}, id} <- memberships,
             graph[id]["content"]["membership"] == "join",
             {:ok, server} <- [Event.user_domain(user)],
-            server != local,
+            server != local and server != author,
             do: server
 
       for server <- Enum.uniq(destinations) do

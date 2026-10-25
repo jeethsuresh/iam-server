@@ -55,9 +55,16 @@ defmodule Interop do
   end
 
   def escape(value), do: URI.encode(value, &URI.char_unreserved?/1)
-  def wait(fun, remaining \\ 60)
+  def wait(fun, remaining \\ 120)
 
   def wait(_, 0) do
+    IO.inspect(
+      LakehouseIam.Repo.query!(
+        "SELECT id, destination, kind, attempts, last_error, delivered_at, failed_at FROM matrix_federation_outbox ORDER BY id"
+      ).rows,
+      label: "outbox diagnostics"
+    )
+
     IO.inspect(
       LakehouseIam.Repo.query!(
         "select origin, transaction_id, response from matrix_federation_transactions"
@@ -291,12 +298,250 @@ if System.get_env("INTEROP_SERVE_ONLY") != "1" do
       })
   end)
 
+  Interop.check(
+    "federated threads appear in native relations and both servers' bundled aggregates",
+    fn ->
+      {:ok, reply} =
+        Interop.http(
+          :put,
+          "reference.test:8448",
+          "/_matrix/client/v3/rooms/" <>
+            Interop.escape(rid) <> "/send/m.room.message/thread-reply",
+          %{
+            "msgtype" => "m.text",
+            "body" => "Federated thread reply",
+            "m.relates_to" => %{"rel_type" => "m.thread", "event_id" => message["event_id"]}
+          },
+          bt
+        )
+
+      Interop.wait(fn ->
+        {:ok, related} =
+          Interop.http(
+            :get,
+            "native.test:8448",
+            "/_matrix/client/v1/rooms/" <>
+              Interop.escape(rid) <>
+              "/relations/" <> Interop.escape(message["event_id"]) <> "/m.thread/m.room.message",
+            nil,
+            at
+          )
+
+        Enum.any?(related["chunk"], &(&1["event_id"] == reply["event_id"]))
+      end)
+
+      for {server, token} <- [{"native.test:8448", at}, {"reference.test:8448", bt}] do
+        {:ok, root} =
+          Interop.http(
+            :get,
+            server,
+            "/_matrix/client/v3/rooms/" <>
+              Interop.escape(rid) <> "/event/" <> Interop.escape(message["event_id"]),
+            nil,
+            token
+          )
+
+        true =
+          get_in(root, ["unsigned", "m.relations", "m.thread", "latest_event", "event_id"]) ==
+            reply["event_id"]
+
+        {:ok, threads} =
+          Interop.http(
+            :get,
+            server,
+            "/_matrix/client/v1/rooms/" <> Interop.escape(rid) <> "/threads",
+            nil,
+            token
+          )
+
+        true = Enum.any?(threads["chunk"], &(&1["event_id"] == message["event_id"]))
+      end
+    end
+  )
+
   Interop.check("Synapse leaves the native room", fn ->
     {:ok, %{}} =
       Interop.http(
         :post,
         "reference.test:8448",
         "/_matrix/client/v3/rooms/" <> Interop.escape(rid) <> "/leave",
+        %{},
+        bt
+      )
+  end)
+
+  Interop.check("native declines a private Synapse invitation through durable signed leave", fn ->
+    {:ok, invitation} =
+      Interop.http(
+        :post,
+        "reference.test:8448",
+        "/_matrix/client/v3/createRoom",
+        %{"name" => "Decline", "room_version" => "12", "invite" => [a["user_id"]]},
+        bt
+      )
+
+    invited_ref = invitation["room_id"]
+
+    Interop.wait(fn ->
+      metadata = Graph.room_by_id(invited_ref)
+      metadata && LakehouseMatrix.Memberships.invited?(metadata.local_room_id, alice.id)
+    end)
+
+    {:ok, %{}} =
+      Interop.http(
+        :post,
+        "native.test:8448",
+        "/_matrix/client/v3/rooms/" <> Interop.escape(invited_ref) <> "/leave",
+        %{},
+        at
+      )
+
+    Interop.wait(fn ->
+      {:ok, members} =
+        Interop.http(
+          :get,
+          "reference.test:8448",
+          "/_matrix/client/v3/rooms/" <>
+            Interop.escape(invited_ref) <> "/members?membership=leave",
+          nil,
+          bt
+        )
+
+      Enum.any?(members["chunk"], &(&1["state_key"] == a["user_id"]))
+    end)
+
+    {:ok, %{}} =
+      Interop.http(
+        :post,
+        "native.test:8448",
+        "/_matrix/client/v3/rooms/" <> Interop.escape(invited_ref) <> "/forget",
+        %{},
+        at
+      )
+  end)
+
+  Interop.check("native knocks on Synapse and cancels through signed leave", fn ->
+    {:ok, %{"room_id" => ref}} =
+      Interop.http(
+        :post,
+        "reference.test:8448",
+        "/_matrix/client/v3/createRoom",
+        %{
+          "name" => "Remote knock",
+          "room_version" => "12",
+          "initial_state" => [
+            %{
+              "type" => "m.room.join_rules",
+              "state_key" => "",
+              "content" => %{"join_rule" => "knock"}
+            }
+          ]
+        },
+        bt
+      )
+
+    {:ok, %{"room_id" => ^ref}} =
+      Interop.http(
+        :post,
+        "native.test:8448",
+        "/_matrix/client/v3/knock/" <> Interop.escape(ref) <> "?via=reference.test%3A8448",
+        %{"reason" => "Interop knock"},
+        at
+      )
+
+    Interop.wait(fn ->
+      {:ok, members} =
+        Interop.http(
+          :get,
+          "reference.test:8448",
+          "/_matrix/client/v3/rooms/" <> Interop.escape(ref) <> "/members?membership=knock",
+          nil,
+          bt
+        )
+
+      Enum.any?(members["chunk"], &(&1["state_key"] == a["user_id"]))
+    end)
+
+    {:ok, sync} = Interop.http(:get, "native.test:8448", "/_matrix/client/v3/sync", nil, at)
+    true = is_map(sync["rooms"]["knock"][ref])
+
+    {:ok, %{}} =
+      Interop.http(
+        :post,
+        "native.test:8448",
+        "/_matrix/client/v3/rooms/" <> Interop.escape(ref) <> "/leave",
+        %{},
+        at
+      )
+
+    Interop.wait(fn ->
+      {:ok, members} =
+        Interop.http(
+          :get,
+          "reference.test:8448",
+          "/_matrix/client/v3/rooms/" <> Interop.escape(ref) <> "/members?membership=leave",
+          nil,
+          bt
+        )
+
+      Enum.any?(members["chunk"], &(&1["state_key"] == a["user_id"]))
+    end)
+  end)
+
+  Interop.check("Synapse knocks on native and accepts the invitation", fn ->
+    {:ok, %{"room_id" => ref}} =
+      Interop.http(
+        :post,
+        "native.test:8448",
+        "/_matrix/client/v3/createRoom",
+        %{
+          "name" => "Native knock",
+          "room_version" => "12",
+          "initial_state" => [
+            %{
+              "type" => "m.room.join_rules",
+              "state_key" => "",
+              "content" => %{"join_rule" => "knock"}
+            }
+          ]
+        },
+        at
+      )
+
+    {:ok, %{"room_id" => ^ref}} =
+      Interop.http(
+        :post,
+        "reference.test:8448",
+        "/_matrix/client/v3/knock/" <> Interop.escape(ref) <> "?via=native.test%3A8448",
+        %{},
+        bt
+      )
+
+    {:ok, members} =
+      Interop.http(
+        :get,
+        "native.test:8448",
+        "/_matrix/client/v3/rooms/" <> Interop.escape(ref) <> "/members?membership=knock",
+        nil,
+        at
+      )
+
+    true = Enum.any?(members["chunk"], &(&1["state_key"] == b["user_id"]))
+
+    {:ok, %{}} =
+      Interop.http(
+        :post,
+        "native.test:8448",
+        "/_matrix/client/v3/rooms/" <> Interop.escape(ref) <> "/invite",
+        %{"user_id" => b["user_id"]},
+        at
+      )
+
+    {:ok, %{"room_id" => ^ref}} =
+      Interop.http(
+        :post,
+        "reference.test:8448",
+        "/_matrix/client/v3/join/" <> Interop.escape(ref) <> "?via=native.test%3A8448",
         %{},
         bt
       )

@@ -127,12 +127,15 @@ defmodule LakehouseWeb.Matrix.ClientController do
   end
 
   def leave_room(conn, %{"roomId" => room_ref}) do
-    case Matrix.leave_room(conn.assigns.principal_id, room_ref) do
+    case Matrix.leave_room(conn.assigns.principal_id, room_ref, conn.body_params) do
       {:ok, body} ->
         json(conn, body)
 
       {:error, :room_not_found} ->
         matrix_error(conn, 404, "M_NOT_FOUND", "Room not found")
+
+      {:error, :unavailable} ->
+        matrix_error(conn, 503, "M_UNAVAILABLE", "The resident server is unavailable; try again")
 
       {:error, _} ->
         matrix_error(conn, 403, "M_FORBIDDEN", "You are not in this room")

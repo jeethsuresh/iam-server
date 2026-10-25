@@ -103,7 +103,7 @@ defmodule LakehouseMatrix.Federation.Media do
     base = if safe_type(type) in @inline, do: "inline", else: "attachment"
 
     if is_binary(filename) and String.valid?(filename) and filename != "" do
-      clean = filename |> String.replace(~r/[\x00-\x1f\x7f]/u, "") |> String.slice(0, 255)
+      clean = filename |> String.replace(~r/[\x00-\x1f\x7f]/u, "") |> String.slice(0, 1024)
       ascii = clean |> String.replace(~r/[^\x20-\x7e]/u, "_") |> String.replace(["\\", "\""], "_")
 
       base <>

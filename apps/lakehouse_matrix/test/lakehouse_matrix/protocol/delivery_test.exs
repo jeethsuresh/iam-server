@@ -105,6 +105,45 @@ defmodule LakehouseMatrix.Federation.DeliveryTest do
     assert Repo.aggregate("matrix_federation_inbox", :count) == 1
   end
 
+  test "an empty successful transaction result does not trap an already-known event in the queue",
+       ctx do
+    {:ok, first} = Graph.send(ctx.room.id, ctx.user, "m.room.message", %{"body" => "known"})
+    {:ok, second} = Graph.send(ctx.room.id, ctx.user, "m.room.message", %{"body" => "new"})
+
+    assert :delivered =
+             Outbox.deliver_once(fn :put, "remote.org", _, body ->
+               assert Enum.any?(body["pdus"], &(Event.id(&1, "12") == first["event_id"]))
+               {:ok, %{"pdus" => %{}}}
+             end)
+
+    assert :delivered =
+             Outbox.deliver_once(fn :put, "remote.org", _, body ->
+               assert Enum.any?(body["pdus"], &(Event.id(&1, "12") == second["event_id"]))
+               {:ok, %{"pdus" => %{second["event_id"] => %{}}}}
+             end)
+  end
+
+  test "a permanent HTTP rejection does not block later transactions to the same server", ctx do
+    {:ok, first} = Graph.send(ctx.room.id, ctx.user, "m.room.message", %{"body" => "rejected"})
+    {:ok, second} = Graph.send(ctx.room.id, ctx.user, "m.room.message", %{"body" => "later"})
+
+    assert :delivered =
+             Outbox.deliver_once(fn :put, "remote.org", _, _ ->
+               {:error, {:http, 400, %{"errcode" => "M_BAD_JSON"}}}
+             end)
+
+    assert Repo.exists?(
+             from o in "matrix_federation_outbox",
+               where: o.event_id == ^first["event_id"] and not is_nil(o.failed_at)
+           )
+
+    assert :delivered =
+             Outbox.deliver_once(fn :put, "remote.org", _, body ->
+               assert Enum.any?(body["pdus"], &(Event.id(&1, "12") == second["event_id"]))
+               {:ok, %{"pdus" => %{second["event_id"] => %{}}}}
+             end)
+  end
+
   test "outbound retries preserve their transaction ID and body and block later deliveries to that destination",
        ctx do
     {:ok, first} = Graph.send(ctx.room.id, ctx.user, "m.room.message", %{"body" => "first"})

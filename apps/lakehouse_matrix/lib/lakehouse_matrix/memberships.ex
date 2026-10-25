@@ -139,6 +139,9 @@ defmodule LakehouseMatrix.Memberships do
         membership,
         %LakehouseMatrix.Events.Context{} = ctx
       ) do
+    if membership in ~w(join invite knock),
+      do: LakehouseMatrix.ClientStore.restore_room!(principal_id, room_id)
+
     state = %{
       "membership" => membership,
       "displayname" => Map.get(ctx.content, "displayname"),

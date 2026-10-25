@@ -49,6 +49,79 @@ defmodule LakehouseWeb.Matrix.ProtocolCompatibilityTest do
       }
     }
 
+  test "native relation routes and redactions through send use Matrix response semantics", %{
+    a: a,
+    alice: alice
+  } do
+    old = Application.get_env(:lakehouse_matrix, :signing_key)
+
+    Application.put_env(
+      :lakehouse_matrix,
+      :signing_key,
+      Base.encode64(<<0::256>>, padding: false)
+    )
+
+    on_exit(fn ->
+      if is_nil(old),
+        do: Application.delete_env(:lakehouse_matrix, :signing_key),
+        else: Application.put_env(:lakehouse_matrix, :signing_key, old)
+    end)
+
+    {:ok, %{"room_id" => ref}} = LakehouseMatrix.Protocol.Rooms.create(alice.id, %{})
+
+    original =
+      api(a, :put, "/_matrix/client/v3/rooms/#{ref}/send/m.room.message/original", %{
+        "body" => "original"
+      })
+      |> json_response(200)
+
+    relation = %{
+      "m.relates_to" => %{
+        "rel_type" => "m.annotation",
+        "event_id" => original["event_id"],
+        "key" => "yes"
+      }
+    }
+
+    first =
+      api(a, :put, "/_matrix/client/v3/rooms/#{ref}/send/m.reaction/first", relation)
+      |> json_response(200)
+
+    duplicate =
+      api(a, :put, "/_matrix/client/v3/rooms/#{ref}/send/m.reaction/second", relation)
+      |> json_response(400)
+
+    assert duplicate["errcode"] == "M_DUPLICATE_ANNOTATION"
+
+    page =
+      api(
+        a,
+        :get,
+        "/_matrix/client/v1/rooms/#{ref}/relations/#{original["event_id"]}/m.annotation/m.reaction"
+      )
+      |> json_response(200)
+
+    assert Enum.map(page["chunk"], & &1["event_id"]) == [first["event_id"]]
+
+    assert api(a, :get, "/_matrix/client/v1/rooms/#{ref}/threads") |> json_response(200) == %{
+             "chunk" => []
+           }
+
+    assert api(a, :put, "/_matrix/client/v3/rooms/#{ref}/send/m.room.redaction/missing", %{})
+           |> json_response(400)
+
+    assert api(a, :put, "/_matrix/client/v3/rooms/#{ref}/send/m.room.redaction/redact", %{
+             "redacts" => first["event_id"]
+           })
+           |> json_response(200)
+
+    page =
+      api(a, :get, "/_matrix/client/v1/rooms/#{ref}/relations/#{original["event_id"]}")
+      |> json_response(200)
+
+    assert page["chunk"] == []
+  end
+
   test "sessions are device-specific, whoami works, and logout revokes only one device", %{
     a: a,
     alice: alice

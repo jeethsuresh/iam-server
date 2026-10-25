@@ -14,8 +14,13 @@ defmodule LakehouseMatrix.Federation.RoomAccess do
     Map.new(Graph.decode_state(metadata.current_state), fn {key, id} -> {key, graph[id]} end)
   end
 
-  def allowed?(metadata, server),
-    do: acl_allowed?(state(metadata)[{"m.room.server_acl", ""}], server)
+  def allowed?(metadata, server) do
+    state = state(metadata)
+    federates = get_in(state, [{"m.room.create", ""}, "content", "m.federate"]) != false
+
+    (federates or server == LakehouseMatrix.Identity.homeserver_domain()) and
+      acl_allowed?(state[{"m.room.server_acl", ""}], server)
+  end
 
   def acl_allowed?(nil, _), do: true
 
@@ -55,53 +60,59 @@ defmodule LakehouseMatrix.Federation.RoomAccess do
 
     with true <-
            not is_nil(record) and record.local_room_id == metadata.local_room_id and
-             not record.auth_rejected and not record.state_rejected and not record.soft_failed and
-             not record.outlier,
+             not record.auth_rejected and not record.state_rejected and not record.soft_failed,
          true <- allowed?(metadata, server) do
-      event = record.pdu
-      graph = Graph.load_graph(metadata.local_room_id, [id])
+      if record.outlier do
+        current = state(metadata)
+        ids = Map.values(metadata.current_state)
+        graph = Graph.load_graph(metadata.local_room_id)
+        joined?(current, server) and id in (ids ++ Graph.auth_chain(ids, graph))
+      else
+        event = record.pdu
+        graph = Graph.load_graph(metadata.local_room_id, [id])
 
-      before =
-        Map.new(Graph.decode_state(record.state_before), fn {key, id} -> {key, graph[id]} end)
+        before =
+          Map.new(Graph.decode_state(record.state_before), fn {key, id} -> {key, graph[id]} end)
 
-      visibility =
-        get_in(before, [{"m.room.history_visibility", ""}, "content", "history_visibility"]) ||
-          "shared"
+        visibility =
+          get_in(before, [{"m.room.history_visibility", ""}, "content", "history_visibility"]) ||
+            "shared"
 
-      visibility =
-        if event["type"] == "m.room.history_visibility" and event["state_key"] == "" do
-          after_visibility = event["content"]["history_visibility"] || "shared"
-          Enum.min_by([visibility, after_visibility], &visibility_rank/1)
-        else
-          visibility
-        end
+        visibility =
+          if event["type"] == "m.room.history_visibility" and event["state_key"] == "" do
+            after_visibility = event["content"]["history_visibility"] || "shared"
+            Enum.min_by([visibility, after_visibility], &visibility_rank/1)
+          else
+            visibility
+          end
 
-      own_member =
-        event["type"] == "m.room.member" and
-          Event.user_domain(event["state_key"]) == {:ok, server}
+        own_member =
+          event["type"] == "m.room.member" and
+            Event.user_domain(event["state_key"]) == {:ok, server}
 
-      own_member or
-        case visibility do
-          "world_readable" ->
-            true
+        own_member or
+          case visibility do
+            "world_readable" ->
+              true
 
-          "joined" ->
-            joined?(before, server)
+            "joined" ->
+              joined?(before, server)
 
-          "invited" ->
-            Enum.any?(before, fn
-              {{"m.room.member", user}, e} ->
-                e["content"]["membership"] in ~w(join invite) and
-                  Event.user_domain(user) == {:ok, server}
+            "invited" ->
+              Enum.any?(before, fn
+                {{"m.room.member", user}, e} ->
+                  e["content"]["membership"] in ~w(join invite) and
+                    Event.user_domain(user) == {:ok, server}
 
-              _ ->
-                false
-            end)
+                _ ->
+                  false
+              end)
 
-          _ ->
-            joined?(state(metadata), server) or joined?(before, server) or
-              historical_join?(metadata, server, id)
-        end
+            _ ->
+              joined?(state(metadata), server) or joined?(before, server) or
+                historical_join?(metadata, server, id)
+          end
+      end
     else
       _ -> false
     end
