@@ -78,6 +78,7 @@ if config_env() == :prod do
       raise "IAM_NATIVE_BROKER_ORIGIN must be a canonical HTTPS origin"
     end
   end
+
   host = System.get_env("PHX_HOST") || public_uri.host
 
   if host == "" or host == "example.com" or host != public_uri.host,
@@ -132,7 +133,10 @@ end
 
 if rtc_url = System.get_env("MATRIX_RTC_URL") do
   uri = URI.parse(rtc_url)
-  unless uri.scheme == "wss" and is_binary(uri.host) and is_nil(uri.userinfo), do: raise("MATRIX_RTC_URL must be a trusted WSS URL")
+
+  unless uri.scheme == "wss" and is_binary(uri.host) and is_nil(uri.userinfo),
+    do: raise("MATRIX_RTC_URL must be a trusted WSS URL")
+
   config :lakehouse_matrix, :rtc_url, rtc_url
 end
 
@@ -142,6 +146,67 @@ if matrix_key = System.get_env("MATRIX_SIGNING_KEY") do
     {:ok, seed} when byte_size(seed) == 32 -> :ok
     _ -> raise "MATRIX_SIGNING_KEY must encode a 32-byte Ed25519 seed"
   end
-  config :lakehouse_matrix, signing_key: String.trim_trailing(matrix_key, "="),
-    signing_key_id: System.get_env("MATRIX_SIGNING_KEY_ID", "ed25519:gravitas1")
+
+  key_id = System.get_env("MATRIX_SIGNING_KEY_ID", "ed25519:gravitas1")
+
+  unless Regex.match?(~r/\Aed25519:[A-Za-z0-9_]+\z/, key_id),
+    do: raise("MATRIX_SIGNING_KEY_ID must use an ed25519 key identifier")
+
+  config :lakehouse_matrix,
+    signing_key: String.trim_trailing(matrix_key, "="),
+    signing_key_id: key_id
 end
+
+if turn_uris = System.get_env("MATRIX_TURN_URIS") do
+  turn_config = %{
+    uris: String.split(turn_uris, ",", trim: true) |> Enum.map(&String.trim/1),
+    secret: System.fetch_env!("MATRIX_TURN_SHARED_SECRET"),
+    ttl: String.to_integer(System.get_env("MATRIX_TURN_TTL", "3600"))
+  }
+
+  valid_uri = fn uri ->
+    with %URI{
+           scheme: scheme,
+           path: authority,
+           query: query,
+           host: nil,
+           userinfo: nil,
+           fragment: nil
+         } <- URI.parse(uri),
+         true <-
+           scheme in ~w(turn turns) and is_binary(authority) and
+             query in [nil, "transport=udp", "transport=tcp"],
+         %URI{host: host, port: port, userinfo: nil, path: path, fragment: nil} <-
+           URI.parse("https://" <> authority) do
+      is_binary(host) and host != "" and port in 1..65535 and path in [nil, ""] and
+        byte_size(uri) <= 2048 and not String.match?(authority, ~r/[\s\x00-\x1f\x7f]/u)
+    else
+      _ -> false
+    end
+  end
+
+  unless byte_size(turn_config.secret) >= 32 and turn_config.ttl in 60..86_400 and
+           length(turn_config.uris) in 1..16 and Enum.all?(turn_config.uris, valid_uri),
+         do: raise("Invalid Matrix TURN configuration")
+
+  config :lakehouse_matrix, :turn, turn_config
+end
+
+matrix_flag = fn name ->
+  case System.get_env(name, "false") do
+    "true" -> true
+    "false" -> false
+    _ -> raise "#{name} must be true or false"
+  end
+end
+
+matrix_native = matrix_flag.("MATRIX_NATIVE_EVENT_GRAPH")
+matrix_federation = matrix_flag.("MATRIX_FEDERATION_ENABLED")
+
+if (matrix_native or matrix_federation) and is_nil(System.get_env("MATRIX_SIGNING_KEY")),
+  do: raise("Native Matrix and federation require MATRIX_SIGNING_KEY")
+
+if matrix_federation and not matrix_native,
+  do: raise("Matrix federation requires MATRIX_NATIVE_EVENT_GRAPH=true")
+
+config :lakehouse_matrix, native_event_graph: matrix_native, federation_enabled: matrix_federation

@@ -1,0 +1,44 @@
+server_name: reference.test:8448
+public_baseurl: https://reference.test:8448
+pid_file: /data/homeserver.pid
+listeners:
+  - port: 8448
+    tls: true
+    type: http
+    bind_addresses: ['0.0.0.0']
+    resources:
+      - names: [client, federation]
+        compress: false
+database:
+  name: sqlite3
+  args:
+    database: /data/homeserver.db
+log_config: /fixtures/log.config
+media_store_path: /data/media_store
+signing_key_path: /data/reference.signing.key
+trusted_key_servers: []
+suppress_key_server_warning: true
+report_stats: false
+enable_registration: true
+enable_registration_without_verification: true
+registration_shared_secret: isolated-test-registration-only
+macaroon_secret_key: isolated-test-macaroon-only
+form_secret: isolated-test-form-only
+tls_certificate_path: /fixtures/peer.pem
+tls_private_key_path: /fixtures/peer.key
+federation_custom_ca_list: [/fixtures/ca.pem]
+federation_ip_range_blacklist: []
+ip_range_blacklist: []
+rc_registration:
+  per_second: 100
+  burst_count: 100
+rc_message:
+  per_second: 100
+  burst_count: 100
+rc_joins:
+  local:
+    per_second: 100
+    burst_count: 100
+  remote:
+    per_second: 100
+    burst_count: 100

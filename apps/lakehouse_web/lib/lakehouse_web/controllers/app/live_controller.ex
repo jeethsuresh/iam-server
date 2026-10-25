@@ -6,13 +6,19 @@ defmodule LakehouseWeb.App.LiveController do
 
   def events(conn, _) do
     g = conn.assigns.app_grant
+
     with true <- "chats.list" in g.scopes,
          :ok <- Changes.subscribe(g.principal_id, g.app_origin) do
       Process.monitor(Process.whereis(Changes))
       ["Bearer " <> token] = get_req_header(conn, "authorization")
-      conn = conn |> put_resp_header("cache-control", "no-store")
+
+      conn =
+        conn
+        |> put_resp_header("cache-control", "no-store")
         |> put_resp_header("x-accel-buffering", "no")
-        |> put_resp_content_type("text/event-stream") |> send_chunked(200)
+        |> put_resp_content_type("text/event-stream")
+        |> send_chunked(200)
+
       case chunk(conn, "event: ready\ndata: {}\n\n") do
         {:ok, conn} -> stream(conn, token)
         _ -> conn
@@ -24,15 +30,28 @@ defmodule LakehouseWeb.App.LiveController do
 
   def presence(conn, _) do
     g = conn.assigns.app_grant
+
     case Contacts.list(g) do
-      {:ok, social} -> json(conn, %{online: for(p <- social.contacts, p.uses_app and Changes.online?(p.principal_id, g.app_origin), do: LakehouseMatrix.Identity.user_id(p.username))})
-      {:error, _} -> conn |> put_status(403) |> json(%{error: "insufficient_scope"})
+      {:ok, social} ->
+        json(conn, %{
+          online:
+            for(
+              p <- social.contacts,
+              p.uses_app and Changes.online?(p.principal_id, g.app_origin),
+              do: LakehouseMatrix.Identity.user_id(p.username)
+            )
+        })
+
+      {:error, _} ->
+        conn |> put_status(403) |> json(%{error: "insufficient_scope"})
     end
   end
 
   defp stream(conn, token) do
     receive do
-      {:DOWN, _, :process, _, _} -> conn
+      {:DOWN, _, :process, _, _} ->
+        conn
+
       {:gravitas_change, change} ->
         case current(token) do
           {:ok, g} ->
@@ -44,7 +63,9 @@ defmodule LakehouseWeb.App.LiveController do
             else
               stream(conn, token)
             end
-          _ -> revoke(conn)
+
+          _ ->
+            revoke(conn)
         end
     after
       10_000 ->
@@ -54,26 +75,40 @@ defmodule LakehouseWeb.App.LiveController do
               {:ok, next} -> stream(next, token)
               _ -> conn
             end
-          _ -> revoke(conn)
+
+          _ ->
+            revoke(conn)
         end
     end
   end
+
   defp current(token) do
     with {:ok, %{grant: g, token: t}} <- Tokens.verify_access(token),
-         scopes = Tokens.effective_scopes(t, g), true <- "chats.list" in scopes do
+         :ok <- LakehouseMatrix.AccountModeration.check(g.principal_id, :read),
+         scopes = Tokens.effective_scopes(t, g),
+         true <- "chats.list" in scopes do
       {:ok, %{g | scopes: scopes}}
     else
       _ -> :error
     end
   end
+
   defp visible?(g, %{"room_id" => id} = change) do
-    change["member"] == LakehouseMatrix.Identity.user_id(LakehouseIam.Repo.get!(LakehouseIam.Schema.Principal, g.principal_id).username) or DelegatedGroups.visible?(g, id)
+    change["member"] ==
+      LakehouseMatrix.Identity.user_id(
+        LakehouseIam.Repo.get!(LakehouseIam.Schema.Principal, g.principal_id).username
+      ) or DelegatedGroups.visible?(g, id)
   end
+
   defp visible?(g, %{"principal_id" => id} = change) do
-    id == g.principal_id or (change["app_origin"] == g.app_origin and "contacts.read" in g.scopes and Contacts.connected?(g.principal_id, id))
+    id == g.principal_id or
+      (change["app_origin"] == g.app_origin and "contacts.read" in g.scopes and
+         Contacts.connected?(g.principal_id, id))
   end
+
   defp visible?(g, %{"principals" => ids}), do: g.principal_id in ids
   defp visible?(_, _), do: false
+
   defp revoke(conn) do
     case chunk(conn, "event: revoked\ndata: {}\n\n") do
       {:ok, next} -> next

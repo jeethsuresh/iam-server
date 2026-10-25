@@ -1,0 +1,12 @@
+<section class="oauth-consent">
+  <h1>Sign in to a Matrix client</h1>
+  <p>Signed in as <strong>{@username}</strong>.</p>
+  <p>This client will have full Matrix access to your account, including current and future rooms, messages, profile, devices, and account settings.</p>
+  <p>Continue only if you trust this client and started this sign-in.</p>
+  <p><strong>Client callback:</strong> <code>{@url}</code></p>
+  <form action="/matrix/sso/consent" method="post">
+    <input type="hidden" name="_csrf_token" value={get_csrf_token()} />
+    <button type="submit" name="decision" value="allow">Allow full Matrix access</button>
+    <button type="submit" name="decision" value="deny">Cancel</button>
+  </form>
+</section>

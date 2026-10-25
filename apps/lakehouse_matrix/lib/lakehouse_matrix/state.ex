@@ -56,9 +56,17 @@ defmodule LakehouseMatrix.State do
   end
 
   defp to_client_event(%RoomState{} = s) do
+    sender =
+      Repo.one(
+        from e in LakehouseMatrix.Schema.RoomEvent,
+          where: e.event_id == ^Map.get(s.content, "_event_id"),
+          select: e.sender
+      )
+
     %{
       "type" => s.type,
       "state_key" => s.state_key,
+      "sender" => sender,
       "content" => Map.drop(s.content, ["_event_id", "_origin_server_ts"]),
       "event_id" => Map.get(s.content, "_event_id"),
       "origin_server_ts" => Map.get(s.content, "_origin_server_ts")

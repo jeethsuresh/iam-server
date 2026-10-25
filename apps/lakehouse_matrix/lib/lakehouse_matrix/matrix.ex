@@ -4,7 +4,8 @@ defmodule LakehouseMatrix.Matrix do
   """
   require Logger
 
-  alias LakehouseIam.{Accounts, IAM}
+  alias LakehouseIam.{Accounts, IAM, Repo}
+
   alias LakehouseMatrix.{
     Events,
     Events.Context,
@@ -52,6 +53,12 @@ defmodule LakehouseMatrix.Matrix do
 
   @spec create_room(Ecto.UUID.t(), map()) :: {:ok, map()} | {:error, term()}
   def create_room(principal_id, params) do
+    if LakehouseMatrix.Protocol.Rooms.enabled?(),
+      do: LakehouseMatrix.Protocol.Rooms.create(principal_id, params),
+      else: create_legacy_room(principal_id, params)
+  end
+
+  defp create_legacy_room(principal_id, params) do
     if can_create?(principal_id) do
       with {:ok, principal} <- fetch_principal(principal_id),
            {:ok, room} <- Rooms.create_room_record(room_attrs(params)),
@@ -65,30 +72,127 @@ defmodule LakehouseMatrix.Matrix do
   end
 
   # First-party Matrix membership mutations use the same row-locked policy as apps.
-  def join_room(principal_id, room_ref) do
-    with {:ok, room} <- resolve_room(room_ref) do
-      if delegated?(room.id) do
-        with {:ok, _} <- delegated_membership(principal_id, room.id, if(LakehouseMatrix.RiverPublishing.public_join?(room.id), do: "public_join", else: "accept")),
-          do: {:ok, %{"room_id" => Identity.room_id(room.id)}}
-      else
-        legacy_join_room(principal_id, room_ref)
-      end
+  def join_room(principal_id, room_ref, servers \\ [], params \\ %{}) do
+    case resolve_room(room_ref) do
+      {:ok, room} ->
+        join_known_room(principal_id, room, room_ref, servers, params)
+
+      {:error, :room_not_found} ->
+        if remote_reference?(room_ref),
+          do: LakehouseMatrix.Federation.RemoteJoin.join(principal_id, room_ref, servers, params),
+          else: {:error, :room_not_found}
     end
   end
 
-  def leave_room(principal_id, room_ref) do
+  defp join_known_room(principal_id, room, room_ref, servers, params) do
+    metadata = LakehouseMatrix.Protocol.Graph.room(room.id)
+
+    cond do
+      Memberships.joined?(room.id, principal_id) ->
+        {:ok, %{"room_id" => Identity.room_id(room.id)}}
+
+      metadata &&
+          not LakehouseMatrix.Federation.RoomAccess.joined?(
+            LakehouseMatrix.Federation.RoomAccess.state(metadata),
+            Identity.homeserver_domain()
+          ) ->
+        LakehouseMatrix.Federation.RemoteJoin.join(
+          principal_id,
+          metadata.room_id,
+          servers,
+          params
+        )
+
+      delegated?(room.id) &&
+          (is_nil(metadata) or
+             is_nil(LakehouseIam.Repo.get(LakehouseMatrix.Schema.RiverChannel, room.id))) ->
+        with {:ok, _} <-
+               delegated_membership(
+                 principal_id,
+                 room.id,
+                 if(LakehouseMatrix.RiverPublishing.public_join?(room.id),
+                   do: "public_join",
+                   else: "accept"
+                 )
+               ),
+             do: {:ok, %{"room_id" => Identity.room_id(room.id)}}
+
+      metadata ->
+        with {:ok, _} <- LakehouseMatrix.Protocol.Rooms.membership(principal_id, room.id, "join"),
+             do: {:ok, %{"room_id" => Identity.room_id(room.id)}}
+
+      true ->
+        legacy_join_room(principal_id, room_ref)
+    end
+  end
+
+  defp remote_reference?(ref) when is_binary(ref) do
+    cond do
+      String.starts_with?(ref, "!") ->
+        true
+
+      String.starts_with?(ref, "#") ->
+        case String.split(ref, ":", parts: 2) do
+          [_, server] -> server != Identity.homeserver_domain()
+          _ -> false
+        end
+
+      true ->
+        false
+    end
+  end
+
+  defp remote_reference?(_), do: false
+
+  def leave_room(principal_id, room_ref, params \\ %{}) do
     with {:ok, room} <- resolve_room(room_ref) do
-      if delegated?(room.id),
-        do: delegated_membership(principal_id, room.id, "leave"),
-        else: legacy_leave_room(principal_id, room_ref)
+      metadata = LakehouseMatrix.Protocol.Graph.room(room.id)
+      user = Repo.get!(LakehouseIam.Schema.Principal, principal_id).username |> Identity.user_id()
+
+      cond do
+        metadata && metadata.extremities == [] &&
+            LakehouseMatrix.Federation.Invites.pending(room.id, user) ->
+          LakehouseMatrix.Federation.RemoteMembership.reject_invite(principal_id, room.id, params)
+
+        metadata && metadata.extremities == [] &&
+            Memberships.membership(room.id, principal_id) == "leave" ->
+          {:ok, %{}}
+
+        delegated?(room.id) &&
+            (is_nil(metadata) or is_nil(Repo.get(LakehouseMatrix.Schema.RiverChannel, room.id))) ->
+          delegated_membership(principal_id, room.id, "leave")
+
+        metadata ->
+          LakehouseMatrix.Protocol.Rooms.membership(
+            principal_id,
+            room.id,
+            "leave",
+            Map.take(params, ["reason"])
+          )
+
+        true ->
+          legacy_leave_room(principal_id, room_ref)
+      end
     end
   end
 
   def invite(actor, room_ref, username) when is_binary(username) do
     with {:ok, room} <- resolve_room(room_ref) do
-      if delegated?(room.id),
+      if delegated?(room.id) and not String.starts_with?(username, "@"),
         do: delegated_membership(actor, room.id, "invite", username),
-        else: legacy_invite(actor, room_ref, username)
+        else:
+          if(LakehouseMatrix.Protocol.Graph.room(room.id),
+            do:
+              LakehouseMatrix.Protocol.Rooms.invite(
+                actor,
+                room.id,
+                if(String.starts_with?(username, "@"),
+                  do: username,
+                  else: Identity.user_id(username)
+                )
+              ),
+            else: legacy_invite(actor, room_ref, username)
+          )
     end
   end
 
@@ -110,11 +214,20 @@ defmodule LakehouseMatrix.Matrix do
   end
 
   defp delegated_membership(principal, id, action, username \\ nil) do
-    grant = %LakehouseIam.Schema.AppGrant{principal_id: principal,
+    grant = %LakehouseIam.Schema.AppGrant{
+      principal_id: principal,
       app_origin: "https://" <> Identity.homeserver_domain(),
-      scopes: ["groups.manage", "groups.join"], room_mode: :all}
+      scopes: ["groups.manage", "groups.join"],
+      room_mode: :all
+    }
+
     params = %{"action" => action}
-    params = if username, do: Map.put(params, "user_id", Identity.user_id(Accounts.normalize_username(username))), else: params
+
+    params =
+      if username,
+        do: Map.put(params, "user_id", Identity.user_id(Accounts.normalize_username(username))),
+        else: params
+
     LakehouseMatrix.DelegatedGroups.membership(grant, id, params)
   end
 
@@ -124,7 +237,13 @@ defmodule LakehouseMatrix.Matrix do
          {:ok, principal} <- fetch_principal(principal_id) do
       invited = Memberships.invited?(room.id, principal_id)
       rules = get_in(State.get(room.id, "m.room.join_rules") || %{}, ["content", "join_rule"])
-      allowed = if delegated?(room.id), do: invited, else: Memberships.joined?(room.id, principal_id) or invited or (rules in [nil, "public"] and can_join?(principal_id, room.id))
+
+      allowed =
+        if delegated?(room.id),
+          do: invited,
+          else:
+            Memberships.joined?(room.id, principal_id) or invited or
+              (rules in [nil, "public"] and can_join?(principal_id, room.id))
 
       if allowed do
         with :ok <- ensure_room_started(room),
@@ -137,9 +256,6 @@ defmodule LakehouseMatrix.Matrix do
     end
   end
 
-  @doc """
-  Invite a user to a room (`m.room.member` with membership `invite`).
-  """
   @spec invite(Ecto.UUID.t(), Ecto.UUID.t() | String.t(), String.t()) ::
           {:ok, map()} | {:error, term()}
   defp legacy_invite(actor_principal_id, room_id_or_alias, username) when is_binary(username) do
@@ -202,7 +318,8 @@ defmodule LakehouseMatrix.Matrix do
 
   @spec remove_member(Ecto.UUID.t(), Ecto.UUID.t() | String.t(), String.t()) ::
           {:ok, map()} | {:error, term()}
-  defp legacy_remove_member(actor_principal_id, room_id_or_alias, username) when is_binary(username) do
+  defp legacy_remove_member(actor_principal_id, room_id_or_alias, username)
+       when is_binary(username) do
     canonical = Accounts.normalize_username(username)
 
     with {:ok, room} <- resolve_room(room_id_or_alias),
@@ -266,7 +383,8 @@ defmodule LakehouseMatrix.Matrix do
       when is_binary(content_uri) do
     with {:ok, room} <- resolve_room(room_id_or_alias),
          {:ok, principal} <- fetch_principal(principal_id) do
-      if Memberships.joined?(room.id, principal_id) and (not delegated?(room.id) or creator?(room.id, principal_id)) do
+      if Memberships.joined?(room.id, principal_id) and
+           (not delegated?(room.id) or creator?(room.id, principal_id)) do
         content =
           %{"url" => content_uri}
           |> then(fn c -> if map_size(info) > 0, do: Map.put(c, "info", info), else: c end)
@@ -292,8 +410,9 @@ defmodule LakehouseMatrix.Matrix do
   def list_room_files(principal_id, room_id_or_alias, opts \\ []) do
     case resolve_room(room_id_or_alias) do
       {:ok, room} ->
-        if Memberships.joined?(room.id, principal_id) and (not delegated?(room.id) or creator?(room.id, principal_id)) do
-          Events.list_file_messages(room.id, opts)
+        if Memberships.joined?(room.id, principal_id) and
+             (not delegated?(room.id) or creator?(room.id, principal_id)) do
+          Events.list_file_messages(room.id, Keyword.put(opts, :principal, principal_id))
         else
           []
         end
@@ -305,6 +424,22 @@ defmodule LakehouseMatrix.Matrix do
 
   @spec creator?(Ecto.UUID.t(), Ecto.UUID.t()) :: boolean()
   def creator?(room_id, principal_id) do
+    case LakehouseMatrix.Protocol.Graph.room(room_id) do
+      nil ->
+        legacy_creator?(room_id, principal_id)
+
+      metadata ->
+        with {:ok, principal} <- fetch_principal(principal_id) do
+          Identity.user_id(principal.username) in LakehouseMatrix.Protocol.Authorization.creators(
+            LakehouseMatrix.Federation.RoomAccess.state(metadata)
+          )
+        else
+          _ -> false
+        end
+    end
+  end
+
+  defp legacy_creator?(room_id, principal_id) do
     with {:ok, principal} <- fetch_principal(principal_id),
          %{"content" => %{"creator" => creator}} <- State.get(room_id, "m.room.create", "") do
       creator == Identity.user_id(principal.username)
@@ -318,7 +453,8 @@ defmodule LakehouseMatrix.Matrix do
   def set_topic(principal_id, room_id_or_alias, topic) when is_binary(topic) do
     with {:ok, room} <- resolve_room(room_id_or_alias),
          {:ok, principal} <- fetch_principal(principal_id) do
-      if Memberships.joined?(room.id, principal_id) and (not delegated?(room.id) or creator?(room.id, principal_id)) do
+      if Memberships.joined?(room.id, principal_id) and
+           (not delegated?(room.id) or creator?(room.id, principal_id)) do
         ctx =
           build_context(
             room.id,
@@ -350,8 +486,13 @@ defmodule LakehouseMatrix.Matrix do
           {:ok, map()} | {:error, term()}
   def send_message(principal_id, room_id, txn_id, content) do
     if delegated?(room_id) do
-      grant = %LakehouseIam.Schema.AppGrant{principal_id: principal_id,
-        app_origin: "https://" <> Identity.homeserver_domain(), scopes: ["chats.write", "spaces.channels", "calls.join"], room_mode: :all}
+      grant = %LakehouseIam.Schema.AppGrant{
+        principal_id: principal_id,
+        app_origin: "https://" <> Identity.homeserver_domain(),
+        scopes: ["chats.write", "spaces.channels", "calls.join"],
+        room_mode: :all
+      }
+
       LakehouseMatrix.DelegatedGroups.send(grant, room_id, "m.room.message", txn_id, content)
     else
       legacy_send_message(principal_id, room_id, txn_id, content)
@@ -405,7 +546,7 @@ defmodule LakehouseMatrix.Matrix do
   @spec room_messages(Ecto.UUID.t(), Ecto.UUID.t(), keyword()) :: map()
   def room_messages(principal_id, room_id, opts \\ []) do
     if Memberships.joined?(room_id, principal_id) do
-      events = Events.list_timeline(room_id, opts)
+      events = Events.list_timeline(room_id, Keyword.put(opts, :principal, principal_id))
 
       %{
         "chunk" => events,
@@ -523,8 +664,11 @@ defmodule LakehouseMatrix.Matrix do
         {:ok, alias_name} = Identity.parse_room_alias(room_id_or_alias)
         Rooms.get_room_by_alias(alias_name)
 
-      true ->
+      match?({:ok, _}, Ecto.UUID.cast(room_id_or_alias)) ->
         fetch_room(room_id_or_alias)
+
+      true ->
+        {:error, :room_not_found}
     end
   end
 

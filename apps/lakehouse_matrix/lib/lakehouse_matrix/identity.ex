@@ -28,7 +28,10 @@ defmodule LakehouseMatrix.Identity do
 
   @spec room_id(Ecto.UUID.t()) :: String.t()
   def room_id(room_uuid) when is_binary(room_uuid) do
-    "!#{room_uuid}:#{homeserver_domain()}"
+    case LakehouseMatrix.Protocol.Graph.room(room_uuid) do
+      nil -> "!#{room_uuid}:#{homeserver_domain()}"
+      room -> room.room_id
+    end
   end
 
   @spec room_alias(String.t()) :: String.t()
@@ -38,10 +41,18 @@ defmodule LakehouseMatrix.Identity do
 
   @spec parse_room_id(String.t()) :: {:ok, Ecto.UUID.t()} | :error
   def parse_room_id("!" <> rest) do
-    case String.split(rest, ":", parts: 2) do
-      [uuid, domain] when byte_size(uuid) > 0 ->
-        if domain == homeserver_domain(), do: Ecto.UUID.cast(uuid), else: :error
-      _ -> :error
+    case LakehouseMatrix.Protocol.Graph.room_by_id("!" <> rest) do
+      %{local_room_id: id} ->
+        {:ok, id}
+
+      nil ->
+        case String.split(rest, ":", parts: 2) do
+          [uuid, domain] when byte_size(uuid) > 0 ->
+            if domain == homeserver_domain(), do: Ecto.UUID.cast(uuid), else: :error
+
+          _ ->
+            :error
+        end
     end
   end
 
@@ -53,12 +64,16 @@ defmodule LakehouseMatrix.Identity do
     end
   end
 
+  def parse_room_id(_), do: :error
+
   @spec parse_room_alias(String.t()) :: {:ok, String.t()} | :error
   def parse_room_alias("#" <> rest) do
     case String.split(rest, ":", parts: 2) do
       [alias_name, domain] when byte_size(alias_name) > 0 ->
         if domain == homeserver_domain(), do: {:ok, alias_name}, else: :error
-      _ -> :error
+
+      _ ->
+        :error
     end
   end
 

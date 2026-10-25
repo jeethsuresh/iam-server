@@ -3,12 +3,20 @@ defmodule LakehouseWeb.Matrix.ClientController do
 
   alias LakehouseMatrix.{Identity, Matrix}
 
-  # API path versions (v3) are not Matrix specification versions. Keep the
-  # advertised baseline conservative until the full v1.19 conformance gate passes.
-  @versions ["v1.1"]
+  # API path versions (v3) are distinct from specification versions. The older
+  # local-only backend retains its baseline; the signed graph uses the audited API.
+  @native_versions Enum.map(1..19, &"v1.#{&1}")
 
   def versions(conn, _params) do
-    json(conn, %{"versions" => @versions, "unstable_features" => %{"org.matrix.msc4186" => true}})
+    versions = if LakehouseMatrix.Protocol.Rooms.enabled?(), do: @native_versions, else: ["v1.1"]
+
+    json(conn, %{
+      "versions" => versions,
+      "unstable_features" => %{
+        "org.matrix.msc4186" => true,
+        "org.matrix.simplified_msc3575" => true
+      }
+    })
   end
 
   def login(conn, params) do
@@ -48,6 +56,10 @@ defmodule LakehouseWeb.Matrix.ClientController do
     json(conn, body)
   end
 
+  def invite(conn, %{"id_server" => _, "medium" => _, "address" => _}),
+    do:
+      matrix_error(conn, 403, "M_FORBIDDEN", "Invitations through identity services are disabled")
+
   def invite(conn, %{"roomId" => room_ref} = params) do
     user =
       Map.get(params, "user_id") ||
@@ -79,6 +91,9 @@ defmodule LakehouseWeb.Matrix.ClientController do
       {:error, :forbidden} ->
         matrix_error(conn, 403, "M_FORBIDDEN", "You cannot invite to this room")
 
+      {:error, :invite_blocked} ->
+        LakehouseWeb.Matrix.ProtocolController.respond(conn, {:error, :invite_blocked})
+
       {:error, _} ->
         matrix_error(conn, 400, "M_UNKNOWN", "Could not invite user")
     end
@@ -88,6 +103,9 @@ defmodule LakehouseWeb.Matrix.ClientController do
     case Matrix.create_room(conn.assigns.principal_id, params) do
       {:ok, body} ->
         json(conn, body)
+
+      {:error, :invite_blocked} ->
+        LakehouseWeb.Matrix.ProtocolController.respond(conn, {:error, :invite_blocked})
 
       {:error, :forbidden} ->
         matrix_error(conn, 403, "M_FORBIDDEN", "You are not allowed to create rooms")
@@ -100,7 +118,12 @@ defmodule LakehouseWeb.Matrix.ClientController do
   def join_room_id(conn, %{"roomId" => id}), do: join_room(conn, %{"roomIdOrAlias" => id})
 
   def join_room(conn, %{"roomIdOrAlias" => room_ref}) do
-    case Matrix.join_room(conn.assigns.principal_id, room_ref) do
+    servers =
+      URI.query_decoder(conn.query_string)
+      |> Enum.filter(fn {key, _} -> key in ["via", "via[]", "server_name", "server_name[]"] end)
+      |> Enum.map(&elem(&1, 1))
+
+    case Matrix.join_room(conn.assigns.principal_id, room_ref, servers, conn.body_params) do
       {:ok, body} ->
         json(conn, body)
 
@@ -110,18 +133,27 @@ defmodule LakehouseWeb.Matrix.ClientController do
       {:error, :forbidden} ->
         matrix_error(conn, 403, "M_FORBIDDEN", "You are not allowed to join this room")
 
+      {:error, {:policy_error, _, _}} = error ->
+        LakehouseWeb.Matrix.ProtocolController.respond(conn, error)
+
+      {:error, :policy_unavailable} = error ->
+        LakehouseWeb.Matrix.ProtocolController.respond(conn, error)
+
       {:error, _} ->
         matrix_error(conn, 400, "M_UNKNOWN", "Could not join room")
     end
   end
 
   def leave_room(conn, %{"roomId" => room_ref}) do
-    case Matrix.leave_room(conn.assigns.principal_id, room_ref) do
+    case Matrix.leave_room(conn.assigns.principal_id, room_ref, conn.body_params) do
       {:ok, body} ->
         json(conn, body)
 
       {:error, :room_not_found} ->
         matrix_error(conn, 404, "M_NOT_FOUND", "Room not found")
+
+      {:error, :unavailable} ->
+        matrix_error(conn, 503, "M_UNAVAILABLE", "The resident server is unavailable; try again")
 
       {:error, _} ->
         matrix_error(conn, 403, "M_FORBIDDEN", "You are not in this room")

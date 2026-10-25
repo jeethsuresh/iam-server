@@ -9,6 +9,9 @@ defmodule LakehouseIam.Schema.Principal do
     field :type, Ecto.Enum, values: [:user, :service, :bot, :agent]
     field :username, :string
     field :active, :boolean, default: false
+    field :matrix_locked, :boolean, default: false
+    field :matrix_suspended, :boolean, default: false
+    field :matrix_deactivated, :boolean, default: false
     field :meta, :map, default: %{}
 
     has_many :credentials, LakehouseIam.Schema.Credential

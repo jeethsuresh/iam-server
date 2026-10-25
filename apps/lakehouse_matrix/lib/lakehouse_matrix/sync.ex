@@ -41,7 +41,7 @@ defmodule LakehouseMatrix.Sync do
       "timeout" => Keyword.get(opts, :timeout, 0)
     }
 
-    {:ok, response} = ClientSync.sync(principal, "legacy", params)
+    {:ok, response} = ClientSync.sync(principal, "legacy", params, update_presence: false)
     response
   end
 end

@@ -1,26 +1,39 @@
 defmodule LakehouseMatrix.Federation.Auth do
   @moduledoc "Verify X-Matrix authentication against self-signed server keys retrieved over verified HTTPS."
-  alias LakehouseMatrix.{Identity, Federation.Signing, Federation.Transport}
+  alias LakehouseMatrix.{Identity, Federation.Signing, Federation.Transport, Federation.Keyring}
 
   def verify(method, uri, content, headers, fetch \\ &Transport.get_json/2) do
-    Enum.reduce_while(headers, {:error, :unauthorized}, fn header, _ ->
-      with {:ok, values} <- parse(header),
-           {:ok, _} <- Transport.server_name(values["origin"]),
-           true <- values["destination"] == Identity.homeserver_domain(),
-           true <- String.starts_with?(values["key"], "ed25519:"),
-           {:ok, keys} <- fetch.(values["origin"], "/_matrix/key/v2/server"),
-           {:ok, public} <- key(keys, values["origin"], values["key"]),
-           signed <-
-             Signing.request_object(method, uri, values["origin"], values["destination"], content),
-           signed <-
-             Map.put(signed, "signatures", %{
-               values["origin"] => %{values["key"] => values["sig"]}
-             }),
-           true <- Signing.verify(signed, public, values["key"], values["origin"]) do
-        {:halt, {:ok, values["origin"]}}
-      else
-        _ -> {:cont, {:error, :unauthorized}}
-      end
+    Keyring.with_cache(fn ->
+      Enum.reduce_while(headers, {:error, :unauthorized}, fn header, _ ->
+        with {:ok, values} <- parse(header),
+             {:ok, _} <- Transport.server_name(values["origin"]),
+             true <- values["destination"] == Identity.homeserver_domain(),
+             true <- String.starts_with?(values["key"], "ed25519:"),
+             {:ok, public} <-
+               Keyring.key(
+                 values["origin"],
+                 values["key"],
+                 System.system_time(:millisecond),
+                 fetch
+               ),
+             signed <-
+               Signing.request_object(
+                 method,
+                 uri,
+                 values["origin"],
+                 values["destination"],
+                 content
+               ),
+             signed <-
+               Map.put(signed, "signatures", %{
+                 values["origin"] => %{values["key"] => values["sig"]}
+               }),
+             true <- Signing.verify(signed, public, values["key"], values["origin"]) do
+          {:halt, {:ok, values["origin"]}}
+        else
+          _ -> {:cont, {:error, :unauthorized}}
+        end
+      end)
     end)
   rescue
     _ -> {:error, :unauthorized}

@@ -5,9 +5,26 @@ defmodule LakehouseMatrix.Application do
   @impl true
   def start(_type, _args) do
     children = [
+      {Task.Supervisor, name: LakehouseMatrix.ImageTasks, max_children: 1},
+      {Task.Supervisor, name: LakehouseMatrix.PreviewTasks, max_children: 4},
       {Registry, keys: :unique, name: LakehouseMatrix.RoomRegistry},
       {DynamicSupervisor, strategy: :one_for_one, name: LakehouseMatrix.RoomDynamicSupervisor}
     ]
+
+    children =
+      if Application.get_env(:lakehouse_matrix, :account_worker_enabled, true),
+        do: children ++ [LakehouseMatrix.DeactivationWorker],
+        else: children
+
+    children =
+      if Application.get_env(:lakehouse_matrix, :federation_enabled, false),
+        do: children ++ [LakehouseMatrix.Federation.Outbox, LakehouseMatrix.Federation.Inbox],
+        else: children
+
+    children =
+      if LakehouseMatrix.Protocol.Rooms.enabled?(),
+        do: children ++ [LakehouseMatrix.Ephemeral, LakehouseMatrix.Pushers],
+        else: children
 
     Supervisor.start_link(children, strategy: :one_for_one, name: LakehouseMatrix.Supervisor)
   end

@@ -255,7 +255,9 @@ defmodule LakehouseWeb.RoomLive do
 
   @impl true
   def handle_info({:room_event, room_id, msg}, socket) do
+    msg = LakehouseMatrix.Erasure.client(msg, socket.assigns.principal_id)
     socket = revalidate_room_membership(socket)
+
     socket =
       if socket.assigns.room && socket.assigns.room.id == room_id do
         case msg["type"] do
@@ -265,7 +267,11 @@ defmodule LakehouseWeb.RoomLive do
             |> maybe_refresh_files(msg)
 
           "m.room.member" ->
-            assign(socket, :members, Memberships.list_members(room_id))
+            assign(
+              socket,
+              :members,
+              Memberships.list_members(room_id, socket.assigns.principal_id)
+            )
 
           "m.room.name" ->
             room = Rooms.get_room(room_id)
@@ -290,6 +296,7 @@ defmodule LakehouseWeb.RoomLive do
 
   def handle_info({:room_ephemeral, room_id, %{"type" => "m.typing"} = event}, socket) do
     socket = revalidate_room_membership(socket)
+
     socket =
       if socket.assigns.room && socket.assigns.room.id == room_id do
         users =
@@ -441,8 +448,11 @@ defmodule LakehouseWeb.RoomLive do
   end
 
   defp revalidate_room_membership(socket) do
-    if socket.assigns.room && not Memberships.joined?(socket.assigns.room.id, socket.assigns.principal_id) do
-      socket |> apply_room_param(nil) |> assign(:rooms, Rooms.list_rooms_for(socket.assigns.principal_id))
+    if socket.assigns.room &&
+         not Memberships.joined?(socket.assigns.room.id, socket.assigns.principal_id) do
+      socket
+      |> apply_room_param(nil)
+      |> assign(:rooms, Rooms.list_rooms_for(socket.assigns.principal_id))
     else
       socket
     end
@@ -497,8 +507,8 @@ defmodule LakehouseWeb.RoomLive do
           socket
           |> assign(:rooms, Rooms.list_rooms_for(principal_id))
           |> assign(:room, room)
-          |> assign(:members, Memberships.list_members(room.id))
-          |> assign(:messages, Events.list_timeline(room.id, limit: 100))
+          |> assign(:members, Memberships.list_members(room.id, principal_id))
+          |> assign(:messages, Events.list_timeline(room.id, limit: 100, principal: principal_id))
           |> assign(:room_files, Matrix.list_room_files(principal_id, room.id))
           |> assign(:is_creator?, Matrix.creator?(room.id, principal_id))
           |> assign(:name_draft, room.name || "")

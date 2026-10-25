@@ -37,7 +37,7 @@ defmodule LakehouseWeb.Matrix.ProtocolCompatibilityTest do
   end
 
   defp sliding(a, body, query \\ "") do
-    api(a, :post, "/_matrix/client/unstable/org.matrix.msc4186/sync" <> query, body)
+    api(a, :post, "/_matrix/client/unstable/org.matrix.simplified_msc3575/sync" <> query, body)
   end
 
   defp list(limit \\ 10),
@@ -48,6 +48,212 @@ defmodule LakehouseWeb.Matrix.ProtocolCompatibilityTest do
         "required_state" => [["*", "*"]]
       }
     }
+
+  test "search follows plaintext room visibility through the standard client endpoint", %{
+    a: a,
+    b: b
+  } do
+    ref = room(a)
+
+    assert api(a, :put, "/_matrix/client/v3/rooms/#{ref}/send/m.room.message/search", %{
+             "msgtype" => "m.text",
+             "body" => "searchable meteorite"
+           }).status == 200
+
+    request = %{
+      "search_categories" => %{
+        "room_events" => %{
+          "search_term" => "meteorite",
+          "event_context" => %{},
+          "include_state" => true
+        }
+      }
+    }
+
+    response = api(a, :post, "/_matrix/client/v3/search", request) |> json_response(200)
+
+    assert [%{"result" => %{"room_id" => ^ref, "content" => %{"body" => "searchable meteorite"}}}] =
+             response["search_categories"]["room_events"]["results"]
+
+    response = api(b, :post, "/_matrix/client/v3/search", request) |> json_response(200)
+    assert [] = response["search_categories"]["room_events"]["results"]
+
+    assert api(a, :post, "/_matrix/client/v3/search", %{
+             "search_categories" => %{"room_events" => %{}}
+           }).status == 400
+  end
+
+  test "namespaced profile fields, deletion, tags and mutual-room discovery use their standard endpoints",
+       %{a: a, alice: alice, bob: bob} do
+    user = Identity.user_id(alice.username)
+    peer = Identity.user_id(bob.username)
+    path = "/_matrix/client/v3/profile/#{user}/org.example.card"
+
+    assert api(a, :put, path, %{}) |> json_response(400) |> Map.fetch!("errcode") ==
+             "M_MISSING_PARAM"
+
+    assert api(a, :put, path, %{"org.example.card" => %{"score" => 1.25}}).status == 200
+
+    assert get(build_conn(), path) |> json_response(200) == %{
+             "org.example.card" => %{"score" => 1.25}
+           }
+
+    assert api(a, :delete, path).status == 200
+    assert get(build_conn(), path).status == 404
+
+    assert api(a, :put, "/_matrix/client/v3/profile/#{user}/m.tz", %{"m.tz" => "America/Toronto"}).status ==
+             200
+
+    capabilities = api(a, :get, "/_matrix/client/v3/capabilities") |> json_response(200)
+    assert get_in(capabilities, ["capabilities", "m.profile_fields", "enabled"]) == true
+    ref = "!" <> String.duplicate("a", 43)
+    tags = "/_matrix/client/v3/user/#{user}/rooms/#{ref}/tags"
+    assert api(a, :put, tags <> "/m.favourite", %{"order" => 0.75}).status == 200
+
+    assert api(a, :get, tags) |> json_response(200) == %{
+             "tags" => %{"m.favourite" => %{"order" => 0.75}}
+           }
+
+    assert api(a, :get, String.replace(tags, user, peer)).status == 403
+    assert api(a, :delete, tags <> "/m.favourite").status == 200
+
+    assert api(
+             a,
+             :put,
+             "/_matrix/client/v3/user/#{user}/rooms/#{ref}/account_data/org.example.test",
+             %{"value" => true}
+           ).status == 200
+
+    assert api(a, :get, "/_matrix/client/v1/mutual_rooms?user_id=#{URI.encode_www_form(peer)}")
+           |> json_response(200) == %{"joined" => [], "count" => 0}
+  end
+
+  test "native relation routes and redactions through send use Matrix response semantics", %{
+    a: a,
+    alice: alice
+  } do
+    old = Application.get_env(:lakehouse_matrix, :signing_key)
+
+    Application.put_env(
+      :lakehouse_matrix,
+      :signing_key,
+      Base.encode64(<<0::256>>, padding: false)
+    )
+
+    on_exit(fn ->
+      if is_nil(old),
+        do: Application.delete_env(:lakehouse_matrix, :signing_key),
+        else: Application.put_env(:lakehouse_matrix, :signing_key, old)
+    end)
+
+    {:ok, %{"room_id" => ref}} = LakehouseMatrix.Protocol.Rooms.create(alice.id, %{})
+    summary = api(a, :get, "/_matrix/client/v1/room_summary/#{ref}") |> json_response(200)
+
+    assert summary["room_id"] == ref and summary["room_version"] == "12" and
+             summary["membership"] == "join"
+
+    hierarchy = api(a, :get, "/_matrix/client/v1/rooms/#{ref}/hierarchy") |> json_response(200)
+    assert [%{"room_id" => ^ref, "children_state" => []}] = hierarchy["rooms"]
+
+    pushrules = api(a, :get, "/_matrix/client/v3/pushrules/") |> json_response(200)
+    assert hd(pushrules["global"]["override"])["rule_id"] == ".m.rule.master"
+
+    assert api(a, :put, "/_matrix/client/v3/pushrules/global/room/#{ref}", %{"actions" => []})
+           |> json_response(200) == %{}
+
+    assert api(a, :get, "/_matrix/client/v3/pushrules/global/room/#{ref}/actions")
+           |> json_response(200) == %{"actions" => []}
+
+    assert api(a, :get, "/_matrix/client/v3/notifications") |> json_response(200) == %{
+             "notifications" => []
+           }
+
+    assert api(a, :get, "/_matrix/client/v3/pushers") |> json_response(200) == %{"pushers" => []}
+
+    original =
+      api(a, :put, "/_matrix/client/v3/rooms/#{ref}/send/m.room.message/original", %{
+        "body" => "original"
+      })
+      |> json_response(200)
+
+    event =
+      api(a, :get, "/_matrix/client/v3/rooms/#{ref}/event/#{original["event_id"]}")
+      |> json_response(200)
+
+    timestamp =
+      api(
+        a,
+        :get,
+        "/_matrix/client/v1/rooms/#{ref}/timestamp_to_event?dir=f&ts=#{event["origin_server_ts"]}"
+      )
+      |> json_response(200)
+
+    assert timestamp["origin_server_ts"] >= event["origin_server_ts"]
+
+    assert api(a, :get, "/_matrix/client/v1/rooms/#{ref}/timestamp_to_event?dir=b")
+           |> json_response(400)
+
+    relation = %{
+      "m.relates_to" => %{
+        "rel_type" => "m.annotation",
+        "event_id" => original["event_id"],
+        "key" => "yes"
+      }
+    }
+
+    first =
+      api(a, :put, "/_matrix/client/v3/rooms/#{ref}/send/m.reaction/first", relation)
+      |> json_response(200)
+
+    duplicate =
+      api(a, :put, "/_matrix/client/v3/rooms/#{ref}/send/m.reaction/second", relation)
+      |> json_response(400)
+
+    assert duplicate["errcode"] == "M_DUPLICATE_ANNOTATION"
+
+    page =
+      api(
+        a,
+        :get,
+        "/_matrix/client/v1/rooms/#{ref}/relations/#{original["event_id"]}/m.annotation/m.reaction"
+      )
+      |> json_response(200)
+
+    assert Enum.map(page["chunk"], & &1["event_id"]) == [first["event_id"]]
+
+    assert api(a, :get, "/_matrix/client/v1/rooms/#{ref}/threads") |> json_response(200) == %{
+             "chunk" => []
+           }
+
+    assert api(a, :put, "/_matrix/client/v3/rooms/#{ref}/send/m.room.redaction/missing", %{})
+           |> json_response(400)
+
+    assert api(a, :put, "/_matrix/client/v3/rooms/#{ref}/send/m.room.redaction/redact", %{
+             "redacts" => first["event_id"]
+           })
+           |> json_response(200)
+
+    page =
+      api(a, :get, "/_matrix/client/v1/rooms/#{ref}/relations/#{original["event_id"]}")
+      |> json_response(200)
+
+    assert page["chunk"] == []
+
+    replacement =
+      api(a, :post, "/_matrix/client/v3/rooms/#{ref}/upgrade", %{"new_version" => "12"})
+      |> json_response(200)
+      |> Map.fetch!("replacement_room")
+
+    create =
+      api(a, :get, "/_matrix/client/v3/rooms/#{replacement}/state/m.room.create")
+      |> json_response(200)
+
+    assert create["predecessor"]["room_id"] == ref
+
+    assert api(a, :post, "/_matrix/client/v3/rooms/#{ref}/upgrade", %{"new_version" => "unknown"})
+           |> json_response(400)
+           |> Map.fetch!("errcode") == "M_UNSUPPORTED_ROOM_VERSION"
+  end
 
   test "sessions are device-specific, whoami works, and logout revokes only one device", %{
     a: a,
@@ -208,6 +414,13 @@ defmodule LakehouseWeb.Matrix.ProtocolCompatibilityTest do
     initial = sliding(a, %{"lists" => list()}) |> json_response(200)
     assert initial["rooms"][ref]["initial"]
     assert initial["lists"]["all"]["count"] == 1
+
+    assert [%{"op" => "SYNC", "range" => [0, 20], "room_ids" => [^ref]}] =
+             initial["lists"]["all"]["ops"]
+
+    assert sliding(a, %{}, "?pos=unknown") |> json_response(400) |> Map.fetch!("errcode") ==
+             "M_UNKNOWN_POS"
+
     assert Enum.any?(initial["rooms"][ref]["required_state"], &(&1["type"] == "m.room.create"))
 
     sent =
@@ -223,6 +436,7 @@ defmodule LakehouseWeb.Matrix.ProtocolCompatibilityTest do
 
     assert Enum.any?(delta["rooms"][ref]["timeline"], &(&1["event_id"] == sent["event_id"]))
     refute delta["rooms"][ref]["initial"]
+    assert [%{"op" => "SYNC", "room_ids" => [^ref]}] = delta["lists"]["all"]["ops"]
   end
 
   test "subscriptions never expose unauthorized rooms, and positions are device-bound", %{

@@ -2,13 +2,22 @@ defmodule LakehouseMatrix.SlidingSync do
   @moduledoc "Native MSC4186 sliding windows over River's rooms, with durable per-device connection state."
   import Ecto.Query
   alias LakehouseIam.Repo
-  alias LakehouseMatrix.{ClientStore, ClientSync, Cursor, Identity, Memberships}
+  alias LakehouseMatrix.{ClientHistory, ClientStore, ClientSync, Cursor, Identity}
   alias LakehouseMatrix.Schema.RoomEvent
 
   def sync(principal, device, params, format \\ :msc4186) do
     with :ok <- validate(params),
          {:ok, previous} <- connection(principal, device, params),
          {:ok, timeout} <- ClientSync.integer(params["timeout"], 0, 0, 30_000) do
+      format = request_format(format, params, previous)
+
+      LakehouseMatrix.Ephemeral.set_presence(
+        principal,
+        %{"presence" => params["set_presence"] || "online"},
+        true
+      )
+
+      LakehouseMatrix.Ephemeral.expire()
       deadline = System.monotonic_time(:millisecond) + if(previous, do: timeout, else: 0)
 
       request =
@@ -35,6 +44,39 @@ defmodule LakehouseMatrix.SlidingSync do
     end
   end
 
+  # The unstable endpoint is also used by deployed clients with the older
+  # tuple/ranges schema. Keep its connection semantics while accepting the
+  # current proposal's schema on either endpoint.
+  defp request_format(:v4, _, _), do: :v4
+
+  defp request_format(_, params, previous) do
+    configs =
+      Map.values(params["lists"] || %{}) ++ Map.values(params["room_subscriptions"] || %{})
+
+    current =
+      Enum.any?(
+        configs,
+        &(is_map(&1) and (Map.has_key?(&1, "range") or is_map(&1["required_state"])))
+      )
+
+    if current or (previous && previous.state["format"] == "v4"), do: :v4, else: :msc4186
+  end
+
+  def position(token, principal, device) when is_binary(token) and byte_size(token) <= 2048 do
+    case Repo.one(
+           from c in "matrix_sync_connections",
+             where:
+               c.principal_id == type(^principal, :binary_id) and c.device_id == ^device and
+                 c.token == ^token and c.expires_at > ^ClientStore.now(),
+             select: c.position
+         ) do
+      nil -> {:error, :invalid_cursor}
+      position -> {:ok, position}
+    end
+  end
+
+  def position(_, _, _), do: {:error, :invalid_cursor}
+
   defp connection(_, _, %{"pos" => nil}), do: {:ok, nil}
 
   defp connection(principal, device, params) do
@@ -56,63 +98,84 @@ defmodule LakehouseMatrix.SlidingSync do
   end
 
   defp poll(principal, device, params, previous, format, deadline) do
-    {:ok, {response, state, high}} =
-      Repo.transaction(fn -> build(principal, device, params, previous, format) end)
+    with {:ok, {response, state, high}} <-
+           Repo.transaction(fn -> build(principal, device, params, previous, format) end) do
+      remaining = deadline - System.monotonic_time(:millisecond)
 
-    remaining = deadline - System.monotonic_time(:millisecond)
+      if not is_nil(previous) and remaining > 0 and map_size(response["rooms"]) == 0 and
+           extensions_empty?(response["extensions"]) and
+           response["lists"] == (previous.state["lists"] || %{}) do
+        Process.sleep(min(remaining, 200))
+        poll(principal, device, params, previous, format, deadline)
+      else
+        token = ClientStore.random()
 
-    if not is_nil(previous) and remaining > 0 and map_size(response["rooms"]) == 0 and
-         extensions_empty?(response["extensions"]) and
-         response["lists"] == (previous.state["lists"] || %{}) do
-      Process.sleep(min(remaining, 200))
-      poll(principal, device, params, previous, format, deadline)
-    else
-      token = ClientStore.random()
+        Repo.transaction(fn ->
+          ClientStore.lock!()
+          LakehouseMatrix.AccountModeration.require!(principal, :read)
 
-      Repo.transaction(fn ->
-        Repo.delete_all(
-          from c in "matrix_sync_connections", where: c.expires_at <= ^ClientStore.now()
-        )
-
-        # Keep the requested position for cancelled/retried requests. Older states
-        # for this connection can be retired once the client acknowledges its pos.
-        if previous do
           Repo.delete_all(
-            from c in "matrix_sync_connections",
-              where:
-                c.principal_id == type(^principal, :binary_id) and c.device_id == ^device and
-                  c.conn_id == ^(params["conn_id"] || "") and c.id < ^previous.id
+            from c in "matrix_sync_connections", where: c.expires_at <= ^ClientStore.now()
           )
 
-          if get_in(params, ["extensions", "to_device", "enabled"]) == true do
-            ClientStore.acknowledge(principal, device, params["_to_device_since"])
+          # Keep the requested position for cancelled/retried requests. Older states
+          # for this connection can be retired once the client acknowledges its pos.
+          if previous do
+            Repo.delete_all(
+              from c in "matrix_sync_connections",
+                where:
+                  c.principal_id == type(^principal, :binary_id) and c.device_id == ^device and
+                    c.conn_id == ^(params["conn_id"] || "") and c.id < ^previous.id
+            )
+
+            if get_in(params, ["extensions", "to_device", "enabled"]) == true do
+              ClientStore.acknowledge(principal, device, params["_to_device_since"])
+            end
           end
-        end
 
-        Repo.insert_all("matrix_sync_connections", [
-          %{
-            principal_id: ClientStore.dump_id(principal),
-            device_id: device,
-            conn_id: params["conn_id"] || "",
-            token: token,
-            position: high,
-            state: state,
-            expires_at: DateTime.add(ClientStore.now(), 1800, :second)
-          }
-        ])
+          Repo.insert_all("matrix_sync_connections", [
+            %{
+              principal_id: ClientStore.dump_id(principal),
+              device_id: device,
+              conn_id: params["conn_id"] || "",
+              token: token,
+              position: high,
+              state: state,
+              expires_at: DateTime.add(ClientStore.now(), 1800, :second)
+            }
+          ])
 
-        Map.put(response, "pos", token)
-      end)
+          Map.put(response, "pos", token)
+        end)
+      end
     end
   end
 
   defp build(principal, device, params, previous, format) do
     high = ClientStore.lock!()
+    LakehouseMatrix.AccountModeration.require!(principal, :read)
     since = if previous, do: previous.position, else: 0
     known = (previous && previous.state["rooms"]) || %{}
-    joined = Memberships.joined_room_ids(principal)
-    invited = Memberships.invited_room_ids(principal)
-    available = Enum.uniq(joined ++ invited)
+    memberships = ClientSync.memberships_at(principal, high)
+    joined = memberships.join
+    invited = memberships.invite
+    knocked = memberships.knock
+    user = user_id(principal)
+
+    departed =
+      Enum.filter(memberships.leave, fn id ->
+        membership = ClientSync.last_membership(principal, id, high)
+
+        Map.has_key?(known, Identity.room_id(id)) or
+          (membership.sender != user and ClientSync.ever_joined?(principal, id, high))
+      end)
+
+    listed = Enum.uniq(joined ++ invited ++ knocked ++ departed)
+
+    available =
+      Enum.uniq(
+        listed ++ Enum.filter(memberships.leave, &ClientSync.ever_joined?(principal, &1, high))
+      )
 
     activity =
       Repo.all(
@@ -122,8 +185,16 @@ defmodule LakehouseMatrix.SlidingSync do
           select: {e.room_id, max(e.stream_id)}
       )
       |> Map.new()
+      |> Map.merge(LakehouseMatrix.Protocol.Graph.activity(available, high), fn _, event, state ->
+        max(event, state)
+      end)
 
-    ordered = Enum.sort_by(available, &{-(activity[&1] || 0), &1})
+    activity =
+      Enum.reduce(memberships.leave, activity, fn id, acc ->
+        Map.put(acc, id, ClientSync.last_membership(principal, id, high).stream_id)
+      end)
+
+    ordered = Enum.sort_by(listed, &{-(activity[&1] || 0), &1})
     direct = ClientStore.get_data(principal, "", "m.direct") || %{}
     direct_rooms = direct |> Map.values() |> Enum.filter(&is_list/1) |> List.flatten()
 
@@ -140,9 +211,13 @@ defmodule LakehouseMatrix.SlidingSync do
             )
 
           window =
-            ranges(config)
-            |> Enum.flat_map(fn [lo, hi] -> Enum.slice(ids, lo, hi - lo + 1) end)
-            |> Enum.uniq()
+            if not Map.has_key?(config, "range") and not Map.has_key?(config, "ranges") do
+              ids
+            else
+              ranges(config)
+              |> Enum.flat_map(fn [lo, hi] -> Enum.slice(ids, lo, hi - lo + 1) end)
+              |> Enum.uniq()
+            end
 
           configs =
             Enum.reduce(window, configs, &Map.update(&2, &1, [config], fn v -> [config | v] end))
@@ -150,7 +225,27 @@ defmodule LakehouseMatrix.SlidingSync do
           memberships =
             Enum.reduce(window, memberships, &Map.update(&2, &1, [name], fn v -> [name | v] end))
 
-          {Map.put(lists, name, %{"count" => length(ids)}), configs, memberships}
+          result = %{"count" => length(ids)}
+
+          result =
+            if format == :msc4186 do
+              # Deployed simplified-sync clients still consume MSC3575 list
+              # operations. A complete SYNC per requested window is retry-safe.
+              ops =
+                for [lo, hi] <- ranges(config) do
+                  %{
+                    "op" => "SYNC",
+                    "range" => [lo, hi],
+                    "room_ids" => Enum.map(Enum.slice(ids, lo, hi - lo + 1), &Identity.room_id/1)
+                  }
+                end
+
+              Map.put(result, "ops", ops)
+            else
+              result
+            end
+
+          {Map.put(lists, name, result), configs, memberships}
         end
       end)
 
@@ -177,87 +272,160 @@ defmodule LakehouseMatrix.SlidingSync do
           "state" => Enum.map(configs, &(&1["required_state"] || []))
         }
 
-        initial = is_nil(old)
+        member = ClientSync.last_membership(principal, id, high)
+        membership = member.content["membership"]
+        initial = is_nil(old) or (membership == "join" and old["membership"] not in [nil, "join"])
         expanded = old && config["timeline_limit"] > old["config"]["timeline_limit"]
         changed_config = old && config != old["config"]
         last = if old, do: old["position"], else: 0
         data_changed = ClientStore.account_data(principal, "", since, high) != []
 
-        if initial or expanded or changed_config or (activity[id] || 0) > last or data_changed do
-          membership = if id in invited, do: "invite", else: "join"
-
+        if initial or expanded or changed_config or (activity[id] || 0) > last or data_changed or
+             LakehouseMatrix.Notifications.changed?(principal, id, last, high) do
           payload =
-            if membership == "invite" do
-              key = if format == :v4, do: "stripped_state", else: "invite_state"
+            cond do
+              not ClientSync.reader_allowed?(id, principal) ->
+                %{
+                  "initial" => initial,
+                  "membership" => membership,
+                  "timeline" => ClientSync.departure_events(principal, id, high),
+                  "required_state" => [],
+                  "notification_count" => 0,
+                  "highlight_count" => 0,
+                  "num_live" => if(member.stream_id > since, do: 1, else: 0)
+                }
 
-              %{
-                key => ClientSync.stripped(id, high, principal),
-                "membership" => membership,
-                "initial" => true
-              }
-            else
-              lower = if initial or expanded, do: 0, else: last
-              limit = config["timeline_limit"]
-              rows = ClientSync.timeline(id, lower, high, limit + 1, principal)
-              limited = length(rows) > limit
-              rows = rows |> Enum.take(limit) |> Enum.reverse()
-              timeline = Enum.map(rows, &LakehouseMatrix.Events.to_client_event/1)
-              state = ClientSync.state_at(id, high)
+              membership in ["invite", "knock"] or
+                  not ClientSync.ever_joined?(principal, id, high) ->
+                key =
+                  if format == :v4,
+                    do: "stripped_state",
+                    else: if(membership == "knock", do: "knock_state", else: "invite_state")
 
-              required =
-                Enum.filter(state, fn event ->
-                  Enum.any?(config["state"], &required?(event, &1, principal, timeline))
-                end)
+                %{
+                  key => ClientSync.stripped(id, high, principal),
+                  "membership" => membership,
+                  "initial" => initial
+                }
 
-              required =
-                if initial or changed_config,
-                  do: required,
-                  else:
-                    Enum.filter(required, fn e ->
-                      Repo.exists?(
-                        from row in RoomEvent,
-                          where: row.event_id == ^e["event_id"] and row.stream_id > ^last
-                      )
-                    end)
+              true ->
+                lower = if initial or expanded, do: 0, else: last
+                room_high = if membership in ["leave", "ban"], do: member.stream_id, else: high
+                limit = config["timeline_limit"]
+                rows = ClientSync.timeline(id, lower, room_high, limit + 1, principal)
+                limited = length(rows) > limit
+                rows = rows |> Enum.take(limit) |> Enum.reverse()
+                timeline = Enum.map(rows, &LakehouseMatrix.Events.to_client_event(&1, principal))
+                timeline = LakehouseMatrix.InvitePermission.filter(timeline, principal)
 
-              before = if rows == [], do: high, else: hd(rows).stream_id
+                timeline =
+                  if limited,
+                    do:
+                      LakehouseMatrix.ClientRelations.bundle(principal, id, timeline, room_high),
+                    else: timeline
 
-              %{
-                "initial" => initial,
-                "membership" => membership,
-                "name" => state_content(state, "m.room.name")["name"],
-                "avatar" => state_content(state, "m.room.avatar")["url"],
-                "is_dm" => ref in direct_rooms,
-                "joined_count" => Memberships.member_count(id),
-                "invited_count" => Memberships.invited_count(id),
-                "bump_stamp" => activity[id] || 0,
-                "timeline" => timeline,
-                "required_state" => required,
-                "limited" => limited,
-                "num_live" =>
-                  if(previous, do: Enum.count(rows, &(&1.stream_id > since)), else: 0),
-                "prev_batch" => Cursor.encode("history", principal, device, before, id)
-              }
-              |> then(fn p ->
-                if expanded,
-                  do:
-                    Map.put(
-                      p,
-                      if(format == :v4,
-                        do: "expanded_timeline",
-                        else: "unstable_expanded_timeline"
-                      ),
-                      true
+                state = ClientSync.state_at(id, room_high, principal)
+                state = LakehouseMatrix.InvitePermission.filter(state, principal)
+
+                required =
+                  Enum.filter(state, fn event ->
+                    Enum.any?(config["state"], &required?(event, &1, principal, timeline)) or
+                      (not limited and not initial and event["type"] == "m.room.member" and
+                         Enum.any?(config["state"], &(is_map(&1) and &1["lazy_members"] == true)) and
+                         ClientSync.state_position(id, event["event_id"], room_high) > last)
+                  end)
+
+                required =
+                  if initial or changed_config,
+                    do: required,
+                    else:
+                      Enum.filter(required, fn e ->
+                        ClientSync.state_position(id, e["event_id"], room_high) > last or
+                          (e["type"] == "m.room.member" and
+                             Enum.any?(
+                               timeline,
+                               &(&1["sender"] == e["state_key"] or
+                                   &1["state_key"] == e["state_key"])
+                             ))
+                      end)
+
+                before = if rows == [], do: room_high, else: hd(rows).stream_id
+
+                removed =
+                  removed_state(
+                    id,
+                    last,
+                    room_high,
+                    config["state"],
+                    principal,
+                    timeline,
+                    initial
+                  )
+
+                %{
+                  "initial" => initial,
+                  "notification_count" =>
+                    LakehouseMatrix.Notifications.counts(principal, id, room_high)[
+                      "notification_count"
+                    ],
+                  "highlight_count" =>
+                    LakehouseMatrix.Notifications.counts(principal, id, room_high)[
+                      "highlight_count"
+                    ],
+                  "membership" => membership,
+                  "name" => state_content(state, "m.room.name")["name"],
+                  "avatar" => state_content(state, "m.room.avatar")["url"],
+                  "is_dm" => ref in direct_rooms,
+                  "joined_count" =>
+                    Enum.count(
+                      state,
+                      &(&1["type"] == "m.room.member" and &1["content"]["membership"] == "join")
                     ),
-                  else: p
-              end)
+                  "invited_count" =>
+                    Enum.count(
+                      state,
+                      &(&1["type"] == "m.room.member" and &1["content"]["membership"] == "invite")
+                    ),
+                  "bump_stamp" => activity[id] || 0,
+                  "timeline" => timeline,
+                  "required_state" => required ++ removed,
+                  "limited" => limited,
+                  "num_live" =>
+                    if(previous, do: Enum.count(rows, &(&1.stream_id > since)), else: 0),
+                  "prev_batch" =>
+                    if(LakehouseMatrix.Protocol.Graph.room(id),
+                      do:
+                        if(rows == [],
+                          do: ClientHistory.at_stream(principal, device, id, room_high),
+                          else: ClientHistory.before(principal, device, id, hd(rows).event_id)
+                        ),
+                      else: Cursor.encode("history", principal, device, before, id)
+                    )
+                }
+                |> then(fn p ->
+                  if expanded,
+                    do:
+                      Map.put(
+                        p,
+                        if(format == :v4,
+                          do: "expanded_timeline",
+                          else: "unstable_expanded_timeline"
+                        ),
+                        true
+                      ),
+                    else: p
+                end)
             end
 
           payload =
             if room_lists[id], do: Map.put(payload, "lists", room_lists[id]), else: payload
 
           {Map.put(rooms, ref, payload),
-           Map.put(known, ref, %{"position" => high, "config" => config})}
+           Map.put(known, ref, %{
+             "position" => high,
+             "config" => config,
+             "membership" => membership
+           })}
         else
           {rooms, known}
         end
@@ -268,7 +436,7 @@ defmodule LakehouseMatrix.SlidingSync do
     rooms =
       Enum.reduce(known, rooms, fn {ref, _}, acc ->
         with {:ok, id} <- Identity.parse_room_id(ref),
-             false <- id in available,
+             false <- id in listed,
              event when not is_nil(event) <-
                Repo.one(
                  from e in RoomEvent,
@@ -278,12 +446,16 @@ defmodule LakehouseMatrix.SlidingSync do
                        e.stream_id <= ^high,
                    order_by: [desc: e.stream_id],
                    limit: 1
-               ) do
-          Map.put(acc, ref, %{
-            "membership" => event.content["membership"],
-            "timeline" => [LakehouseMatrix.Events.to_client_event(event)],
-            "num_live" => 1
-          })
+               ),
+             true <- event.content["membership"] in ["leave", "ban"] do
+          if ClientStore.room_forgotten?(principal, id, high),
+            do: acc,
+            else:
+              Map.put(acc, ref, %{
+                "membership" => event.content["membership"],
+                "timeline" => [LakehouseMatrix.Events.to_client_event(event, principal)],
+                "num_live" => 1
+              })
         else
           _ -> acc
         end
@@ -306,10 +478,32 @@ defmodule LakehouseMatrix.SlidingSync do
     state = %{
       "rooms" => known,
       "lists" => lists,
+      "format" => if(format == :v4, do: "v4", else: "msc4186"),
       "request" => Map.drop(params, ["pos", "timeout", "_to_device_since"])
     }
 
     {response, state, high}
+  end
+
+  defp removed_state(_, _, _, _, _, _, true), do: []
+
+  defp removed_state(room, since, high, configs, principal, timeline, false) do
+    if LakehouseMatrix.Protocol.Graph.room(room) do
+      Repo.all(
+        from c in "matrix_state_changes",
+          where:
+            c.local_room_id == type(^room, :binary_id) and c.stream_id > ^since and
+              c.stream_id <= ^high,
+          distinct: [c.type, c.state_key],
+          order_by: [c.type, c.state_key, desc: c.stream_id],
+          select: %{type: c.type, key: c.state_key, event: c.event_id}
+      )
+      |> Enum.filter(&is_nil(&1.event))
+      |> Enum.map(&%{"type" => &1.type, "state_key" => &1.key})
+      |> Enum.filter(fn stub -> Enum.any?(configs, &required?(stub, &1, principal, timeline)) end)
+    else
+      []
+    end
   end
 
   defp extensions(config, principal, device, since, high, rooms, previous, device_since) do
@@ -347,6 +541,18 @@ defmodule LakehouseMatrix.SlidingSync do
                   Map.new(rooms, &{&1, ClientStore.account_data(principal, &1, since, high)})
               }
 
+            "typing" ->
+              %{
+                "rooms" =>
+                  for(
+                    ref <- rooms,
+                    {:ok, id} <- [Identity.parse_room_id(ref)],
+                    event <- LakehouseMatrix.Ephemeral.typing_events(id, since, high),
+                    into: %{},
+                    do: {ref, event}
+                  )
+              }
+
             "receipts" ->
               %{
                 "rooms" =>
@@ -379,9 +585,9 @@ defmodule LakehouseMatrix.SlidingSync do
         p["global"] == [] and Enum.all?(p["rooms"], fn {_, events} -> events == [] end)
 
       {"e2ee", p} ->
-        p["device_lists"]["changed"] == []
+        p["device_lists"]["changed"] == [] and p["device_lists"]["left"] == []
 
-      {"receipts", p} ->
+      {name, p} when name in ["receipts", "typing"] ->
         p["rooms"] == %{}
 
       _ ->
@@ -411,7 +617,8 @@ defmodule LakehouseMatrix.SlidingSync do
       not Enum.any?(filters["not_tags"] || [], &Map.has_key?(tags, &1)) and
       (is_nil(filters["spaces"]) or
          Enum.any?(filters["spaces"], fn ref ->
-           with {:ok, room} <- LakehouseMatrix.ClientRooms.readable(principal, ref) do
+           with {:ok, room} <- LakehouseMatrix.ClientRooms.readable(principal, ref),
+                true <- LakehouseMatrix.Memberships.joined?(room.id, principal) do
              Enum.any?(
                ClientSync.state_at(room.id, high),
                &(&1["type"] == "m.space.child" and &1["state_key"] == Identity.room_id(id))

@@ -2,12 +2,11 @@ defmodule LakehouseMatrix.Media do
   @moduledoc """
   Media upload/download. Blobs live in `Media.Store`; metadata in `media_objects`.
   """
-  import Ecto.Query
 
   alias LakehouseIam.Repo
   alias LakehouseMatrix.Identity
   alias LakehouseMatrix.Media.Image
-  alias LakehouseMatrix.Schema.{MediaObject, RoomEvent, RoomMembership}
+  alias LakehouseMatrix.Schema.MediaObject
 
   @max_bytes 10 * 1024 * 1024
 
@@ -21,9 +20,16 @@ defmodule LakehouseMatrix.Media do
           {:ok, upload_result()} | {:error, term()}
   def upload(uploader_id, body, opts \\ []) when is_binary(body) do
     filename = Keyword.get(opts, :filename) || "upload.bin"
-    content_type = Keyword.get(opts, :content_type) || guess_content_type(body, filename)
+
+    content_type =
+      LakehouseMatrix.Federation.Media.safe_type(
+        Keyword.get(opts, :content_type) || guess_content_type(body, filename)
+      )
 
     cond do
+      not is_binary(filename) or not String.valid?(filename) or byte_size(filename) > 1024 ->
+        {:error, :invalid_upload}
+
       body == "" ->
         {:error, :invalid_upload}
 
@@ -31,23 +37,93 @@ defmodule LakehouseMatrix.Media do
         {:error, :too_large}
 
       true ->
-        do_upload(uploader_id, body, filename, content_type)
+        do_upload(
+          uploader_id,
+          body,
+          filename,
+          content_type,
+          Keyword.get(opts, :matrix_public, false) == true,
+          Keyword.get(opts, :reserved_id)
+        )
     end
   end
 
   @spec download(Ecto.UUID.t(), String.t(), String.t()) ::
           {:ok, %{body: binary(), content_type: String.t(), filename: String.t() | nil}}
           | {:error, term()}
-  def download(principal_id, _server_name, media_id) when is_binary(media_id) do
+  def download(principal_id, server, media_id) do
+    cond do
+      not LakehouseMatrix.Federation.Media.valid_id?(media_id) ->
+        {:error, :not_found}
+
+      server != Identity.homeserver_domain() ->
+        LakehouseMatrix.Federation.Media.download(server, media_id)
+
+      true ->
+        local_download(principal_id, media_id)
+    end
+  end
+
+  def federation_download(media_id) do
+    with true <- LakehouseMatrix.Federation.Media.valid_id?(media_id),
+         {:ok, record} <- fetch_record(media_id),
+         true <- record.matrix_public do
+      local_download(record.uploader_id, media_id)
+    else
+      _ -> {:error, :not_found}
+    end
+  end
+
+  def thumbnail(principal, server, id, params) do
+    with {:ok, dimensions} <- thumbnail_params(params) do
+      if server != Identity.homeserver_domain() do
+        LakehouseMatrix.Federation.Media.download(server, id, dimensions)
+      else
+        with {:ok, original} <- local_download(principal, id),
+             {:ok, body} <-
+               Image.thumbnail(
+                 original.body,
+                 dimensions["width"],
+                 dimensions["height"],
+                 dimensions["method"]
+               ) do
+          {:ok, %{body: body, content_type: "image/jpeg", filename: "thumbnail.jpg"}}
+        end
+      end
+    end
+  end
+
+  def federation_thumbnail(id, params) do
+    with {:ok, original} <- federation_download(id),
+         {:ok, dimensions} <- thumbnail_params(params),
+         {:ok, body} <-
+           Image.thumbnail(
+             original.body,
+             dimensions["width"],
+             dimensions["height"],
+             dimensions["method"]
+           ) do
+      {:ok, %{body: body, content_type: "image/jpeg", filename: "thumbnail.jpg"}}
+    end
+  end
+
+  defp thumbnail_params(params) do
+    with {:ok, width} <- LakehouseMatrix.ClientSync.integer(params["width"], nil, 1, 4096),
+         {:ok, height} <- LakehouseMatrix.ClientSync.integer(params["height"], nil, 1, 4096),
+         true <-
+           is_integer(width) and is_integer(height) and
+             (params["method"] || "scale") in ~w(scale crop) do
+      {:ok, %{"width" => width, "height" => height, "method" => params["method"] || "scale"}}
+    else
+      _ -> {:error, :invalid_param}
+    end
+  end
+
+  defp local_download(principal_id, media_id) do
     with {:ok, record} <- fetch_record(media_id),
          :ok <- authorize_download(principal_id, record),
-         {:ok, body} <- store().get(media_id, []) do
-      {:ok,
-       %{
-         body: body,
-         content_type: record.content_type,
-         filename: record.filename
-       }}
+         {:ok, body} <- store().get(record.id, []) do
+      {:ok, %{body: body, content_type: record.content_type, filename: record.filename}}
     end
   end
 
@@ -69,16 +145,17 @@ defmodule LakehouseMatrix.Media do
   @spec get_record(String.t()) :: MediaObject.t() | nil
   def get_record(media_id), do: Repo.get(MediaObject, media_id)
 
-  defp do_upload(uploader_id, body, filename, content_type) do
-    media_id = Ecto.UUID.generate()
+  defp do_upload(uploader_id, body, filename, content_type, matrix_public, reserved_id) do
+    media_id = reserved_id || Ecto.UUID.generate()
     image? = String.starts_with?(content_type, "image/")
 
     with :ok <- store().put(media_id, body, []),
-         {:ok, thumb} <- maybe_thumbnail(image?, body, uploader_id),
+         {:ok, thumb} <- maybe_thumbnail(image?, body, uploader_id, matrix_public),
          {:ok, record} <-
            insert_record(%{
              id: media_id,
              uploader_id: uploader_id,
+             matrix_public: matrix_public,
              filename: filename,
              content_type: content_type,
              byte_size: byte_size(body),
@@ -111,9 +188,9 @@ defmodule LakehouseMatrix.Media do
     end
   end
 
-  defp maybe_thumbnail(false, _body, _uploader_id), do: {:ok, nil}
+  defp maybe_thumbnail(false, _body, _uploader_id, _public), do: {:ok, nil}
 
-  defp maybe_thumbnail(true, body, uploader_id) do
+  defp maybe_thumbnail(true, body, uploader_id, matrix_public) do
     case Image.compress(body) do
       {:ok, jpeg} ->
         thumb_id = Ecto.UUID.generate()
@@ -123,6 +200,7 @@ defmodule LakehouseMatrix.Media do
                insert_record(%{
                  id: thumb_id,
                  uploader_id: uploader_id,
+                 matrix_public: matrix_public,
                  filename: "thumb.jpg",
                  content_type: "image/jpeg",
                  byte_size: byte_size(jpeg),
@@ -147,7 +225,13 @@ defmodule LakehouseMatrix.Media do
   end
 
   defp fetch_record(media_id) do
-    case Repo.get(MediaObject, media_id) do
+    record =
+      case Ecto.UUID.cast(media_id) do
+        {:ok, id} -> Repo.get(MediaObject, id)
+        _ -> nil
+      end
+
+    case record do
       nil -> {:error, :not_found}
       record -> {:ok, record}
     end
@@ -155,10 +239,13 @@ defmodule LakehouseMatrix.Media do
 
   defp authorize_download(principal_id, %MediaObject{} = record) do
     cond do
+      record.matrix_public ->
+        :ok
+
       record.uploader_id == principal_id ->
         :ok
 
-      referenced_in_joined_room?(principal_id, record.id) ->
+      LakehouseMatrix.MediaReferences.can_read?(principal_id, record) ->
         :ok
 
       true ->
@@ -166,31 +253,7 @@ defmodule LakehouseMatrix.Media do
     end
   end
 
-  defp referenced_in_joined_room?(principal_id, media_id) do
-    needle = "%#{media_id}%"
-
-    room_ids =
-      from(m in RoomMembership,
-        where:
-          m.principal_id == ^principal_id and
-            fragment("?->>'membership' = 'join'", m.membership_state),
-        select: m.room_id
-      )
-      |> Repo.all()
-
-    if room_ids == [] do
-      false
-    else
-      from(e in RoomEvent,
-        where: e.room_id in ^room_ids,
-        where: fragment("(?)::text LIKE ?", e.content, ^needle),
-        select: e.id,
-        limit: 1
-      )
-      |> Repo.one()
-      |> is_binary()
-    end
-  end
+  def accessible?(principal, record), do: authorize_download(principal, record) == :ok
 
   defp store do
     Application.get_env(:lakehouse_matrix, :media_store, LakehouseMatrix.Media.Store.Local)

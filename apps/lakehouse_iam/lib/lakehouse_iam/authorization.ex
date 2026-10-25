@@ -96,7 +96,11 @@ defmodule LakehouseIam.Authorization do
                   from g in Grant,
                     where:
                       g.principal_id == ^principal_id and g.role_id == ^role_id and
-                        fragment("? IS NOT DISTINCT FROM ?", g.resource_id, ^resource_id)
+                        fragment(
+                          "? IS NOT DISTINCT FROM ?",
+                          g.resource_id,
+                          type(^resource_id, :binary_id)
+                        )
 
                 case Repo.one(existing_q) do
                   %Grant{} = g ->
@@ -129,7 +133,11 @@ defmodule LakehouseIam.Authorization do
   @spec revoke_role(Ecto.UUID.t(), String.t(), String.t() | nil) :: :ok | {:error, :not_found}
   def revoke_role(principal_id, role_name, resource_arn \\ nil) do
     role_id = Repo.one(from r in Role, where: r.name == ^role_name, select: r.id)
-    rid = if resource_arn && resource_arn != "", do: Repo.one(from r in Resource, where: r.arn == ^resource_arn, select: r.id), else: nil
+
+    rid =
+      if resource_arn && resource_arn != "",
+        do: Repo.one(from r in Resource, where: r.arn == ^resource_arn, select: r.id),
+        else: nil
 
     if role_id == nil do
       {:error, :not_found}

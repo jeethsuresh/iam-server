@@ -22,6 +22,37 @@ The first-install bootstrap uses `scripts/kubernetes/bootstrap.sh`; do not repea
 
 # Gravitas on DigitalOcean Kubernetes
 
+## Native Matrix rollout
+
+The Gravitas overlay enables the native Matrix graph and federation. Before its
+first rollout, provision the dedicated signing identity with an administrator's
+Kubernetes context:
+
+```sh
+KUBE_CONTEXT=do-tor1-gravitas-k8s-services python3 scripts/kubernetes/matrix_signing_key.py
+```
+
+This creates the immutable `iam/iam-matrix-signing` Secret and retains an
+owner-only backup in `.local/gravitas/matrix-signing-key.json`. Neither Git nor
+Docker includes that directory. Repeat runs preserve the seed and key ID; a
+conflicting backup stops setup. An existing Matrix key in the older shared
+Secret is imported without copying unrelated IAM secrets. Retain the backup with the other deployment
+credentials. Both the server and migration job consume the same dedicated
+identity, independently of IAM's JWT secrets. Ordinary release credentials do
+not need permission to read Secrets.
+
+The authorized transition resets rooms after stopping writers and validating a
+fresh database archive on retained storage. Use the verified immutable image:
+
+```sh
+IAM_KUSTOMIZE_OVERLAY=gravitas IAM_MAINTENANCE_RELEASE=1 IAM_ROOM_RESET_SERVER=gravitas.cool KUBE_CONTEXT=do-tor1-gravitas-k8s-services ./scripts/kubernetes/deploy.sh ghcr.io/jeethsuresh/iam-server@sha256:YOUR_DIGEST
+```
+
+Accounts, identity credentials, uploads and global encrypted account secrets
+survive. Native Matrix sessions and room cursors are invalidated, so clients
+sign in again. The reset is scoped to that one maintenance job; subsequent
+deployments omit `IAM_ROOM_RESET_SERVER`.
+
 This keeps Phoenix, Postgres, Matrix groups and the existing PKCE protocol. The signed-in home is `/dashboard`; public identity and discovery live at `https://gravitas.cool`. There is no Worker or Cloudflare Container in this deployment.
 
 ## Release image

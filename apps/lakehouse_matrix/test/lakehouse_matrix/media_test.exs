@@ -27,7 +27,10 @@ defmodule LakehouseMatrix.MediaTest do
 
   test "local store put and get round-trip", %{user: user} do
     assert {:ok, result} =
-             Media.upload(user.id, "hello world", filename: "note.txt", content_type: "text/plain")
+             Media.upload(user.id, "hello world",
+               filename: "note.txt",
+               content_type: "text/plain"
+             )
 
     assert result.content_uri =~ ~r"^mxc://localhost/"
     assert result.info["mimetype"] == "text/plain"
@@ -55,6 +58,7 @@ defmodule LakehouseMatrix.MediaTest do
     assert is_binary(result.info["thumbnail_url"])
     assert result.info["thumbnail_url"] =~ ~r"^mxc://localhost/"
     assert is_integer(result.info["thumbnail_info"]["size"])
+
     assert result.info["thumbnail_info"]["size"] < byte_size(png) or
              result.info["thumbnail_info"]["size"] > 0
 
@@ -64,6 +68,29 @@ defmodule LakehouseMatrix.MediaTest do
     assert byte_size(thumb) < byte_size(png)
   end
 
+  test "unsupported preview formats retain their original uploaded bytes", %{user: user} do
+    svg =
+      "<svg xmlns='http://www.w3.org/2000/svg'><image href='https://example.org/private'/></svg>"
+
+    assert {:ok, upload} =
+             Media.upload(user.id, svg,
+               filename: "image.svg",
+               content_type: "image/svg+xml",
+               matrix_public: true
+             )
+
+    refute Map.has_key?(upload.info, "thumbnail_url")
+
+    assert {:ok, %{body: ^svg, content_type: "image/svg+xml"}} =
+             Media.federation_download(upload.media_id)
+
+    assert {:error, :unsupported_image} =
+             Media.thumbnail(user.id, "localhost", upload.media_id, %{
+               "width" => 32,
+               "height" => 32
+             })
+  end
+
   test "remote store stub returns not_implemented" do
     assert {:error, :not_implemented} = Remote.put("id", "bytes", [])
     assert {:error, :not_implemented} = Remote.get("id", [])
@@ -71,7 +98,8 @@ defmodule LakehouseMatrix.MediaTest do
   end
 
   defp sample_png do
-    path = Path.join(System.tmp_dir!(), "lakehouse-sample-#{System.unique_integer([:positive])}.png")
+    path =
+      Path.join(System.tmp_dir!(), "lakehouse-sample-#{System.unique_integer([:positive])}.png")
 
     # Plasma noise makes a large PNG so JPEG preview is meaningfully smaller.
     {_, 0} =

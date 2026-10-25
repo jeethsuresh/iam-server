@@ -9,8 +9,11 @@ defmodule LakehouseWeb.Plugs.MatrixAuth do
 
   def init(opts), do: opts
 
-  def call(conn, _opts) do
-    case get_req_header(conn, "authorization") do
+  def call(conn, opts) do
+    conn = fetch_query_params(conn)
+    authorization = if raw = token(conn), do: ["Bearer " <> raw], else: []
+
+    case authorization do
       ["Bearer " <> token] ->
         case LakehouseMatrix.ClientStore.authenticate(token) do
           {:ok, principal, device, session} ->
@@ -20,17 +23,50 @@ defmodule LakehouseWeb.Plugs.MatrixAuth do
             |> assign(:current_principal, principal)
             |> assign(:matrix_device_id, device)
             |> assign(:matrix_session_id, session)
+            |> LakehouseWeb.Plugs.MatrixAccountPolicy.call([])
+
+          :expired ->
+            conn
+            |> put_resp_content_type("application/json")
+            |> send_resp(
+              401,
+              Jason.encode!(%{
+                "errcode" => "M_UNKNOWN_TOKEN",
+                "error" => "Access token expired",
+                "soft_logout" => true
+              })
+            )
+            |> halt()
 
           :error ->
-            legacy(conn, token)
+            legacy(conn, token, opts)
         end
 
       _ ->
-        matrix_error(conn, 401, "M_MISSING_TOKEN", "Missing access token")
+        if opts[:optional],
+          do: conn,
+          else: matrix_error(conn, 401, "M_MISSING_TOKEN", "Missing access token")
     end
   end
 
-  defp legacy(conn, token) do
+  def token(conn) do
+    case get_req_header(conn, "authorization") do
+      [] ->
+        params = fetch_query_params(conn).query_params
+        if is_binary(params["access_token"]), do: params["access_token"]
+
+      [header] ->
+        case Regex.run(~r/\ABearer +([^\s]+)\z/i, header) do
+          [_, raw] -> raw
+          _ -> nil
+        end
+
+      _ ->
+        nil
+    end
+  end
+
+  defp legacy(conn, token, opts) do
     case LakehouseIam.Auth.Token.verify(token) do
       {:ok, claims} ->
         username = claims["username"]
@@ -44,16 +80,21 @@ defmodule LakehouseWeb.Plugs.MatrixAuth do
               |> assign(:principal_id, principal_id)
               |> assign(:current_principal, principal)
               |> assign(:matrix_device_id, "legacy")
+              |> LakehouseWeb.Plugs.MatrixAccountPolicy.call([])
             else
               matrix_error(conn, 401, "M_UNKNOWN_TOKEN", "Unknown access token")
             end
 
           :error ->
-            matrix_error(conn, 401, "M_UNKNOWN_TOKEN", "Unknown access token")
+            if opts[:optional],
+              do: conn,
+              else: matrix_error(conn, 401, "M_UNKNOWN_TOKEN", "Unknown access token")
         end
 
       :error ->
-        matrix_error(conn, 401, "M_UNKNOWN_TOKEN", "Unknown access token")
+        if opts[:optional],
+          do: conn,
+          else: matrix_error(conn, 401, "M_UNKNOWN_TOKEN", "Unknown access token")
     end
   end
 

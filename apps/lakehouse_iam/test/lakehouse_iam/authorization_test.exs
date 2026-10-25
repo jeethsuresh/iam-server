@@ -26,4 +26,15 @@ defmodule LakehouseIam.AuthorizationTest do
     assert :ok = Authorization.revoke_role(alice.id, "room_admin", nil)
   end
 
+  test "resource-scoped roles retain their UUID scope and repeat assignment is idempotent", %{
+    alice: alice
+  } do
+    resource = "arn:lakehouse:matrix:room:" <> Ecto.UUID.generate()
+    assert {:ok, grant} = Authorization.assign_role(alice.id, "room_admin", resource)
+    assert is_binary(grant.resource_id)
+    assert {:ok, repeated} = Authorization.assign_role(alice.id, "room_admin", resource)
+    assert repeated.id == grant.id
+    assert :ok = Authorization.revoke_role(alice.id, "room_admin", resource)
+    assert Authorization.can?(alice.id, "matrix.room.send", resource)
+  end
 end

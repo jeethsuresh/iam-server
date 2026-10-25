@@ -129,7 +129,7 @@ defmodule LakehouseIam.Accounts do
   def list_pending_users do
     Repo.all(
       from p in Principal,
-        where: p.type == :user and p.active == false,
+        where: p.type == :user and p.active == false and p.matrix_deactivated == false,
         order_by: [asc: p.inserted_at]
     )
   end
@@ -146,6 +146,9 @@ defmodule LakehouseIam.Accounts do
 
     if admin?(actor) do
       case fetch_user(target) do
+        {:ok, %Principal{matrix_deactivated: true}} ->
+          {:error, :not_found}
+
         :error ->
           {:error, :not_found}
 
@@ -243,14 +246,23 @@ defmodule LakehouseIam.Accounts do
   end
 
   @spec active?(Principal.t()) :: boolean()
-  def active?(%Principal{active: a}), do: a
+  def active?(%Principal{active: a, matrix_deactivated: deactivated}), do: a and not deactivated
 
   @spec password_valid?(String.t(), String.t()) :: boolean()
   def password_valid?(canonical_username, password) do
     admin_user = Application.fetch_env!(:lakehouse_iam, :admin_username) |> normalize_username()
     admin_pass = Application.fetch_env!(:lakehouse_iam, :admin_password) |> String.trim()
 
+    deactivated =
+      Repo.exists?(
+        from p in Principal,
+          where: p.username == ^canonical_username and p.matrix_deactivated == true
+      )
+
     cond do
+      deactivated ->
+        false
+
       canonical_username == admin_user and admin_pass != "" ->
         secure_compare(password, admin_pass)
 
@@ -287,6 +299,11 @@ defmodule LakehouseIam.Accounts do
     hash = Argon2.hash_pwd_salt(password)
 
     Repo.transaction(fn ->
+      principal =
+        Repo.one(from p in Principal, where: p.id == ^principal_id, lock: "FOR NO KEY UPDATE")
+
+      if is_nil(principal) or principal.matrix_deactivated, do: Repo.rollback(:deactivated)
+
       result =
         case Repo.one(
                from c in Credential,
@@ -325,8 +342,14 @@ defmodule LakehouseIam.Accounts do
       nil ->
         {:error, %Ecto.Changeset{}}
 
-      p ->
+      %Principal{} ->
         Repo.transaction(fn ->
+          p =
+            Repo.one!(
+              from p in Principal, where: p.id == ^principal_id, lock: "FOR NO KEY UPDATE"
+            )
+
+          if active and p.matrix_deactivated, do: Repo.rollback(:deactivated)
           result = p |> Ecto.Changeset.change(active: active) |> Repo.update()
 
           case result do

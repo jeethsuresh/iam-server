@@ -57,6 +57,65 @@ defmodule LakehouseWeb.Matrix.FederationTest do
     ~s(X-Matrix origin="#{ctx.remote}",key="#{ctx.key}",destination="#{destination}",sig="#{sig}")
   end
 
+  test "federated pending media preserves the Matrix upload error", ctx do
+    user = MatrixFixtures.user_fixture("reservedmedia")
+    {:ok, %{"content_uri" => uri}} = LakehouseMatrix.AsyncMedia.create(user.id)
+    id = LakehouseMatrix.Media.media_id_from_uri(uri)
+    path = "/_matrix/federation/v1/media/download/#{id}?timeout_ms=0"
+
+    assert build_conn()
+           |> put_req_header("authorization", header(ctx, "GET", path))
+           |> get(path)
+           |> json_response(504)
+           |> Map.fetch!("errcode") == "M_NOT_YET_UPLOADED"
+  end
+
+  test "send_knock returns the JSON object required by federation v1", ctx do
+    alias LakehouseMatrix.{Identity, Rooms}
+    alias LakehouseMatrix.Protocol.{Event, Graph}
+    alice = MatrixFixtures.user_fixture("knockhost")
+    sender = Identity.user_id(alice.username)
+    {:ok, room} = Rooms.create_room_record(%{name: "Knock"})
+    {:ok, _} = Graph.create(room.id, sender)
+    {:ok, _} = Graph.send(room.id, sender, "m.room.member", %{"membership" => "join"}, sender)
+    {:ok, _} = Graph.send(room.id, sender, "m.room.join_rules", %{"join_rule" => "knock"}, "")
+    metadata = Graph.room(room.id)
+    remote = "@knocker:" <> ctx.remote
+
+    event =
+      Graph.template(
+        metadata,
+        Graph.load_graph(room.id),
+        remote,
+        "m.room.member",
+        %{"membership" => "knock"},
+        remote
+      )
+      |> Event.sign("12", ctx.seed, ctx.key, ctx.remote)
+
+    id = Event.id(event, "12")
+    path = "/_matrix/federation/v1/send_knock/" <> metadata.room_id <> "/" <> id
+
+    response =
+      build_conn()
+      |> put_req_header("authorization", header(ctx, "PUT", path, event))
+      |> put(path, event)
+      |> json_response(200)
+
+    assert %{"knock_room_state" => state} = response
+    assert is_list(state)
+    hierarchy = "/_matrix/federation/v1/hierarchy/" <> metadata.room_id
+
+    preview =
+      build_conn()
+      |> put_req_header("authorization", header(ctx, "GET", hierarchy))
+      |> get(hierarchy)
+      |> json_response(200)
+
+    assert preview["room"]["room_id"] == metadata.room_id
+    assert preview["room"]["children_state"] == []
+  end
+
   test "canonical JSON orders keys, preserves Unicode and rejects floats or oversized integers" do
     assert Signing.canonical(%{"z" => 1, "a" => [true, nil, "火"]}) ==
              ~s({"a":[true,null,"火"],"z":1})
@@ -126,7 +185,7 @@ defmodule LakehouseWeb.Matrix.FederationTest do
              )
   end
 
-  test "signed request bodies are authenticated and room transactions are not falsely acknowledged",
+  test "signed request bodies are authenticated and empty transactions have replay-safe results",
        ctx do
     content = %{
       "origin" => ctx.remote,
@@ -140,7 +199,7 @@ defmodule LakehouseWeb.Matrix.FederationTest do
     assert build_conn()
            |> put_req_header("authorization", header(ctx, "PUT", uri, content))
            |> put(uri, content)
-           |> json_response(501)
+           |> json_response(200) == %{"pdus" => %{}}
 
     assert build_conn()
            |> put_req_header("authorization", header(ctx, "PUT", uri, content))

@@ -1,0 +1,9 @@
+{
+  "name": "gravitas-matrix-interop",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "matrix-js-sdk": "44.0.0",
+    "@matrix-org/matrix-sdk-crypto-wasm": "18.9.0"
+  }
+}

@@ -10,14 +10,16 @@ defmodule LakehouseMatrix.Schema.Room do
     field :name, :string
     field :topic, :string
     field :avatar_url, :string
+    field :visibility, :string, default: "private"
 
     timestamps(type: :utc_datetime_usec)
   end
 
   def changeset(room, attrs) do
     room
-    |> cast(attrs, [:alias, :name, :topic, :avatar_url])
+    |> cast(attrs, [:alias, :name, :topic, :avatar_url, :visibility])
     |> validate_required([:name])
+    |> validate_inclusion(:visibility, ["private", "public"])
     |> unique_constraint(:alias)
   end
 end
