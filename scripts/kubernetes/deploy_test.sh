@@ -14,6 +14,13 @@ if [[ "$1" == kustomize ]]; then exec "$IAM_TEST_KUBECTL" "$@"; fi
 printf '%s\n' "$*" >> "$IAM_TEST_LOG"
 if [[ "$*" == *'get deployment iam -o jsonpath='* ]]; then printf '1'; fi
 if [[ "$*" == *'config view --minify'* ]]; then printf '%s' "${IAM_TEST_SERVER:-https://02fe9a55-8048-421e-a03f-eae9a4a60472.k8s.ondigitalocean.com}"; fi
+if [[ "$*" == *'exec iam-db-0'* && "${IAM_TEST_FAIL_BACKUP:-0}" == 1 ]]; then exit 1; fi
+if [[ "$*" == *'create job '* && "$*" == *'--dry-run=client -o json'* ]]; then
+  printf '{"spec":{"template":{"spec":{"containers":[{"name":"iam","image":"%s"}]}}}}' "$IAM_TEST_IMAGE"
+fi
+if [[ "$*" == *'create -f '* && "${IAM_TEST_RESET_JOB:-}" != '' ]]; then
+  cp "${@: -1}" "$IAM_TEST_RESET_JOB"
+fi
 if [[ "$*" == *'wait --for=condition=complete'* && "${IAM_TEST_FAIL_MIGRATION:-0}" == 1 ]]; then exit 1; fi
 MOCK
 chmod +x "$work/kubectl"
@@ -61,3 +68,38 @@ if grep -q 'apply \|scale \|create job' "$IAM_TEST_LOG"; then echo 'Unexpected c
 IAM_KUSTOMIZE_OVERLAY=gravitas IAM_MAINTENANCE_RELEASE=1 "$root/scripts/kubernetes/deploy.sh" "$image"
 if grep -q 'get secret' "$IAM_TEST_LOG"; then echo 'Release tried to read application Secrets'; exit 1; fi
 echo 'Gravitas cluster guard and Secret isolation: OK'
+
+# Destructive room resets require a fresh validated archive and a one-use job.
+export IAM_TEST_IMAGE="registry.example.com/iam@sha256:$(printf 'a%.0s' {1..64})"
+export IAM_TEST_RESET_JOB="$work/reset-job.json"
+: > "$IAM_TEST_LOG"
+IAM_KUSTOMIZE_OVERLAY=gravitas IAM_MAINTENANCE_RELEASE=1 IAM_ROOM_RESET_SERVER=gravitas.cool "$root/scripts/kubernetes/deploy.sh" "$IAM_TEST_IMAGE"
+python3 - "$IAM_TEST_LOG" "$IAM_TEST_RESET_JOB" <<'PYTEST'
+import json,sys
+from pathlib import Path
+calls=Path(sys.argv[1]).read_text().splitlines()
+pause=next(i for i,x in enumerate(calls) if 'scale deployment/iam --replicas=0' in x)
+backup=next(i for i,x in enumerate(calls) if 'exec iam-db-0' in x)
+dry=next(i for i,x in enumerate(calls) if 'create job ' in x)
+create=next(i for i,x in enumerate(calls) if 'create -f ' in x)
+wait=next(i for i,x in enumerate(calls) if 'wait --for=condition=complete' in x)
+app=next(i for i,x in enumerate(calls) if 'apply ' in x and 'component=server' in x)
+assert pause < backup < dry < create < wait < app
+text=Path(sys.argv[1]).read_text()
+assert 'pg_restore --list' in text and 'pg_restore --file=/dev/null' in text and 'sha256sum' in text
+job=json.loads(Path(sys.argv[2]).read_text())
+container=job['spec']['template']['spec']['containers'][0]
+assert 'Release.reset_rooms' in container['command'][-1]
+assert job['spec']['backoffLimit'] == 0
+assert container['env'][-1] == {'name': 'MATRIX_ROOM_RESET_SERVER', 'value': 'gravitas.cool'}
+PYTEST
+: > "$IAM_TEST_LOG"
+if IAM_KUSTOMIZE_OVERLAY=gravitas IAM_MAINTENANCE_RELEASE=1 IAM_ROOM_RESET_SERVER=gravitas.cool IAM_TEST_FAIL_BACKUP=1 "$root/scripts/kubernetes/deploy.sh" "$IAM_TEST_IMAGE" 2> "$work/error"; then echo 'Expected backup failure'; exit 1; fi
+if grep -q 'create job\|create -f' "$IAM_TEST_LOG"; then echo 'Backup failure submitted a reset'; exit 1; fi
+grep -q 'scale deployment/iam --replicas=1' "$IAM_TEST_LOG" || { echo 'Backup failure did not restore old writers'; exit 1; }
+: > "$IAM_TEST_LOG"
+if IAM_KUSTOMIZE_OVERLAY=gravitas IAM_MAINTENANCE_RELEASE=1 IAM_ROOM_RESET_SERVER=gravitas.cool IAM_TEST_FAIL_MIGRATION=1 "$root/scripts/kubernetes/deploy.sh" "$IAM_TEST_IMAGE" 2> "$work/error"; then echo 'Expected uncertain reset failure'; exit 1; fi
+if grep -q 'scale deployment/iam --replicas=1\|apply .*component=server' "$IAM_TEST_LOG"; then echo 'Uncertain reset restarted writers'; exit 1; fi
+grep -q 'Writers remain stopped' "$work/error"
+if IAM_ROOM_RESET_SERVER=gravitas.cool "$root/scripts/kubernetes/deploy.sh" "$IAM_TEST_IMAGE" 2>/dev/null; then echo 'Non-maintenance reset accepted'; exit 1; fi
+echo 'Matrix reset backup, one-use job and stopped-writer failure gate: OK'

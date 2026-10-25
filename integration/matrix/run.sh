@@ -44,6 +44,12 @@ for attempt in $(seq 1 60); do
   if (( attempt == 60 )); then exit 1; fi
   sleep 1
 done
+containers+=("$name-reset")
+docker run --name "$name-reset" --network "$name" --init \
+  -e POSTGRES_HOST=postgres -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres \
+  -e WALLABY_SKIP=1 --entrypoint mix "$image" run --no-start integration/matrix/reset.exs \
+  > "$fixture_dir/reset.log" 2>&1 || { cat "$fixture_dir/reset.log"; exit 1; }
+grep 'RESET PASS' "$fixture_dir/reset.log"
 containers+=("$name-synapse")
 docker run -d --name "$name-synapse" --network "$name" --network-alias reference.test \
   --user 0 --security-opt label=disable --read-only --tmpfs /data:rw --tmpfs /tmp:rw \

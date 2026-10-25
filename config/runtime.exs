@@ -147,9 +147,14 @@ if matrix_key = System.get_env("MATRIX_SIGNING_KEY") do
     _ -> raise "MATRIX_SIGNING_KEY must encode a 32-byte Ed25519 seed"
   end
 
+  key_id = System.get_env("MATRIX_SIGNING_KEY_ID", "ed25519:gravitas1")
+
+  unless Regex.match?(~r/\Aed25519:[A-Za-z0-9_]+\z/, key_id),
+    do: raise("MATRIX_SIGNING_KEY_ID must use an ed25519 key identifier")
+
   config :lakehouse_matrix,
     signing_key: String.trim_trailing(matrix_key, "="),
-    signing_key_id: System.get_env("MATRIX_SIGNING_KEY_ID", "ed25519:gravitas1")
+    signing_key_id: key_id
 end
 
 if turn_uris = System.get_env("MATRIX_TURN_URIS") do
@@ -186,3 +191,22 @@ if turn_uris = System.get_env("MATRIX_TURN_URIS") do
 
   config :lakehouse_matrix, :turn, turn_config
 end
+
+matrix_flag = fn name ->
+  case System.get_env(name, "false") do
+    "true" -> true
+    "false" -> false
+    _ -> raise "#{name} must be true or false"
+  end
+end
+
+matrix_native = matrix_flag.("MATRIX_NATIVE_EVENT_GRAPH")
+matrix_federation = matrix_flag.("MATRIX_FEDERATION_ENABLED")
+
+if (matrix_native or matrix_federation) and is_nil(System.get_env("MATRIX_SIGNING_KEY")),
+  do: raise("Native Matrix and federation require MATRIX_SIGNING_KEY")
+
+if matrix_federation and not matrix_native,
+  do: raise("Matrix federation requires MATRIX_NATIVE_EVENT_GRAPH=true")
+
+config :lakehouse_matrix, native_event_graph: matrix_native, federation_enabled: matrix_federation

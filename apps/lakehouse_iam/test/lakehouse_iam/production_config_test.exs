@@ -108,6 +108,35 @@ defmodule LakehouseIam.ProductionConfigTest do
     assert config[:lakehouse_matrix][:homeserver_domain] == "legacy.example"
   end
 
+  test "Matrix runtime flags require an explicit signing identity and reject ambiguous booleans" do
+    keys =
+      ~w(MATRIX_NATIVE_EVENT_GRAPH MATRIX_FEDERATION_ENABLED MATRIX_SIGNING_KEY MATRIX_SIGNING_KEY_ID)
+
+    old = Map.new(keys, &{&1, System.get_env(&1)})
+
+    on_exit(fn ->
+      for {key, value} <- old do
+        if value, do: System.put_env(key, value), else: System.delete_env(key)
+      end
+    end)
+
+    System.put_env("MATRIX_NATIVE_EVENT_GRAPH", "true")
+    System.put_env("MATRIX_FEDERATION_ENABLED", "true")
+    System.delete_env("MATRIX_SIGNING_KEY")
+    System.delete_env("MATRIX_SIGNING_KEY_ID")
+    assert_raise RuntimeError, ~r/require MATRIX_SIGNING_KEY/, &runtime/0
+    System.put_env("MATRIX_SIGNING_KEY", Base.encode64(<<0::256>>, padding: false))
+    config = runtime()[:lakehouse_matrix]
+    assert config[:native_event_graph] and config[:federation_enabled]
+    System.put_env("MATRIX_SIGNING_KEY_ID", "ed25519:invalid-key-id")
+    assert_raise RuntimeError, ~r/MATRIX_SIGNING_KEY_ID/, &runtime/0
+    System.delete_env("MATRIX_SIGNING_KEY_ID")
+    System.put_env("MATRIX_NATIVE_EVENT_GRAPH", "false")
+    assert_raise RuntimeError, ~r/requires MATRIX_NATIVE_EVENT_GRAPH/, &runtime/0
+    System.put_env("MATRIX_FEDERATION_ENABLED", "1")
+    assert_raise RuntimeError, ~r/must be true or false/, &runtime/0
+  end
+
   test "compose default secret placeholders cannot boot production" do
     System.put_env(%{
       "DATABASE_URL" => "ecto://postgres:postgres@postgres/lakehouse_dev",

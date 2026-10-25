@@ -1,4 +1,5 @@
 defmodule LakehouseMatrix.Cursor do
+  import Ecto.Query
   @moduledoc "Authenticated Matrix cursors; positions are private to a user, device and purpose."
   def encode(kind, principal, device, position, room \\ "") do
     body =
@@ -52,7 +53,12 @@ defmodule LakehouseMatrix.Cursor do
   defp signature(body) do
     secret = Application.fetch_env!(:lakehouse_iam, :jwt_secret)
 
-    :crypto.mac(:hmac, :sha256, secret, "matrix-cursor:" <> body)
+    epoch =
+      LakehouseIam.Repo.one(
+        from s in "matrix_stream", where: s.id == 1, select: type(s.epoch, :binary_id)
+      )
+
+    :crypto.mac(:hmac, :sha256, secret, "matrix-cursor:" <> epoch <> ":" <> body)
     |> Base.url_encode64(padding: false)
   end
 end

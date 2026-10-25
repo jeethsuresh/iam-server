@@ -142,10 +142,39 @@ Set `MATRIX_TURN_URIS` (comma-separated `turn:`/`turns:` URIs),
 Credentials bind the Matrix user and expiry; the shared secret is never returned.
 This API does not provision a TURN service or reuse LiveKit credentials.
 
-Native creation is controlled by `:native_event_graph`; background federation
-workers by `:federation_enabled`. Both default to false until rollout.
+Native creation is controlled by `MATRIX_NATIVE_EVENT_GRAPH`; background
+federation workers by `MATRIX_FEDERATION_ENABLED`. Both accept only `true` or
+`false` and default to false. Enabling either requires a signing key, and
+federation also requires native creation.
 `MATRIX_SIGNING_KEY` must contain a persistent dedicated Ed25519 seed. Do not
 reuse the IAM JWT key or rotate a seed under an existing key ID.
+
+## Authorized room reset
+
+The reset is an explicit maintenance release, never a startup or migration hook.
+It revokes Matrix access/refresh sessions so clients sign in again, advances the
+protocol epoch to invalidate all old cursors, and clears room graphs, room data,
+room-specific roles, selected application room IDs, cached sync/discovery state
+and pending room delivery. Selected grants retain their selected mode.
+Accounts, IAM sessions and app tokens, owned uploads, device/cross-signing keys,
+client-encrypted backups, global secret storage and non-room preferences survive.
+Room history and River room publications are part of the room reset.
+
+`LakehouseMatrix.Release.room_reset_plan()` returns a read-only summary.
+For the authorized Gravitas rollout, set `IAM_KUSTOMIZE_OVERLAY=gravitas`,
+`IAM_MAINTENANCE_RELEASE=1`, `IAM_ROOM_RESET_SERVER=gravitas.cool` and the explicit
+`KUBE_CONTEXT`, then run `scripts/kubernetes/deploy.sh` with the verified image
+digest. The release stops writers, creates a fresh custom-format PostgreSQL dump
+on the retained database volume, checks its archive and data stream and prints
+its checksum, then submits one job which migrates and resets. The persistent
+migration CronJob never contains the reset command. A failed backup restores the
+old writers; once a reset job may have run, a failure leaves writers stopped for
+inspection and recovery. Normal maintenance releases retain their existing
+failure recovery.
+
+Signing-key provisioning, final conformance and production deployment are still
+pending. These release tasks have been tested against disposable databases and
+mocked Kubernetes calls; the production reset has not run.
 
 ## Remaining release and conformance work
 
@@ -155,8 +184,8 @@ reuse the IAM JWT key or rotate a seed under an existing key ID.
   Matrix errors for unsupported endpoints.
 - Integrate maintained crypto and recovery into River without widening its
   existing delegated grant silently. Test web and native clients.
-- Finish the reset/release tooling, signing-key provisioning, runtime flags,
-  fresh production backup, final CI/review, merge and immutable deployment.
+- Finish signing-key provisioning and release rehearsal, then the fresh
+  production backup, final CI/review, merge and immutable deployment.
 
 Do not advertise full v1.19 compliance, enable production federation, or claim
 this branch has deployed until these checks are complete.

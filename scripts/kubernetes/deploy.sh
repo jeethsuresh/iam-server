@@ -16,12 +16,25 @@ fi
 work="$(mktemp -d)"
 maintenance="${IAM_MAINTENANCE_RELEASE:-0}"
 [[ "$maintenance" == 0 || "$maintenance" == 1 ]] || { echo 'IAM_MAINTENANCE_RELEASE must be 0 or 1' >&2; exit 1; }
+reset_server="${IAM_ROOM_RESET_SERVER:-}"
+if [[ -n "$reset_server" ]]; then
+  [[ "$overlay" == gravitas && "$maintenance" == 1 && "$reset_server" == gravitas.cool && "$image" =~ ^[a-zA-Z0-9./:_-]+@sha256:[a-f0-9]{64}$ ]] || {
+    echo 'Room reset requires the Gravitas maintenance release, gravitas.cool and an image digest.' >&2; exit 1;
+  }
+fi
+reset_started=0
 paused=0
 previous_replicas=1
+maintenance_ready=0
 cleanup() {
   result=$?
   if [[ "$paused" == 1 ]]; then
-    "${kube[@]}" scale deployment/iam --replicas="$previous_replicas" >&2 || true
+    if [[ "$reset_started" == 1 ]]; then
+      "${kube[@]}" scale deployment/iam --replicas=0 >&2 || true
+      echo 'Room reset may have run. Writers remain stopped; inspect the reset job and verified backup before recovery.' >&2
+    else
+      "${kube[@]}" scale deployment/iam --replicas="$previous_replicas" >&2 || true
+    fi
   fi
   rm -rf "$work"
   exit "$result"
@@ -50,14 +63,41 @@ if [[ "$overlay" == gravitas ]]; then
 fi
 if [[ "$maintenance" == 1 ]] && previous_replicas=$("${kube[@]}" get deployment iam -o 'jsonpath={.spec.replicas}' 2>/dev/null); then
   [[ "$previous_replicas" =~ ^[0-9]+$ ]] || { echo 'Could not read existing IAM replica count' >&2; exit 1; }
+  maintenance_ready=1
   if [[ "$previous_replicas" != 0 ]]; then
     "${kube[@]}" scale deployment/iam --replicas=0
     paused=1
+  fi
+  if [[ "$previous_replicas" != 0 || -n "$reset_server" ]]; then
     "${kube[@]}" wait --for=delete pod --selector 'app.kubernetes.io/component=server' --timeout=90s
   fi
 fi
+if [[ -n "$reset_server" ]]; then
+  [[ "$maintenance_ready" == 1 ]] || { echo 'Room reset could not establish maintenance state' >&2; exit 1; }
+  paused=1
+  # Keep the dump on the retained database volume. The local socket uses the
+  # existing database identity; no credentials or database contents are printed.
+  "${kube[@]}" exec iam-db-0 -- sh -c '
+    set -eu
+    umask 077
+    backup=$(mktemp /var/lib/postgresql/data/iam-pre-matrix-reset-XXXXXXXX.dump)
+    pg_dump --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --format=custom --file "$backup"
+    test -s "$backup"
+    pg_restore --list "$backup" >/dev/null
+    pg_restore --file=/dev/null "$backup"
+    sha256sum "$backup"
+  '
+fi
 job="iam-migrate-$(date +%s)-$RANDOM"
-"${kube[@]}" create job "$job" --from=cronjob/iam-migrate
+if [[ -n "$reset_server" ]]; then
+  "${kube[@]}" create job "$job" --from=cronjob/iam-migrate --dry-run=client -o json > "$work/reset-job.json"
+  python3 "$root/scripts/kubernetes/matrix_reset_job.py" "$work/reset-job.json" "$reset_server" "$image"
+  # The reset command exists only in this job, never in the persistent CronJob.
+  reset_started=1
+  "${kube[@]}" create -f "$work/reset-job.json"
+else
+  "${kube[@]}" create job "$job" --from=cronjob/iam-migrate
+fi
 if ! "${kube[@]}" wait --for=condition=complete "job/$job" --timeout=330s; then
   "${kube[@]}" logs "job/$job" --all-containers >&2 || true
   echo "Migration failed; application image has not been updated." >&2
