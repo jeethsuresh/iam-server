@@ -97,7 +97,7 @@ defmodule Interop do
     result
   end
 
-  def contains(server, token, room, event) do
+  def sync(server, token) do
     since = Process.get({:since, server, token})
 
     path =
@@ -106,7 +106,11 @@ defmodule Interop do
 
     {:ok, sync} = http(:get, server, path, nil, token)
     Process.put({:since, server, token}, sync["next_batch"])
+    sync
+  end
 
+  def contains(server, token, room, event) do
+    sync = sync(server, token)
     Enum.any?(
       get_in(sync, ["rooms", "join", room, "timeline", "events"]) || [],
       &(&1["event_id"] == event)
@@ -793,10 +797,8 @@ if System.get_env("INTEROP_SERVE_ONLY") != "1" do
         )
 
       Interop.wait(fn ->
-        match?(
-          {:ok, %{"rooms" => %{"invite" => invites}}} when is_map_key(invites, space.room_id),
-          Interop.http(:get, "reference.test:8448", "/_matrix/client/v3/sync?timeout=0", nil, bt)
-        )
+        sync = Interop.sync("reference.test:8448", bt)
+        Map.has_key?(get_in(sync, ["rooms", "invite"]) || %{}, space.room_id)
       end)
 
       {:ok, _} =
