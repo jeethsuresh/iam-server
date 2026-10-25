@@ -9,6 +9,13 @@ defmodule LakehouseMatrix.SlidingSync do
     with :ok <- validate(params),
          {:ok, previous} <- connection(principal, device, params),
          {:ok, timeout} <- ClientSync.integer(params["timeout"], 0, 0, 30_000) do
+      LakehouseMatrix.Ephemeral.set_presence(
+        principal,
+        %{"presence" => params["set_presence"] || "online"},
+        true
+      )
+
+      LakehouseMatrix.Ephemeral.expire()
       deadline = System.monotonic_time(:millisecond) + if(previous, do: timeout, else: 0)
 
       request =
@@ -122,6 +129,9 @@ defmodule LakehouseMatrix.SlidingSync do
           select: {e.room_id, max(e.stream_id)}
       )
       |> Map.new()
+      |> Map.merge(LakehouseMatrix.Protocol.Graph.activity(available, high), fn _, event, state ->
+        max(event, state)
+      end)
 
     ordered = Enum.sort_by(available, &{-(activity[&1] || 0), &1})
     direct = ClientStore.get_data(principal, "", "m.direct") || %{}
@@ -214,10 +224,7 @@ defmodule LakehouseMatrix.SlidingSync do
                   do: required,
                   else:
                     Enum.filter(required, fn e ->
-                      Repo.exists?(
-                        from row in RoomEvent,
-                          where: row.event_id == ^e["event_id"] and row.stream_id > ^last
-                      )
+                      ClientSync.state_position(id, e["event_id"], high) > last
                     end)
 
               before = if rows == [], do: high, else: hd(rows).stream_id
@@ -347,6 +354,18 @@ defmodule LakehouseMatrix.SlidingSync do
                   Map.new(rooms, &{&1, ClientStore.account_data(principal, &1, since, high)})
               }
 
+            "typing" ->
+              %{
+                "rooms" =>
+                  for(
+                    ref <- rooms,
+                    {:ok, id} <- [Identity.parse_room_id(ref)],
+                    event <- LakehouseMatrix.Ephemeral.typing_events(id, since, high),
+                    into: %{},
+                    do: {ref, event}
+                  )
+              }
+
             "receipts" ->
               %{
                 "rooms" =>
@@ -379,9 +398,9 @@ defmodule LakehouseMatrix.SlidingSync do
         p["global"] == [] and Enum.all?(p["rooms"], fn {_, events} -> events == [] end)
 
       {"e2ee", p} ->
-        p["device_lists"]["changed"] == []
+        p["device_lists"]["changed"] == [] and p["device_lists"]["left"] == []
 
-      {"receipts", p} ->
+      {name, p} when name in ["receipts", "typing"] ->
         p["rooms"] == %{}
 
       _ ->

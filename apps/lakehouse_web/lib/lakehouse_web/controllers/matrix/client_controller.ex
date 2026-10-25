@@ -100,7 +100,12 @@ defmodule LakehouseWeb.Matrix.ClientController do
   def join_room_id(conn, %{"roomId" => id}), do: join_room(conn, %{"roomIdOrAlias" => id})
 
   def join_room(conn, %{"roomIdOrAlias" => room_ref}) do
-    case Matrix.join_room(conn.assigns.principal_id, room_ref) do
+    servers =
+      URI.query_decoder(conn.query_string)
+      |> Enum.filter(fn {key, _} -> key in ["via", "via[]", "server_name", "server_name[]"] end)
+      |> Enum.map(&elem(&1, 1))
+
+    case Matrix.join_room(conn.assigns.principal_id, room_ref, servers, conn.body_params) do
       {:ok, body} ->
         json(conn, body)
 
@@ -109,6 +114,12 @@ defmodule LakehouseWeb.Matrix.ClientController do
 
       {:error, :forbidden} ->
         matrix_error(conn, 403, "M_FORBIDDEN", "You are not allowed to join this room")
+
+      {:error, {:policy_error, _, _}} = error ->
+        LakehouseWeb.Matrix.ProtocolController.respond(conn, error)
+
+      {:error, :policy_unavailable} = error ->
+        LakehouseWeb.Matrix.ProtocolController.respond(conn, error)
 
       {:error, _} ->
         matrix_error(conn, 400, "M_UNKNOWN", "Could not join room")

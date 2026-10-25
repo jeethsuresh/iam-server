@@ -126,7 +126,7 @@ defmodule LakehouseWeb.Matrix.FederationTest do
              )
   end
 
-  test "signed request bodies are authenticated and room transactions are not falsely acknowledged",
+  test "signed request bodies are authenticated and empty transactions have replay-safe results",
        ctx do
     content = %{
       "origin" => ctx.remote,
@@ -140,7 +140,7 @@ defmodule LakehouseWeb.Matrix.FederationTest do
     assert build_conn()
            |> put_req_header("authorization", header(ctx, "PUT", uri, content))
            |> put(uri, content)
-           |> json_response(501)
+           |> json_response(200) == %{"pdus" => %{}}
 
     assert build_conn()
            |> put_req_header("authorization", header(ctx, "PUT", uri, content))

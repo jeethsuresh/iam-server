@@ -50,6 +50,54 @@ defmodule LakehouseMatrix.Media.Image do
     end
   end
 
+  def thumbnail(body, width, height, method)
+      when width in 1..4096 and height in 1..4096 and method in ["scale", "crop"] do
+    bin = find_magick()
+
+    if is_nil(bin) do
+      {:error, :unavailable}
+    else
+      source = tmp("source")
+      target = tmp("thumbnail.jpg")
+
+      try do
+        File.write!(source, body)
+        geometry = "#{width}x#{height}" <> if(method == "crop", do: "^>", else: ">")
+
+        crop =
+          if method == "crop",
+            do: ["-gravity", "center", "-crop", "#{width}x#{height}+0+0", "+repage"],
+            else: []
+
+        args =
+          [
+            bin,
+            "-limit",
+            "memory",
+            "128MiB",
+            "-limit",
+            "map",
+            "256MiB",
+            "-limit",
+            "disk",
+            "256MiB",
+            source <> "[0]",
+            "-auto-orient",
+            "-resize",
+            geometry
+          ] ++ crop ++ ["-strip", "-quality", "82", "jpeg:" <> target]
+
+        case System.cmd("timeout", ["20" | args], stderr_to_stdout: true) do
+          {_, 0} -> File.read(target)
+          _ -> {:error, :invalid_param}
+        end
+      after
+        File.rm(source)
+        File.rm(target)
+      end
+    end
+  end
+
   defp find_magick do
     System.find_executable("magick") || System.find_executable("convert")
   end

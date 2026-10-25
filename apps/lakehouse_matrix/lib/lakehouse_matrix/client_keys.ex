@@ -2,7 +2,8 @@ defmodule LakehouseMatrix.ClientKeys do
   @moduledoc "Device keys are opaque client-signed objects; one-time keys are claimed atomically."
   import Ecto.Query
   alias LakehouseIam.{Accounts, Repo}
-  alias LakehouseMatrix.{ClientStore, Identity}
+  alias LakehouseMatrix.{ClientStore, CrossSigning, Identity}
+  alias LakehouseMatrix.Federation.DeviceKeys
 
   def upload(principal, device, username, params) do
     Repo.transaction(fn ->
@@ -23,6 +24,8 @@ defmodule LakehouseMatrix.ClientKeys do
         )
       end
 
+      if params["device_keys"], do: DeviceKeys.changed!(principal, device)
+
       for {field, fallback} <- [{"one_time_keys", false}, {"fallback_keys", true}] do
         keys = params[field] || %{}
         unless is_map(keys) and map_size(keys) <= 1000, do: Repo.rollback(:invalid_param)
@@ -32,6 +35,18 @@ defmodule LakehouseMatrix.ClientKeys do
                    (is_map(value) or is_binary(value)) and
                    byte_size(Jason.encode!(value)) <= 16_384,
                  do: Repo.rollback(:invalid_param)
+
+          if fallback do
+            key_algorithm = algorithm(id)
+
+            Repo.delete_all(
+              from k in "matrix_one_time_keys",
+                where:
+                  k.principal_id == type(^principal, :binary_id) and
+                    k.device_id == ^device and k.fallback == true and k.key_id != ^id and
+                    fragment("split_part(?, ':', 1) = ?", k.key_id, ^key_algorithm)
+            )
+          end
 
           Repo.insert_all(
             "matrix_one_time_keys",
@@ -78,7 +93,15 @@ defmodule LakehouseMatrix.ClientKeys do
     |> Enum.uniq()
   end
 
-  def query(requester, users) when is_map(users) and map_size(users) <= 100 do
+  def query(requester, users) do
+    with :ok <- validate_selection(users, :query),
+         {:ok, local} <- local_query(requester, users) do
+      remote = DeviceKeys.remote(users, "query")
+      {:ok, DeviceKeys.merge(local, remote)}
+    end
+  end
+
+  def local_query(requester, users) when is_map(users) and map_size(users) <= 100 do
     result =
       Enum.reduce(users, %{}, fn {mxid, device_ids}, acc ->
         with true <- is_list(device_ids) and length(device_ids) <= 100,
@@ -96,7 +119,13 @@ defmodule LakehouseMatrix.ClientKeys do
             for {id, keys, display} <- devices,
                 map_size(keys) > 0 and (device_ids == [] or id in device_ids),
                 into: %{} do
-              {id, Map.put(keys, "unsigned", %{"device_display_name" => display})}
+              {id,
+               CrossSigning.decorate(
+                 Map.put(keys, "unsigned", %{"device_display_name" => display}),
+                 mxid,
+                 id,
+                 requester
+               )}
             end
 
           Map.put(acc, mxid, keys)
@@ -105,12 +134,40 @@ defmodule LakehouseMatrix.ClientKeys do
         end
       end)
 
-    {:ok, %{"device_keys" => result, "failures" => %{}}}
+    cross =
+      Enum.reduce(users, %{}, fn {user, _}, acc ->
+        with {:ok, name} <- Identity.parse_user_id(user),
+             {:ok, p} <- Accounts.fetch_user(name),
+             true <- visible?(requester, p.id) do
+          DeviceKeys.merge(acc, CrossSigning.query(p.id, user, requester))
+        else
+          _ -> acc
+        end
+      end)
+
+    {:ok,
+     Map.merge(
+       %{
+         "device_keys" => result,
+         "failures" => %{},
+         "master_keys" => %{},
+         "self_signing_keys" => %{},
+         "user_signing_keys" => %{}
+       },
+       cross
+     )}
   end
 
-  def query(_, _), do: {:error, :invalid_param}
+  def local_query(_, _), do: {:error, :invalid_param}
 
-  def claim(requester, users) when is_map(users) and map_size(users) <= 100 do
+  def claim(requester, users) do
+    with :ok <- validate_selection(users, :claim),
+         {:ok, local} <- local_claim(requester, users) do
+      {:ok, DeviceKeys.merge(local, DeviceKeys.remote(users, "claim"))}
+    end
+  end
+
+  def local_claim(requester, users) when is_map(users) and map_size(users) <= 100 do
     Repo.transaction(fn ->
       result =
         Enum.reduce(users, %{}, fn {mxid, devices}, acc ->
@@ -161,8 +218,32 @@ defmodule LakehouseMatrix.ClientKeys do
     end)
   end
 
-  def claim(_, _), do: {:error, :invalid_param}
+  def local_claim(_, _), do: {:error, :invalid_param}
 
+  defp validate_selection(users, kind) when is_map(users) and map_size(users) <= 100 do
+    valid =
+      Enum.all?(users, fn {user, selection} ->
+        match?({:ok, _}, LakehouseMatrix.Protocol.Event.user_domain(user)) and
+          case kind do
+            :query ->
+              is_list(selection) and length(selection) <= 100 and
+                Enum.all?(selection, &(is_binary(&1) and byte_size(&1) in 1..255))
+
+            :claim ->
+              is_map(selection) and map_size(selection) <= 100 and
+                Enum.all?(selection, fn {device, algorithm} ->
+                  is_binary(device) and byte_size(device) in 1..255 and is_binary(algorithm) and
+                    byte_size(algorithm) in 1..255
+                end)
+          end
+      end)
+
+    if valid, do: :ok, else: {:error, :invalid_param}
+  end
+
+  defp validate_selection(_, _), do: {:error, :invalid_param}
+
+  defp visible?(:public, _), do: true
   defp visible?(a, a), do: true
 
   defp visible?(a, b) do

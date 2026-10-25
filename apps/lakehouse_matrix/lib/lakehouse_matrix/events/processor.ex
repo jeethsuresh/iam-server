@@ -4,6 +4,7 @@ defmodule LakehouseMatrix.Events.Processor do
   implementing `LakehouseMatrix.Events.Handler` and registering here.
   """
   alias LakehouseMatrix.Events.Context
+
   alias LakehouseMatrix.Events.Handlers.{
     RoomAvatar,
     RoomCreate,
@@ -29,20 +30,50 @@ defmodule LakehouseMatrix.Events.Processor do
 
   @spec process(Context.t()) :: {:ok, map()} | {:error, term()}
   def process(%Context{} = ctx) do
-    result = LakehouseIam.Repo.transaction(fn ->
-      LakehouseMatrix.ClientStore.lock!()
-      with {:ok, event_map} <- dispatch(ctx),
-           {:ok, _record} <- Events.persist(ctx, event_map) do
-        event_map
-      else
-        {:error, reason} -> LakehouseIam.Repo.rollback(reason)
+    if LakehouseMatrix.Protocol.Graph.room(ctx.room_id) do
+      case LakehouseMatrix.Protocol.Graph.send(
+             ctx.room_id,
+             ctx.sender,
+             ctx.type,
+             ctx.content,
+             ctx.state_key
+           ) do
+        {:ok, pdu} ->
+          record =
+            LakehouseIam.Repo.get_by!(LakehouseMatrix.Schema.RoomEvent, event_id: pdu["event_id"])
+
+          event = Events.to_client_event(record)
+          RoomServer.broadcast_event(ctx.room_id, event)
+          {:ok, event}
+
+        error ->
+          error
       end
-    end)
+    else
+      process_legacy(ctx)
+    end
+  end
+
+  defp process_legacy(ctx) do
+    result =
+      LakehouseIam.Repo.transaction(fn ->
+        LakehouseMatrix.ClientStore.lock!()
+
+        with {:ok, event_map} <- dispatch(ctx),
+             {:ok, _record} <- Events.persist(ctx, event_map) do
+          event_map
+        else
+          {:error, reason} -> LakehouseIam.Repo.rollback(reason)
+        end
+      end)
+
     case result do
       {:ok, event_map} ->
         RoomServer.broadcast_event(ctx.room_id, event_map)
         {:ok, event_map}
-      error -> error
+
+      error ->
+        error
     end
   end
 

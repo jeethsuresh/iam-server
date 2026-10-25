@@ -14,6 +14,7 @@ defmodule LakehouseMatrix.Schema.RoomEvent do
     field :state_key, :string
     field :sticky_duration_ms, :integer
     field :stream_id, :integer, read_after_writes: true
+    field :timeline_visible, :boolean, default: true
 
     belongs_to :room, LakehouseMatrix.Schema.Room
     belongs_to :principal, LakehouseIam.Schema.Principal
@@ -23,17 +24,22 @@ defmodule LakehouseMatrix.Schema.RoomEvent do
 
   def changeset(event, attrs) do
     event
-    |> cast(attrs, [
-      :room_id,
-      :event_id,
-      :type,
-      :content,
-      :sender,
-      :principal_id,
-      :origin_server_ts,
-      :state_key,
-      :sticky_duration_ms
-    ], empty_values: [])
+    |> cast(
+      attrs,
+      [
+        :room_id,
+        :event_id,
+        :type,
+        :content,
+        :sender,
+        :principal_id,
+        :origin_server_ts,
+        :state_key,
+        :sticky_duration_ms,
+        :timeline_visible
+      ],
+      empty_values: []
+    )
     |> validate_required([:room_id, :event_id, :type, :content, :sender, :origin_server_ts])
     |> unique_constraint(:event_id)
   end

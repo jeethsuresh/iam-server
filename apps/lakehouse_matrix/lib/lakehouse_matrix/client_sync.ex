@@ -14,8 +14,20 @@ defmodule LakehouseMatrix.ClientSync do
 
     with {:ok, since} <- Cursor.decode(params["since"], "sync", principal, device),
          {:ok, filter} <- filter(principal, params["filter"]),
-         {:ok, timeout} <- integer(params["timeout"], 0, 0, 30_000) do
+         {:ok, timeout} <- integer(params["timeout"], 0, 0, 30_000),
+         true <-
+           params["use_state_after"] in [nil, true, false, "true", "false"] and
+             params["set_presence"] in [nil, "online", "offline", "unavailable"] do
+      filter = Map.put(filter, "_use_state_after", params["use_state_after"] in [true, "true"])
       full = is_nil(params["since"]) or params["full_state"] in [true, "true"]
+
+      LakehouseMatrix.Ephemeral.set_presence(
+        principal,
+        %{"presence" => params["set_presence"] || "online"},
+        true
+      )
+
+      LakehouseMatrix.Ephemeral.expire()
       ClientStore.acknowledge(principal, device, since)
       deadline = System.monotonic_time(:millisecond) + timeout
 
@@ -24,6 +36,9 @@ defmodule LakehouseMatrix.ClientSync do
         deadline,
         not is_nil(params["since"])
       )
+    else
+      false -> {:error, :invalid_param}
+      error -> error
     end
   end
 
@@ -74,7 +89,14 @@ defmodule LakehouseMatrix.ClientSync do
           "device_one_time_keys_count" => LakehouseMatrix.ClientKeys.counts(principal, device),
           "device_unused_fallback_key_types" =>
             LakehouseMatrix.ClientKeys.unused_fallback(principal, device),
-          "presence" => %{"events" => []}
+          "presence" => %{
+            "events" =>
+              LakehouseMatrix.Ephemeral.presence_events(
+                principal,
+                if(full, do: 0, else: since),
+                high
+              )
+          }
         }
       end)
 
@@ -95,12 +117,16 @@ defmodule LakehouseMatrix.ClientSync do
         [] -> high
       end
 
-    state = state_at(room, boundary)
+    state_boundary = if filter["_use_state_after"], do: high, else: boundary
+    state = state_at(room, state_boundary)
 
     state =
       if full or joined_since?(principal, room, since, high),
         do: state,
-        else: Enum.filter(state, fn event -> event_position(event["event_id"]) > since end)
+        else:
+          Enum.filter(state, fn event ->
+            state_position(room, event["event_id"], state_boundary) > since
+          end)
 
     state = filter_events(state, get_in(filter, ["room", "state"]) || %{})
 
@@ -117,20 +143,28 @@ defmodule LakehouseMatrix.ClientSync do
         "limited" => limited,
         "prev_batch" => Cursor.encode("history", principal, device, boundary + 1, room)
       },
-      "state" => %{"events" => state},
       "account_data" => %{"events" => account},
-      "ephemeral" => %{"events" => receipts(principal, room, lower, high)},
+      "ephemeral" => %{
+        "events" =>
+          receipts(principal, room, lower, high) ++
+            LakehouseMatrix.Ephemeral.typing_events(room, lower, high)
+      },
       "summary" => %{
         "m.joined_member_count" => Memberships.member_count(room),
         "m.invited_member_count" => Memberships.invited_count(room)
       }
     }
+    |> Map.put(if(filter["_use_state_after"], do: "state_after", else: "state"), %{
+      "events" => state
+    })
   end
 
   def timeline(room, since, high, limit, principal) do
     query =
       from e in RoomEvent,
-        where: e.room_id == ^room and e.stream_id > ^since and e.stream_id <= ^high,
+        where:
+          e.room_id == ^room and e.timeline_visible == true and e.stream_id > ^since and
+            e.stream_id <= ^high,
         order_by: [desc: e.stream_id],
         limit: ^limit
 
@@ -139,52 +173,139 @@ defmodule LakehouseMatrix.ClientSync do
 
   def visible_query(query, principal) do
     user = mxid(principal)
+    history_key = Jason.encode!(["m.room.history_visibility", ""])
+    member_key = Jason.encode!(["m.room.member", user])
 
-    from e in query,
-      where:
+    native =
+      dynamic(
+        [e],
+        fragment(
+          "EXISTS (SELECT 1 FROM matrix_protocol_rooms r WHERE r.local_room_id = ?)",
+          e.room_id
+        )
+      )
+
+    native_visible =
+      dynamic(
+        [e],
+        fragment(
+          """
+          (SELECT CASE COALESCE(h.pdu->'content'->>'history_visibility', 'shared')
+            WHEN 'world_readable' THEN TRUE
+            WHEN 'joined' THEN COALESCE(m.pdu->'content'->>'membership', '') = 'join'
+            WHEN 'invited' THEN COALESCE(m.pdu->'content'->>'membership', '') IN ('join','invite')
+            ELSE COALESCE(m.pdu->'content'->>'membership', '') = 'join' OR EXISTS (
+              SELECT 1 FROM matrix_state_changes c JOIN matrix_pdus j ON j.event_id = c.event_id
+              WHERE c.local_room_id = ev.local_room_id AND c.type = 'm.room.member' AND c.state_key = ?
+                AND c.stream_id >= ? AND j.pdu->'content'->>'membership' = 'join') END
+           FROM matrix_pdus ev
+           LEFT JOIN matrix_pdus h ON h.event_id = ev.state_before->>?
+           LEFT JOIN matrix_pdus m ON m.event_id = ev.state_before->>?
+           WHERE ev.event_id = ?)
+          """,
+          ^user,
+          e.stream_id,
+          ^history_key,
+          ^member_key,
+          e.event_id
+        )
+      )
+
+    legacy_visible =
+      dynamic(
+        [e],
+        fragment(
+          """
+          CASE COALESCE((SELECT h.content->>'history_visibility' FROM room_events h
+            WHERE h.room_id = ? AND h.type = 'm.room.history_visibility' AND h.stream_id <= ?
+            ORDER BY h.stream_id DESC LIMIT 1), 'shared')
+          WHEN 'joined' THEN COALESCE((SELECT m.content->>'membership' FROM room_events m
+            WHERE m.room_id = ? AND m.type = 'm.room.member' AND m.state_key = ? AND m.stream_id <= ?
+            ORDER BY m.stream_id DESC LIMIT 1), '') = 'join'
+          WHEN 'invited' THEN COALESCE((SELECT m.content->>'membership' FROM room_events m
+            WHERE m.room_id = ? AND m.type = 'm.room.member' AND m.state_key = ? AND m.stream_id <= ?
+            ORDER BY m.stream_id DESC LIMIT 1), '') IN ('join', 'invite')
+          ELSE TRUE END
+          """,
+          e.room_id,
+          e.stream_id,
+          e.room_id,
+          ^user,
+          e.stream_id,
+          e.room_id,
+          ^user,
+          e.stream_id
+        )
+      )
+
+    condition =
+      dynamic(
+        [e],
         (e.type == "m.room.member" and e.state_key == ^user) or
-          fragment(
-            """
-            CASE COALESCE((SELECT h.content->>'history_visibility' FROM room_events h
-              WHERE h.room_id = ? AND h.type = 'm.room.history_visibility' AND h.stream_id <= ?
-              ORDER BY h.stream_id DESC LIMIT 1), 'shared')
-            WHEN 'joined' THEN COALESCE((SELECT m.content->>'membership' FROM room_events m
-              WHERE m.room_id = ? AND m.type = 'm.room.member' AND m.state_key = ? AND m.stream_id <= ?
-              ORDER BY m.stream_id DESC LIMIT 1), '') = 'join'
-            WHEN 'invited' THEN COALESCE((SELECT m.content->>'membership' FROM room_events m
-              WHERE m.room_id = ? AND m.type = 'm.room.member' AND m.state_key = ? AND m.stream_id <= ?
-              ORDER BY m.stream_id DESC LIMIT 1), '') IN ('join', 'invite')
-            ELSE TRUE END
-            """,
-            e.room_id,
-            e.stream_id,
-            e.room_id,
-            ^user,
-            e.stream_id,
-            e.room_id,
-            ^user,
-            e.stream_id
-          )
+          (^native and ^native_visible) or (not (^native) and ^legacy_visible)
+      )
+
+    condition =
+      dynamic(
+        [e],
+        ^condition and
+          (not (^native) or e.type != "m.room.redaction" or
+             fragment(
+               "EXISTS (SELECT 1 FROM matrix_pdus r WHERE r.event_id = ? AND r.redaction_applied)",
+               e.event_id
+             ))
+      )
+
+    from e in query, where: ^condition
   end
 
   def state_at(room, high) do
-    Repo.all(
-      from e in RoomEvent,
-        where: e.room_id == ^room and not is_nil(e.state_key) and e.stream_id <= ^high,
-        distinct: [e.type, e.state_key],
-        order_by: [e.type, e.state_key, desc: e.stream_id]
-    )
-    |> Enum.map(&Events.to_client_event/1)
+    if LakehouseMatrix.Protocol.Graph.room(room) do
+      ids = LakehouseMatrix.Protocol.Graph.state_at_stream(room, high) |> Map.values()
+
+      Repo.all(
+        from e in RoomEvent,
+          where:
+            e.event_id in ^ids and
+              (e.type != "m.room.redaction" or
+                 fragment(
+                   "EXISTS (SELECT 1 FROM matrix_pdus r WHERE r.event_id = ? AND r.redaction_applied)",
+                   e.event_id
+                 )),
+          order_by: [e.type, e.state_key]
+      )
+      |> Enum.map(&Events.to_client_event/1)
+    else
+      Repo.all(
+        from e in RoomEvent,
+          where: e.room_id == ^room and not is_nil(e.state_key) and e.stream_id <= ^high,
+          distinct: [e.type, e.state_key],
+          order_by: [e.type, e.state_key, desc: e.stream_id]
+      )
+      |> Enum.map(&Events.to_client_event/1)
+    end
   end
 
-  def stripped(room, high, principal),
-    do:
-      state_at(room, high)
-      |> Enum.filter(
-        &(&1["type"] in ~w(m.room.create m.room.name m.room.avatar m.room.topic m.room.join_rules m.room.canonical_alias m.room.member m.room.encryption))
-      )
-      |> Enum.filter(&(&1["type"] != "m.room.member" or &1["state_key"] == mxid(principal)))
-      |> Enum.map(&Map.take(&1, ~w(type state_key content sender)))
+  def state_position(room, id, high) do
+    if LakehouseMatrix.Protocol.Graph.room(room),
+      do: LakehouseMatrix.Protocol.Graph.state_position(room, id, high),
+      else: event_position(id)
+  end
+
+  def stripped(room, high, principal) do
+    case LakehouseMatrix.Federation.Invites.pending(room, mxid(principal)) do
+      %{state: %{"events" => events}} ->
+        events
+
+      nil ->
+        state_at(room, high)
+        |> Enum.filter(
+          &(&1["type"] in ~w(m.room.create m.room.name m.room.avatar m.room.topic m.room.join_rules m.room.canonical_alias m.room.member m.room.encryption))
+        )
+        |> Enum.filter(&(&1["type"] != "m.room.member" or &1["state_key"] == mxid(principal)))
+        |> Enum.map(&Map.take(&1, ~w(type state_key content sender)))
+    end
+  end
 
   def history(principal, device, room, params) do
     with true <- Memberships.joined?(room, principal),
@@ -195,7 +316,11 @@ defmodule LakehouseMatrix.ClientSync do
       direction = params["dir"] || "b"
       high = ClientStore.position()
       from = if params["from"], do: from, else: if(direction == "b", do: high + 1, else: 0)
-      query = from e in RoomEvent, where: e.room_id == ^room and e.stream_id <= ^high
+
+      query =
+        from e in RoomEvent,
+          where: e.room_id == ^room and e.timeline_visible == true and e.stream_id <= ^high
+
       query = visible_query(query, principal)
 
       query =
@@ -346,42 +471,58 @@ defmodule LakehouseMatrix.ClientSync do
     do:
       p["rooms"] == %{"join" => %{}, "invite" => %{}, "leave" => %{}} and
         p["account_data"]["events"] == [] and p["to_device"]["events"] == [] and
-        p["device_lists"]["changed"] == []
+        p["device_lists"]["changed"] == [] and p["device_lists"]["left"] == [] and
+        p["presence"]["events"] == []
 
   defp room_empty?(p),
     do:
-      p["timeline"]["events"] == [] and p["state"]["events"] == [] and
+      p["timeline"]["events"] == [] and (p["state"] || p["state_after"])["events"] == [] and
         p["account_data"]["events"] == [] and p["ephemeral"]["events"] == []
 
   defp membership_changed?(principal, room, since, high) do
-    Repo.exists?(
-      from e in RoomEvent,
-        where:
-          e.room_id == ^room and e.type == "m.room.member" and e.state_key == ^mxid(principal) and
-            e.stream_id > ^since and e.stream_id <= ^high
-    )
+    query = membership_events(principal, room)
+    Repo.exists?(from e in subquery(query), where: e.stream_id > ^since and e.stream_id <= ^high)
   end
 
   defp joined_since?(principal, room, since, high) do
+    query = membership_events(principal, room)
+
     Repo.exists?(
-      from e in RoomEvent,
+      from e in subquery(query),
         where:
-          e.room_id == ^room and e.type == "m.room.member" and e.state_key == ^mxid(principal) and
-            e.stream_id > ^since and e.stream_id <= ^high and
+          e.stream_id > ^since and e.stream_id <= ^high and
             fragment("?->>'membership' = 'join'", e.content)
     )
   end
 
-  defp last_membership(principal, room, high),
-    do:
-      Repo.one(
-        from e in RoomEvent,
-          where:
-            e.room_id == ^room and e.type == "m.room.member" and e.state_key == ^mxid(principal) and
-              e.stream_id <= ^high,
-          order_by: [desc: e.stream_id],
-          limit: 1
-      )
+  defp last_membership(principal, room, high) do
+    query = membership_events(principal, room)
+
+    Repo.one(
+      from e in subquery(query),
+        where: e.stream_id <= ^high,
+        order_by: [desc: e.stream_id],
+        limit: 1
+    )
+  end
+
+  defp membership_events(principal, room) do
+    user = mxid(principal)
+
+    if LakehouseMatrix.Protocol.Graph.room(room) do
+      from c in "matrix_state_changes",
+        join: p in LakehouseMatrix.Schema.Pdu,
+        on: p.event_id == c.event_id,
+        where:
+          c.local_room_id == type(^room, :binary_id) and c.type == "m.room.member" and
+            c.state_key == ^user,
+        select: %{stream_id: c.stream_id, content: fragment("?->'content'", p.pdu)}
+    else
+      from e in RoomEvent,
+        where: e.room_id == ^room and e.type == "m.room.member" and e.state_key == ^user,
+        select: %{stream_id: e.stream_id, content: e.content}
+    end
+  end
 
   defp event_position(id),
     do: Repo.one(from e in RoomEvent, where: e.event_id == ^id, select: e.stream_id) || 0
@@ -405,28 +546,60 @@ defmodule LakehouseMatrix.ClientSync do
   end
 
   def device_lists(principal, since, high) do
-    rooms = Memberships.joined_room_ids(principal)
-
-    ids =
-      Repo.all(
-        from m in LakehouseMatrix.Schema.RoomMembership,
-          where:
-            m.room_id in ^rooms and fragment("?->>'membership' = 'join'", m.membership_state),
-          select: m.principal_id
-      )
+    before = shared_users(principal, since)
+    current = shared_users(principal, high)
 
     changed =
       Repo.all(
-        from d in "matrix_devices",
-          join: p in LakehouseIam.Schema.Principal,
-          on: d.principal_id == p.id,
-          where: p.id in ^ids and d.stream_id > ^since and d.stream_id <= ^high,
-          distinct: p.username,
-          select: p.username
+        from c in "matrix_device_changes",
+          where:
+            c.user_id in ^MapSet.to_list(current) and c.stream_id > ^since and
+              c.stream_id <= ^high,
+          distinct: c.user_id,
+          select: c.user_id
       )
-      |> Enum.map(&Identity.user_id/1)
+      |> MapSet.new()
 
-    %{"changed" => changed, "left" => []}
+    %{
+      "changed" =>
+        MapSet.union(changed, MapSet.difference(current, before))
+        |> MapSet.to_list()
+        |> Enum.sort(),
+      "left" => MapSet.difference(before, current) |> MapSet.to_list() |> Enum.sort()
+    }
+  end
+
+  defp shared_users(principal, position) do
+    own = mxid(principal)
+
+    rooms =
+      Repo.all(
+        from m in LakehouseMatrix.Schema.RoomMembership,
+          where: m.principal_id == ^principal,
+          select: m.room_id
+      )
+
+    Enum.reduce(rooms, MapSet.new([own]), fn room, users ->
+      state = state_at(room, position)
+
+      joined =
+        Enum.any?(
+          state,
+          &(&1["type"] == "m.room.member" and &1["state_key"] == own and
+              &1["content"]["membership"] == "join")
+        )
+
+      if joined do
+        members =
+          for e <- state,
+              e["type"] == "m.room.member" and e["content"]["membership"] == "join",
+              do: e["state_key"]
+
+        MapSet.union(users, MapSet.new(members))
+      else
+        users
+      end
+    end)
   end
 
   def receipts(principal, room, since, high) do
@@ -441,14 +614,30 @@ defmodule LakehouseMatrix.ClientSync do
           select: {r.event_id, r.type, p.username, r.data}
       )
 
+    entries =
+      Enum.map(entries, fn {event, type, username, data} ->
+        {event, type, Identity.user_id(username), data}
+      end)
+
+    remote =
+      Repo.all(
+        from r in "matrix_remote_receipts",
+          where:
+            r.local_room_id == type(^room, :binary_id) and
+              r.stream_id > ^since and r.stream_id <= ^high,
+          select: {r.event_id, r.type, r.user_id, r.data}
+      )
+
+    entries = entries ++ remote
+
     content =
       Enum.reduce(entries, %{}, fn {event, type, user, data}, acc ->
-        Map.update(acc, event, %{type => %{Identity.user_id(user) => data}}, fn types ->
+        Map.update(acc, event, %{type => %{user => data}}, fn types ->
           Map.update(
             types,
             type,
-            %{Identity.user_id(user) => data},
-            &Map.put(&1, Identity.user_id(user), data)
+            %{user => data},
+            &Map.put(&1, user, data)
           )
         end)
       end)

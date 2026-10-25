@@ -8,13 +8,22 @@ defmodule LakehouseMatrix.Memberships do
   alias LakehouseMatrix.Schema.{Room, RoomMembership}
 
   @spec joined_room_ids(Ecto.UUID.t()) :: [Ecto.UUID.t()]
-  def joined_room_ids(principal_id), do: room_ids_with_membership(principal_id, "join") |> Enum.filter(&(LakehouseMatrix.RiverRtc.chat_allowed?(&1, principal_id) and LakehouseMatrix.RiverPublishing.reader_allowed?(&1, principal_id)))
+  def joined_room_ids(principal_id),
+    do:
+      room_ids_with_membership(principal_id, "join")
+      |> Enum.filter(
+        &(LakehouseMatrix.RiverRtc.chat_allowed?(&1, principal_id) and
+            LakehouseMatrix.RiverPublishing.reader_allowed?(&1, principal_id))
+      )
 
   @spec invited_room_ids(Ecto.UUID.t()) :: [Ecto.UUID.t()]
   def invited_room_ids(principal_id), do: room_ids_with_membership(principal_id, "invite")
 
   @spec left_room_ids(Ecto.UUID.t()) :: [Ecto.UUID.t()]
-  def left_room_ids(principal_id), do: room_ids_with_membership(principal_id, "leave")
+  def left_room_ids(principal_id),
+    do:
+      room_ids_with_membership(principal_id, "leave") ++
+        room_ids_with_membership(principal_id, "ban")
 
   @spec list_joined_rooms(Ecto.UUID.t()) :: [Room.t()]
   def list_joined_rooms(principal_id) do
@@ -27,11 +36,19 @@ defmodule LakehouseMatrix.Memberships do
             fragment("?->>'membership' = 'join'", m.membership_state),
         order_by: [desc: m.inserted_at],
         select: r
-    ) |> Enum.filter(&(LakehouseMatrix.RiverRtc.chat_allowed?(&1.id, principal_id) and LakehouseMatrix.RiverPublishing.reader_allowed?(&1.id, principal_id)))
+    )
+    |> Enum.filter(
+      &(LakehouseMatrix.RiverRtc.chat_allowed?(&1.id, principal_id) and
+          LakehouseMatrix.RiverPublishing.reader_allowed?(&1.id, principal_id))
+    )
   end
 
   @spec joined?(Ecto.UUID.t(), Ecto.UUID.t()) :: boolean()
-  def joined?(room_id, principal_id), do: membership?(room_id, principal_id, "join") and LakehouseMatrix.RiverRtc.chat_allowed?(room_id, principal_id) and LakehouseMatrix.RiverPublishing.reader_allowed?(room_id, principal_id)
+  def joined?(room_id, principal_id),
+    do:
+      membership?(room_id, principal_id, "join") and
+        LakehouseMatrix.RiverRtc.chat_allowed?(room_id, principal_id) and
+        LakehouseMatrix.RiverPublishing.reader_allowed?(room_id, principal_id)
 
   @spec invited?(Ecto.UUID.t(), Ecto.UUID.t()) :: boolean()
   def invited?(room_id, principal_id), do: membership?(room_id, principal_id, "invite")
@@ -60,15 +77,36 @@ defmodule LakehouseMatrix.Memberships do
 
   @spec list_members(Ecto.UUID.t()) :: [%{username: String.t(), principal_id: Ecto.UUID.t()}]
   def list_members(room_id) do
-    Repo.all(
-      from m in RoomMembership,
-        join: p in LakehouseIam.Schema.Principal,
-        on: p.id == m.principal_id,
-        where:
-          m.room_id == ^room_id and fragment("?->>'membership' = 'join'", m.membership_state),
-        order_by: [asc: p.username],
-        select: %{username: p.username, principal_id: p.id}
-    )
+    if LakehouseMatrix.Protocol.Graph.room(room_id) do
+      members =
+        LakehouseMatrix.Federation.RoomAccess.state(LakehouseMatrix.Protocol.Graph.room(room_id))
+
+      for {{"m.room.member", user}, event} <- members, event["content"]["membership"] == "join" do
+        local =
+          with {:ok, name} <- LakehouseMatrix.Identity.parse_user_id(user),
+               {:ok, principal} <- LakehouseIam.Accounts.fetch_user(name),
+               do: principal
+
+        %{
+          username: if(is_map(local), do: local.username, else: user),
+          principal_id: if(is_map(local), do: local.id),
+          user_id: user,
+          display_name: event["content"]["displayname"],
+          avatar_url: event["content"]["avatar_url"]
+        }
+      end
+      |> Enum.sort_by(& &1.username)
+    else
+      Repo.all(
+        from m in RoomMembership,
+          join: p in LakehouseIam.Schema.Principal,
+          on: p.id == m.principal_id,
+          where:
+            m.room_id == ^room_id and fragment("?->>'membership' = 'join'", m.membership_state),
+          order_by: [asc: p.username],
+          select: %{username: p.username, principal_id: p.id}
+      )
+    end
   end
 
   @spec apply_membership(
@@ -177,14 +215,25 @@ defmodule LakehouseMatrix.Memberships do
   end
 
   defp count_with_membership(room_id, membership) do
-    Repo.aggregate(
-      from(m in RoomMembership,
-        where:
-          m.room_id == ^room_id and
-            fragment("?->>'membership' = ?", m.membership_state, ^membership)
-      ),
-      :count
-    )
+    if LakehouseMatrix.Protocol.Graph.room(room_id) do
+      Repo.aggregate(
+        from(s in LakehouseMatrix.Schema.RoomState,
+          where:
+            s.room_id == ^room_id and s.type == "m.room.member" and
+              fragment("?->>'membership' = ?", s.content, ^membership)
+        ),
+        :count
+      )
+    else
+      Repo.aggregate(
+        from(m in RoomMembership,
+          where:
+            m.room_id == ^room_id and
+              fragment("?->>'membership' = ?", m.membership_state, ^membership)
+        ),
+        :count
+      )
+    end
   end
 
   defp principal_id_for_mxid(mxid) when is_binary(mxid) do

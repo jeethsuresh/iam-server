@@ -55,24 +55,173 @@ defmodule LakehouseWeb.Matrix.FederationController do
 
   def profile(conn, _), do: ProtocolController.respond(conn, {:error, :invalid_param})
 
-  # Existing River events have neither a signed DAG nor event authorization
-  # snapshots. Never accept remote PDUs into these local policy tables. The
-  # explicit error makes this limitation visible to peers instead of ACKing and
-  # silently losing a transaction, or trusting an IAM bearer as federation auth.
-  def transaction(conn, params) do
-    pdus = params["pdus"] || []
-    edus = params["edus"] || []
-
-    if params["origin"] == conn.assigns.matrix_origin and is_list(pdus) and length(pdus) <= 50 and
-         is_list(edus) and length(edus) <= 100 do
-      ProtocolController.error(
+  def directory(conn, %{"room_alias" => ref}),
+    do:
+      ProtocolController.respond(
         conn,
-        501,
-        "M_UNRECOGNIZED",
-        "Federated room event ingestion is not available"
+        LakehouseMatrix.Federation.RoomProtocol.directory(conn.assigns.matrix_origin, ref)
       )
-    else
-      ProtocolController.respond(conn, {:error, :invalid_param})
+
+  def directory(conn, _), do: ProtocolController.respond(conn, {:error, :invalid_param})
+
+  def public_rooms(conn, params),
+    do:
+      ProtocolController.respond(
+        conn,
+        LakehouseMatrix.Directory.public_rooms(params, conn.assigns.matrix_origin)
+      )
+
+  def user_devices(conn, %{"userId" => user}),
+    do: ProtocolController.respond(conn, LakehouseMatrix.Federation.DeviceKeys.user_devices(user))
+
+  def keys_query(conn, _),
+    do:
+      ProtocolController.respond(
+        conn,
+        LakehouseMatrix.Federation.DeviceKeys.query(conn.body_params["device_keys"])
+      )
+
+  def keys_claim(conn, _),
+    do:
+      ProtocolController.respond(
+        conn,
+        LakehouseMatrix.Federation.DeviceKeys.claim(conn.body_params["one_time_keys"])
+      )
+
+  def make_membership(conn, %{"roomId" => room, "userId" => user} = params) do
+    membership = membership_action(conn.request_path)
+    versions = repeated_query(conn, "ver", params["ver"] || ["1"])
+
+    ProtocolController.respond(
+      conn,
+      LakehouseMatrix.Federation.RoomProtocol.make_membership(
+        conn.assigns.matrix_origin,
+        room,
+        user,
+        membership,
+        versions
+      )
+    )
+  end
+
+  def send_membership(conn, %{"roomId" => room, "eventId" => event}) do
+    response =
+      LakehouseMatrix.Federation.RoomProtocol.send_membership(
+        conn.assigns.matrix_origin,
+        room,
+        event,
+        membership_action(conn.request_path),
+        conn.body_params
+      )
+
+    case response do
+      {:ok, body} ->
+        json(
+          conn,
+          if(String.contains?(conn.request_path, "/v1/send_"), do: [200, body], else: body)
+        )
+
+      error ->
+        ProtocolController.respond(conn, error)
     end
+  end
+
+  def event(conn, %{"eventId" => id}),
+    do:
+      ProtocolController.respond(
+        conn,
+        LakehouseMatrix.Federation.RoomProtocol.event(conn.assigns.matrix_origin, id)
+      )
+
+  def invite(conn, %{"roomId" => room, "eventId" => event}),
+    do:
+      ProtocolController.respond(
+        conn,
+        LakehouseMatrix.Federation.Invites.receive(
+          conn.assigns.matrix_origin,
+          room,
+          event,
+          conn.body_params
+        )
+      )
+
+  def room_state(conn, %{"roomId" => room, "event_id" => event}),
+    do:
+      ProtocolController.respond(
+        conn,
+        LakehouseMatrix.Federation.RoomProtocol.state(
+          conn.assigns.matrix_origin,
+          room,
+          event,
+          String.contains?(conn.request_path, "/state_ids/")
+        )
+      )
+
+  def room_state(conn, _), do: ProtocolController.respond(conn, {:error, :invalid_param})
+
+  def event_auth(conn, %{"roomId" => room, "eventId" => event}),
+    do:
+      ProtocolController.respond(
+        conn,
+        LakehouseMatrix.Federation.RoomProtocol.event_auth(
+          conn.assigns.matrix_origin,
+          room,
+          event
+        )
+      )
+
+  def backfill(conn, %{"roomId" => room} = params) do
+    roots = repeated_query(conn, "v", params["v"] || [])
+
+    result =
+      with {:ok, limit} <- LakehouseMatrix.ClientSync.integer(params["limit"], 10, 1, 1000),
+           do:
+             LakehouseMatrix.Federation.RoomProtocol.backfill(
+               conn.assigns.matrix_origin,
+               room,
+               roots,
+               limit
+             )
+
+    ProtocolController.respond(conn, result)
+  end
+
+  def missing(conn, %{"roomId" => room}),
+    do:
+      ProtocolController.respond(
+        conn,
+        LakehouseMatrix.Federation.RoomProtocol.missing(
+          conn.assigns.matrix_origin,
+          room,
+          conn.body_params
+        )
+      )
+
+  defp membership_action(path) do
+    cond do
+      String.contains?(path, "_join/") -> "join"
+      String.contains?(path, "_leave/") -> "leave"
+      String.contains?(path, "_knock/") -> "knock"
+    end
+  end
+
+  defp repeated_query(conn, name, fallback) do
+    values =
+      URI.query_decoder(conn.query_string)
+      |> Enum.filter(fn {key, _} -> key in [name, name <> "[]"] end)
+      |> Enum.map(&elem(&1, 1))
+
+    if values == [], do: List.wrap(fallback), else: values
+  end
+
+  def transaction(conn, params) do
+    ProtocolController.respond(
+      conn,
+      LakehouseMatrix.Federation.Transactions.receive(
+        conn.assigns.matrix_origin,
+        params["txnId"],
+        conn.body_params
+      )
+    )
   end
 end

@@ -18,6 +18,12 @@ defmodule LakehouseMatrix.ClientRooms do
   alias LakehouseMatrix.Schema.RoomEvent
 
   def create(principal, params) do
+    if LakehouseMatrix.Protocol.Rooms.enabled?(),
+      do: LakehouseMatrix.Protocol.Rooms.create(principal, params),
+      else: create_legacy(principal, params)
+  end
+
+  defp create_legacy(principal, params) do
     initial = params["initial_state"] || []
     invites = params["invite"] || []
 
@@ -37,7 +43,7 @@ defmodule LakehouseMatrix.ClientRooms do
         {:error, :invalid_param}
 
       true ->
-        Repo.transaction(fn ->
+        LakehouseMatrix.Protocol.Policy.transaction(fn ->
           ClientStore.lock!()
 
           response =
@@ -149,6 +155,51 @@ defmodule LakehouseMatrix.ClientRooms do
     end
   end
 
+  def moderate(principal, ref, action, user, reason \\ nil) do
+    with true <- action in ~w(kick ban unban),
+         {:ok, _} <- LakehouseMatrix.Protocol.Event.user_domain(user),
+         true <- is_nil(reason) or (is_binary(reason) and byte_size(reason) <= 16_384),
+         {:ok, room} <- readable(principal, ref) do
+      if metadata = LakehouseMatrix.Protocol.Graph.room(room.id) do
+        sender = user_id(principal)
+        state = LakehouseMatrix.Federation.RoomAccess.state(metadata)
+        membership = LakehouseMatrix.Protocol.Authorization.membership(state, user)
+
+        cond do
+          user == sender ->
+            {:error, :forbidden}
+
+          action == "kick" and membership not in ~w(join invite knock) ->
+            {:error, :not_found}
+
+          action == "unban" and membership != "ban" ->
+            {:error, :invalid_param}
+
+          true ->
+            content = %{"membership" => if(action == "ban", do: "ban", else: "leave")}
+            content = if reason, do: Map.put(content, "reason", reason), else: content
+
+            case LakehouseMatrix.Protocol.Graph.send(
+                   room.id,
+                   sender,
+                   "m.room.member",
+                   content,
+                   user
+                 ) do
+              {:ok, _} -> {:ok, %{}}
+              error -> error
+            end
+        end
+      else
+        if action == "kick",
+          do: Matrix.remove_member(principal, ref, user),
+          else: {:error, :forbidden}
+      end
+    else
+      _ -> {:error, :invalid_param}
+    end
+  end
+
   def room(ref) do
     with {:ok, id} <- Identity.parse_room_id(ref),
          room when not is_nil(room) <- Rooms.get_room(id),
@@ -185,7 +236,7 @@ defmodule LakehouseMatrix.ClientRooms do
            type not in ~w(m.room.create m.room.member m.room.power_levels m.room.join_rules m.room.encryption m.room.redaction m.rtc.member),
          true <- IAM.can?(principal, "matrix.room.send", Identity.resource_arn(room.id)) do
       ClientStore.transaction(principal, device, "send:" <> room.id, txn, fn ->
-        if river?(room.id) do
+        if river?(room.id) and is_nil(LakehouseMatrix.Protocol.Graph.room(room.id)) do
           DelegatedGroups.send(
             system_grant(principal),
             room.id,
@@ -211,34 +262,43 @@ defmodule LakehouseMatrix.ClientRooms do
     with {:ok, room} <- readable(principal, ref),
          true <- is_map(content) and byte_size(Jason.encode!(content)) < 60_000,
          true <-
-           type not in ~w(m.room.create m.room.member m.room.tombstone) and
-             not String.starts_with?(type, "cool.gravitas."),
+           type != "m.room.create" and
+             (not is_nil(LakehouseMatrix.Protocol.Graph.room(room.id)) or
+                (type not in ~w(m.room.member m.room.tombstone) and
+                   not String.starts_with?(type, "cool.gravitas."))),
          true <- valid_state_content?(type, content) do
-      Repo.transaction(fn ->
+      LakehouseMatrix.Protocol.Policy.transaction(fn ->
         ClientStore.lock!()
 
+        native = not is_nil(LakehouseMatrix.Protocol.Graph.room(room.id))
+
         unless Memberships.joined?(room.id, principal) and
-                 allowed_event?(principal, room.id, type, true),
+                 (native or allowed_event?(principal, room.id, type, true)),
                do: Repo.rollback(:forbidden)
 
-        if river?(room.id) and
+        if not native and river?(room.id) and
              (type not in ~w(m.room.name m.room.topic m.room.avatar) or key != "" or
                 not Matrix.creator?(room.id, principal)),
            do: Repo.rollback(:forbidden)
 
-        if String.starts_with?(key, "@") and key != user_id(principal),
-          do: Repo.rollback(:forbidden)
+        if type != "m.room.member" and String.starts_with?(key, "@") and
+             key != user_id(principal),
+           do: Repo.rollback(:forbidden)
 
-        if type == "m.room.power_levels" and not valid_power?(principal, room.id, content),
-          do: Repo.rollback(:forbidden)
+        if not native and type == "m.room.power_levels" and
+             not valid_power?(principal, room.id, content),
+           do: Repo.rollback(:forbidden)
+
+        encryption = State.get(room.id, "m.room.encryption", key)
 
         if type == "m.room.encryption" and
              (content["algorithm"] != "m.megolm.v1.aes-sha2" or
-                not is_nil(State.get(room.id, type, key))),
+                (encryption && encryption["content"]["algorithm"] != content["algorithm"])),
            do: Repo.rollback(:forbidden)
 
-        if type == "m.room.join_rules" and content["join_rule"] not in ~w(invite public),
-          do: Repo.rollback(:invalid_param)
+        if type == "m.room.join_rules" and
+             content["join_rule"] not in ~w(invite public knock restricted knock_restricted private),
+           do: Repo.rollback(:invalid_param)
 
         if type == "m.room.history_visibility" and
              content["history_visibility"] not in ~w(invited joined shared world_readable),
@@ -278,22 +338,32 @@ defmodule LakehouseMatrix.ClientRooms do
   defp valid_state_content?(_, _), do: true
 
   def persist(principal, room, type, content, key) do
-    ctx = %Context{
-      room_id: room,
-      principal_id: principal,
-      sender: user_id(principal),
-      event_id: Identity.new_event_id(),
-      type: type,
-      content: content,
-      state_key: key,
-      origin_server_ts: System.system_time(:millisecond)
-    }
+    if LakehouseMatrix.Protocol.Graph.room(room) do
+      case LakehouseMatrix.Protocol.Graph.send(room, user_id(principal), type, content, key) do
+        {:ok, event} ->
+          {:ok, Events.to_client_event(Repo.get_by!(RoomEvent, event_id: event["event_id"]))}
 
-    if not is_nil(key),
-      do: State.upsert(room, key, type, content, ctx.event_id, ctx.origin_server_ts)
+        error ->
+          error
+      end
+    else
+      ctx = %Context{
+        room_id: room,
+        principal_id: principal,
+        sender: user_id(principal),
+        event_id: Identity.new_event_id(),
+        type: type,
+        content: content,
+        state_key: key,
+        origin_server_ts: System.system_time(:millisecond)
+      }
 
-    with {:ok, record} <- Events.persist(ctx, %{"content" => content}),
-         do: {:ok, Events.to_client_event(record)}
+      if not is_nil(key),
+        do: State.upsert(room, key, type, content, ctx.event_id, ctx.origin_server_ts)
+
+      with {:ok, record} <- Events.persist(ctx, %{"content" => content}),
+           do: {:ok, Events.to_client_event(record)}
+    end
   end
 
   def event(principal, ref, event) do
@@ -311,14 +381,20 @@ defmodule LakehouseMatrix.ClientRooms do
       ClientStore.transaction(principal, device, "redact:" <> room.id, txn, fn ->
         original = Repo.get_by(RoomEvent, room_id: room.id, event_id: target)
 
+        native = not is_nil(LakehouseMatrix.Protocol.Graph.room(room.id))
+
         allowed =
-          original &&
-            (original.principal_id == principal or
-               power(principal, room.id) >= level(room.id, "redact", 50))
+          (not is_nil(original) and original.principal_id == principal) or
+            LakehouseMatrix.Protocol.Authorization.gte?(
+              power(principal, room.id),
+              level(room.id, "redact", 50)
+            )
 
         # River's control events are also its policy database. Only timeline content
         # may be redacted through Matrix; policy changes use the existing app API.
-        if allowed and is_nil(original.state_key) and
+        if allowed and is_binary(target) and byte_size(target) <= 255 and
+             String.starts_with?(target, "$") and
+             (native or (not is_nil(original) and is_nil(original.state_key))) and
              allowed_event?(principal, room.id, "m.room.redaction", false) do
           persist(
             principal,
@@ -342,26 +418,41 @@ defmodule LakehouseMatrix.ClientRooms do
          true <- type in ~w(m.read m.read.private),
          %{} = target <- Repo.get_by(RoomEvent, room_id: room.id, event_id: event),
          true <- is_nil(data["thread_id"]) or is_binary(data["thread_id"]) do
-      thread = data["thread_id"] || ""
-      receipt = Map.put(Map.take(data, ["thread_id"]), "ts", System.system_time(:millisecond))
+      LakehouseMatrix.Protocol.Policy.transaction(fn ->
+        ClientStore.lock!()
+        thread = data["thread_id"] || ""
+        receipt = Map.put(Map.take(data, ["thread_id"]), "ts", System.system_time(:millisecond))
 
-      Repo.insert_all(
-        "matrix_receipts",
-        [
-          %{
-            principal_id: ClientStore.dump_id(principal),
-            room_id: ClientStore.dump_id(room.id),
-            type: type,
-            thread_id: thread,
-            event_id: target.event_id,
-            data: receipt
-          }
-        ],
-        conflict_target: [:principal_id, :room_id, :type, :thread_id],
-        on_conflict: [set: [event_id: target.event_id, data: receipt]]
-      )
+        Repo.insert_all(
+          "matrix_receipts",
+          [
+            %{
+              principal_id: ClientStore.dump_id(principal),
+              room_id: ClientStore.dump_id(room.id),
+              type: type,
+              thread_id: thread,
+              event_id: target.event_id,
+              data: receipt
+            }
+          ],
+          conflict_target: [:principal_id, :room_id, :type, :thread_id],
+          on_conflict: [set: [event_id: target.event_id, data: receipt]]
+        )
 
-      {:ok, %{}}
+        if type == "m.read" do
+          with metadata when not is_nil(metadata) <- LakehouseMatrix.Protocol.Graph.room(room.id) do
+            LakehouseMatrix.Federation.Edus.broadcast!(metadata, "m.receipt", %{
+              metadata.room_id => %{
+                "m.read" => %{
+                  user_id(principal) => %{"event_ids" => [target.event_id], "data" => receipt}
+                }
+              }
+            })
+          end
+        end
+
+        %{}
+      end)
     else
       _ -> {:error, :forbidden}
     end
@@ -369,18 +460,30 @@ defmodule LakehouseMatrix.ClientRooms do
 
   def allowed_event?(principal, room, type, state),
     do:
-      power(principal, room) >=
-        (get_in(power_content(room), ["events", type]) ||
-           level(
-             room,
-             if(state, do: "state_default", else: "events_default"),
-             if(state, do: 50, else: 0)
-           ))
+      LakehouseMatrix.Protocol.Authorization.gte?(
+        power(principal, room),
+        get_in(power_content(room), ["events", type]) ||
+          level(
+            room,
+            if(state, do: "state_default", else: "events_default"),
+            if(state, do: 50, else: 0)
+          )
+      )
 
-  def power(principal, room),
-    do:
-      get_in(power_content(room), ["users", user_id(principal)]) ||
-        if(Matrix.creator?(room, principal), do: 100, else: level(room, "users_default", 0))
+  def power(principal, room) do
+    case LakehouseMatrix.Protocol.Graph.room(room) do
+      nil ->
+        get_in(power_content(room), ["users", user_id(principal)]) ||
+          if(Matrix.creator?(room, principal), do: 100, else: level(room, "users_default", 0))
+
+      metadata ->
+        LakehouseMatrix.Protocol.Authorization.power(
+          LakehouseMatrix.Federation.RoomAccess.state(metadata),
+          user_id(principal),
+          metadata.version
+        )
+    end
+  end
 
   def level(room, key, default), do: power_content(room)[key] || default
 

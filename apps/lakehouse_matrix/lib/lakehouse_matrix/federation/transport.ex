@@ -61,7 +61,68 @@ defmodule LakehouseMatrix.Federation.Transport do
     end
   end
 
-  def fetch(endpoint, path) do
+  def request(method, server, path, content \\ nil) when method in [:get, :post, :put, :delete] do
+    case Application.get_env(:lakehouse_matrix, :federation_requester) do
+      nil -> request_https(method, server, path, content)
+      requester when is_function(requester, 4) -> requester.(method, server, path, content)
+    end
+  end
+
+  def request_raw(server, path) do
+    case Application.get_env(:lakehouse_matrix, :federation_media_requester) do
+      nil -> request_https(:get, server, path, nil, true)
+      requester when is_function(requester, 2) -> requester.(server, path)
+    end
+  end
+
+  def get_raw_url(url) do
+    uri = URI.parse(url)
+
+    with true <- uri.scheme == "https" and is_nil(uri.userinfo) and is_nil(uri.fragment),
+         true <- is_binary(uri.host) and uri.port in 1..65535 do
+      authority = if String.contains?(uri.host, ":"), do: "[" <> uri.host <> "]", else: uri.host
+      authority = authority <> if(uri.port == 443, do: "", else: ":" <> to_string(uri.port))
+      path = (uri.path || "/") <> if(uri.query, do: "?" <> uri.query, else: "")
+
+      fetch(%{host: uri.host, port: uri.port, tls_name: uri.host, authority: authority}, path,
+        raw: true,
+        max_bytes: 10_551_296
+      )
+    else
+      _ -> {:error, :blocked_address}
+    end
+  rescue
+    _ -> {:error, :invalid_param}
+  end
+
+  defp request_https(method, server, path, content, raw \\ false) do
+    with {:ok, authorization} <-
+           LakehouseMatrix.Federation.Signing.authorization(
+             method |> to_string() |> String.upcase(),
+             path,
+             server,
+             content
+           ),
+         {:ok, endpoints} <- resolve(server) do
+      options = [
+        method: method,
+        content: content,
+        headers: [{"authorization", authorization}, {"content-type", "application/json"}],
+        raw: raw,
+        max_bytes: if(raw, do: 10_551_296, else: 33_554_432)
+      ]
+
+      Enum.reduce_while(endpoints, {:error, :unavailable}, fn endpoint, _ ->
+        case fetch(endpoint, path, options) do
+          {:ok, body} -> {:halt, {:ok, body}}
+          {:error, {:http, status, _}} = error when status < 500 -> {:halt, error}
+          error -> {:cont, error}
+        end
+      end)
+    end
+  end
+
+  def fetch(endpoint, path, request_options \\ []) do
     with {:ok, ips} <- addresses(endpoint.host), true <- String.starts_with?(path, "/") do
       Enum.reduce_while(ips, {:error, :unavailable}, fn ip, _ ->
         address = ip |> :inet.ntoa() |> to_string()
@@ -70,8 +131,10 @@ defmodule LakehouseMatrix.Federation.Transport do
 
         options = [
           url: url,
-          method: :get,
-          headers: [{"host", endpoint.authority}, {"accept-encoding", "identity"}],
+          method: Keyword.get(request_options, :method, :get),
+          headers:
+            [{"host", endpoint.authority}, {"accept-encoding", "identity"}] ++
+              Keyword.get(request_options, :headers, []),
           redirect: false,
           retry: false,
           compressed: false,
@@ -85,19 +148,37 @@ defmodule LakehouseMatrix.Federation.Transport do
           into: fn {:data, data}, {req, resp} ->
             body = (resp.private[:matrix_body] || "") <> data
 
-            if byte_size(body) > 1_048_576,
+            if byte_size(body) > Keyword.get(request_options, :max_bytes, 1_048_576),
               do: raise(ArgumentError, "Matrix discovery response exceeds limit")
 
             {:cont, {req, %{resp | private: Map.put(resp.private, :matrix_body, body)}}}
           end
         ]
 
+        options =
+          if request_options[:content],
+            do: Keyword.put(options, :body, Jason.encode!(request_options[:content])),
+            else: options
+
         case Req.request(options) do
-          {:ok, %{status: 200, private: private}} ->
-            case Jason.decode(private[:matrix_body] || "") do
-              {:ok, body} when is_map(body) -> {:halt, {:ok, body}}
-              _ -> {:cont, {:error, :invalid_json}}
+          {:ok, %{status: 200, private: private, headers: headers}} ->
+            if request_options[:raw] do
+              {:halt, {:ok, %{body: private[:matrix_body] || "", headers: headers}}}
+            else
+              case Jason.decode(private[:matrix_body] || "") do
+                {:ok, body} when is_map(body) -> {:halt, {:ok, body}}
+                _ -> {:cont, {:error, :invalid_json}}
+              end
             end
+
+          {:ok, %{status: status, private: private}} ->
+            body =
+              case Jason.decode(private[:matrix_body] || "") do
+                {:ok, value} -> value
+                _ -> %{}
+              end
+
+            {:cont, {:error, {:http, status, body}}}
 
           _ ->
             {:cont, {:error, :unavailable}}

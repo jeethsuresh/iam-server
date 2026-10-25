@@ -9,8 +9,10 @@ defmodule LakehouseWeb.Matrix.MediaController do
     {body, content_type} = extract_upload(conn, params, filename)
 
     opts =
-      [filename: filename]
-      |> then(fn o -> if content_type, do: Keyword.put(o, :content_type, content_type), else: o end)
+      [filename: filename, matrix_public: conn.assigns.matrix_device_id != "legacy"]
+      |> then(fn o ->
+        if content_type, do: Keyword.put(o, :content_type, content_type), else: o
+      end)
 
     case body do
       :too_large ->
@@ -83,24 +85,69 @@ defmodule LakehouseWeb.Matrix.MediaController do
     end
   end
 
-  def download(conn, %{"serverName" => server, "mediaId" => media_id}) do
-    case Media.download(conn.assigns.principal_id, server, media_id) do
-      {:ok, %{body: body, content_type: type, filename: filename}} ->
-        conn
-        |> put_resp_content_type(type)
-        |> maybe_disposition(filename)
-        |> send_resp(200, body)
+  def download(conn, %{"serverName" => server, "mediaId" => id} = params) do
+    result = Media.download(conn.assigns.principal_id, server, id)
 
-      {:error, :not_found} ->
-        matrix_error(conn, 404, "M_NOT_FOUND", "Media not found")
+    result =
+      case result do
+        {:ok, media} ->
+          {:ok, if(params["fileName"], do: %{media | filename: params["fileName"]}, else: media)}
 
-      {:error, :forbidden} ->
-        matrix_error(conn, 403, "M_FORBIDDEN", "You cannot access this media")
+        error ->
+          error
+      end
 
-      {:error, _} ->
-        matrix_error(conn, 400, "M_UNKNOWN", "Download failed")
+    serve(conn, result)
+  end
+
+  def thumbnail(conn, %{"serverName" => server, "mediaId" => id} = params),
+    do: serve(conn, Media.thumbnail(conn.assigns.principal_id, server, id, params))
+
+  def federation(conn, %{"mediaId" => id} = params) do
+    result =
+      if String.contains?(conn.request_path, "/thumbnail/"),
+        do: Media.federation_thumbnail(id, params),
+        else: Media.federation_download(id)
+
+    case result do
+      {:ok, media} ->
+        {type, body} = LakehouseMatrix.Federation.Media.encode(media)
+        conn |> put_resp_header("content-type", type) |> send_resp(200, body)
+
+      error ->
+        serve(conn, error)
     end
   end
+
+  defp serve(conn, {:ok, media}) do
+    type = LakehouseMatrix.Federation.Media.safe_type(media.content_type)
+
+    conn
+    |> put_resp_header("content-type", type)
+    |> put_resp_header(
+      "content-disposition",
+      LakehouseMatrix.Federation.Media.disposition(type, media.filename)
+    )
+    |> put_resp_header(
+      "content-security-policy",
+      "sandbox; default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; object-src 'self'"
+    )
+    |> put_resp_header("x-content-type-options", "nosniff")
+    |> put_resp_header("cross-origin-resource-policy", "cross-origin")
+    |> send_resp(200, media.body)
+  end
+
+  defp serve(conn, {:error, :not_found}),
+    do: matrix_error(conn, 404, "M_NOT_FOUND", "Media not found")
+
+  defp serve(conn, {:error, :forbidden}),
+    do: matrix_error(conn, 403, "M_FORBIDDEN", "You cannot access this media")
+
+  defp serve(conn, {:error, :too_large}),
+    do: matrix_error(conn, 502, "M_TOO_LARGE", "Remote media exceeds the server limit")
+
+  defp serve(conn, {:error, _}),
+    do: matrix_error(conn, 400, "M_UNKNOWN", "Cannot retrieve this media")
 
   defp read_body_bytes(conn) do
     case Plug.Conn.read_body(conn, length: 11 * 1024 * 1024) do
@@ -108,12 +155,6 @@ defmodule LakehouseWeb.Matrix.MediaController do
       {:more, _, _} -> :too_large
       {:error, _} -> ""
     end
-  end
-
-  defp maybe_disposition(conn, nil), do: conn
-
-  defp maybe_disposition(conn, filename) do
-    put_resp_header(conn, "content-disposition", ~s(inline; filename="#{filename}"))
   end
 
   defp matrix_error(conn, status, errcode, error) do

@@ -1,0 +1,8 @@
+{
+  "name": "gravitas-matrix-interop",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "matrix-js-sdk": "44.0.0"
+  }
+}

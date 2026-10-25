@@ -23,7 +23,13 @@ defmodule LakehouseMatrix.Rooms do
 
   @spec get_room_by_alias(String.t()) :: {:ok, Room.t()} | {:error, :room_not_found}
   def get_room_by_alias(alias_name) do
-    case Repo.one(from r in Room, where: r.alias == ^alias_name) do
+    case Repo.one(
+           from r in Room,
+             join: a in "matrix_room_aliases",
+             on: a.local_room_id == r.id,
+             where: a.name == ^alias_name,
+             select: r
+         ) || Repo.one(from r in Room, where: r.alias == ^alias_name) do
       nil -> {:error, :room_not_found}
       room -> {:ok, room}
     end

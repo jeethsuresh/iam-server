@@ -3,6 +3,44 @@ defmodule LakehouseWeb.Matrix.ProtocolController do
   alias LakehouseIam.Repo
   alias LakehouseMatrix.{ClientKeys, ClientRooms, ClientStore, ClientSync, Identity, Memberships}
 
+  def resolve_alias(conn, %{"roomAlias" => ref}),
+    do: respond(conn, LakehouseMatrix.Directory.resolve(ref))
+
+  def set_alias(conn, %{"roomAlias" => ref} = params),
+    do: respond(conn, LakehouseMatrix.Directory.put(principal(conn), ref, params["room_id"]))
+
+  def delete_alias(conn, %{"roomAlias" => ref}),
+    do: respond(conn, LakehouseMatrix.Directory.delete(principal(conn), ref))
+
+  def local_aliases(conn, %{"roomId" => ref}),
+    do: respond(conn, LakehouseMatrix.Directory.aliases(principal(conn), ref))
+
+  def directory_visibility(conn, %{"roomId" => ref}),
+    do: respond(conn, LakehouseMatrix.Directory.visibility(ref))
+
+  def set_directory_visibility(conn, %{"roomId" => ref} = params),
+    do:
+      respond(
+        conn,
+        LakehouseMatrix.Directory.visibility(
+          principal(conn),
+          ref,
+          params["visibility"] || "public"
+        )
+      )
+
+  def public_rooms(conn, params),
+    do: respond(conn, LakehouseMatrix.Directory.client_public_rooms(params))
+
+  def moderate(conn, %{"roomId" => ref} = params) do
+    action = conn.request_path |> String.split("/") |> List.last()
+
+    respond(
+      conn,
+      ClientRooms.moderate(principal(conn), ref, action, params["user_id"], params["reason"])
+    )
+  end
+
   def create_room(conn, params), do: respond(conn, ClientRooms.create(principal(conn), params))
   def login_flows(conn, _), do: json(conn, %{"flows" => [%{"type" => "m.login.password"}]})
 
@@ -21,6 +59,25 @@ defmodule LakehouseWeb.Matrix.ProtocolController do
         "A supported login type, user and password are required"
       )
     end
+  end
+
+  def typing(conn, %{"roomId" => room, "userId" => user} = params),
+    do: respond(conn, LakehouseMatrix.Ephemeral.typing(principal(conn), room, user, params))
+
+  def presence(conn, %{"userId" => user} = params) do
+    result =
+      cond do
+        conn.method == "GET" ->
+          LakehouseMatrix.Ephemeral.get_presence(principal(conn), user)
+
+        user == Identity.user_id(conn.assigns.username) ->
+          LakehouseMatrix.Ephemeral.set_presence(principal(conn), params)
+
+        true ->
+          {:error, :forbidden}
+      end
+
+    respond(conn, result)
   end
 
   def sync(conn, params),
@@ -59,6 +116,91 @@ defmodule LakehouseWeb.Matrix.ProtocolController do
 
   def update_device(conn, %{"device" => device} = params),
     do: respond(conn, ClientStore.update_device(principal(conn), device, params["display_name"]))
+
+  def delete_device(conn, %{"device" => target}), do: delete_devices(conn, [target])
+
+  def delete_devices(conn, %{"devices" => devices}) when is_list(devices),
+    do: delete_devices(conn, devices)
+
+  def delete_devices(conn, devices) when is_list(devices) do
+    respond(
+      conn,
+      LakehouseMatrix.ClientUia.perform(
+        principal(conn),
+        device(conn),
+        "delete_devices:" <> Jason.encode!(devices),
+        body(conn),
+        fn -> ClientStore.delete_devices(principal(conn), devices) end
+      )
+    )
+  end
+
+  def delete_devices(conn, _), do: respond(conn, {:error, :invalid_param})
+
+  def cross_signing_upload(conn, _) do
+    result = LakehouseMatrix.CrossSigning.upload(principal(conn), body(conn))
+
+    result =
+      if result == {:error, :reauth_required} do
+        LakehouseMatrix.ClientUia.perform(
+          principal(conn),
+          device(conn),
+          "cross_signing",
+          body(conn),
+          fn -> LakehouseMatrix.CrossSigning.upload(principal(conn), body(conn), true) end
+        )
+      else
+        result
+      end
+
+    respond(conn, result)
+  end
+
+  def signatures_upload(conn, _),
+    do: respond(conn, LakehouseMatrix.CrossSigning.signatures(principal(conn), body(conn)))
+
+  def key_changes(conn, %{"from" => lower, "to" => upper}) do
+    with {:ok, low} <-
+           LakehouseMatrix.Cursor.decode(lower, "sync", principal(conn), device(conn)),
+         {:ok, high} <-
+           LakehouseMatrix.Cursor.decode(upper, "sync", principal(conn), device(conn)),
+         true <- low <= high and high <= ClientStore.position(),
+         do: respond(conn, {:ok, ClientSync.device_lists(principal(conn), low, high)}),
+         else: (_ -> respond(conn, {:error, :invalid_param}))
+  end
+
+  def key_changes(conn, _), do: respond(conn, {:error, :invalid_param})
+
+  def backup_version(conn, params) do
+    alias LakehouseMatrix.KeyBackups
+
+    result =
+      case conn.method do
+        "GET" -> KeyBackups.version(principal(conn), params["version"])
+        "POST" -> KeyBackups.create(principal(conn), body(conn))
+        "PUT" -> KeyBackups.update(principal(conn), params["version"], body(conn))
+        "DELETE" -> KeyBackups.delete_version(principal(conn), params["version"])
+      end
+
+    respond(conn, result)
+  end
+
+  def backup_keys(conn, %{"version" => version} = params) when is_binary(version) do
+    alias LakehouseMatrix.KeyBackups
+    room = params["roomId"]
+    session = params["sessionId"]
+
+    result =
+      case conn.method do
+        "GET" -> KeyBackups.get(principal(conn), version, room, session)
+        "PUT" -> KeyBackups.put(principal(conn), version, body(conn), room, session)
+        "DELETE" -> KeyBackups.delete(principal(conn), version, room, session)
+      end
+
+    respond(conn, result)
+  end
+
+  def backup_keys(conn, _), do: respond(conn, {:error, :invalid_param})
 
   def capabilities(conn, _),
     do:
@@ -151,7 +293,11 @@ defmodule LakehouseWeb.Matrix.ProtocolController do
         for p <- Memberships.list_members(room.id),
             into: %{},
             do:
-              {Identity.user_id(p.username), %{"display_name" => p.username, "avatar_url" => nil}}
+              {Map.get(p, :user_id) || Identity.user_id(p.username),
+               %{
+                 "display_name" => Map.get(p, :display_name, p.username),
+                 "avatar_url" => Map.get(p, :avatar_url)
+               }}
 
       json(conn, %{"joined" => joined})
     else
@@ -278,11 +424,42 @@ defmodule LakehouseWeb.Matrix.ProtocolController do
 
   def respond(conn, {:ok, body}), do: json(conn, body)
 
+  def respond(conn, {:error, {:policy_error, status, body}}),
+    do: conn |> put_status(status) |> json(body)
+
+  def respond(conn, {:error, {:uia, body}}), do: conn |> put_status(401) |> json(body)
+
+  def respond(conn, {:error, {:wrong_backup_version, version}}),
+    do:
+      conn
+      |> put_status(403)
+      |> json(%{
+        "errcode" => "M_WRONG_ROOM_KEYS_VERSION",
+        "error" => "Wrong backup version",
+        "current_version" => version
+      })
+
+  def respond(conn, {:error, {:incompatible_room_version, version}}),
+    do:
+      conn
+      |> put_status(400)
+      |> json(%{
+        "errcode" => "M_INCOMPATIBLE_ROOM_VERSION",
+        "error" => "No compatible room version",
+        "room_version" => version
+      })
+
   def respond(conn, {:error, reason}) do
     {status, code, message} =
       case reason do
+        :policy_unavailable ->
+          {503, "M_UNAVAILABLE", "The room policy server did not provide a valid signature"}
+
         :unsupported_room_version ->
           {400, "M_UNSUPPORTED_ROOM_VERSION", "This room version is not supported"}
+
+        :unable_to_authorise_join ->
+          {403, "M_UNABLE_TO_AUTHORISE_JOIN", "This server cannot authorize the restricted join"}
 
         :invalid_credentials ->
           {403, "M_FORBIDDEN", "Invalid username or password"}
@@ -292,6 +469,15 @@ defmodule LakehouseWeb.Matrix.ProtocolController do
 
         :invalid_param ->
           {400, "M_INVALID_PARAM", "Invalid request parameter"}
+
+        :limit_exceeded ->
+          {413, "M_TOO_LARGE", "Request exceeds the server limit"}
+
+        :alias_in_use ->
+          {409, "M_UNKNOWN", "This room alias already exists"}
+
+        :unavailable ->
+          {502, "M_UNAVAILABLE", "The remote server is unavailable"}
 
         :not_found ->
           {404, "M_NOT_FOUND", "Not found"}

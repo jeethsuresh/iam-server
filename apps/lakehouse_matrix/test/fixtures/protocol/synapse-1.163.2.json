@@ -1,0 +1,2500 @@
+{
+  "reference": "Unmodified Synapse v1.163.2; independently matched hashes, signatures, IDs and resolved state on 2026-10-24",
+  "cases": [
+    {
+      "events": [
+        {
+          "id": "$-BLXB92gG87JxiFRMzyATTvDouYCxZY_9tMHF7_gCrU",
+          "pdu": {
+            "auth_events": [
+              "$hT8zJ0K2Uj9pd378HZOFHJKRCGdfyuqY-SEcBOJSqNU",
+              "$dmDN-8bmvaYWtwJEum5mfJTr7T7G21Gml9Doo61C-e8",
+              "$S5YTVdhL7pS7Q4-BI04Dsc9_9JwDgWrR7FJzjFsl9aM"
+            ],
+            "content": {
+              "join_rule": "public"
+            },
+            "depth": 3,
+            "hashes": {
+              "sha256": "BAALBK2v5XK6GOduZ09ajUNWMtyHNcEdlGiBchIySOs"
+            },
+            "origin_server_ts": 1000003,
+            "prev_events": [
+              "$dmDN-8bmvaYWtwJEum5mfJTr7T7G21Gml9Doo61C-e8"
+            ],
+            "room_id": "!test:example.org",
+            "sender": "@alice:example.org",
+            "signatures": {
+              "example.org": {
+                "ed25519:test": "B5Ys0paYzO8puVWEBHjyAMMJwH91TEkW5J3Db7WScR7973PgWEuXLarHqUgaTWmQjveHSpPtDceK7h2Fkwv0DQ"
+              }
+            },
+            "state_key": "",
+            "type": "m.room.join_rules"
+          }
+        },
+        {
+          "id": "$0-TzOT-fK31AglAMWx6RQhwyWYHK9gzracwVTi80sMk",
+          "pdu": {
+            "auth_events": [
+              "$hT8zJ0K2Uj9pd378HZOFHJKRCGdfyuqY-SEcBOJSqNU",
+              "$dmDN-8bmvaYWtwJEum5mfJTr7T7G21Gml9Doo61C-e8",
+              "$S5YTVdhL7pS7Q4-BI04Dsc9_9JwDgWrR7FJzjFsl9aM"
+            ],
+            "content": {
+              "topic": "left"
+            },
+            "depth": 4,
+            "hashes": {
+              "sha256": "wx6jNuOKpyetBE8F3flcIBVeJ8WqRxheEHn852b8cTk"
+            },
+            "origin_server_ts": 3000000,
+            "prev_events": [
+              "$-BLXB92gG87JxiFRMzyATTvDouYCxZY_9tMHF7_gCrU"
+            ],
+            "room_id": "!test:example.org",
+            "sender": "@alice:example.org",
+            "signatures": {
+              "example.org": {
+                "ed25519:test": "1uRbI99PgUrw+E5dIqdS3B+UGcNeJqvNKA38SECygLfswhCWhpuJFh2bJ2nv5RUZ7KMFGvn1AcHHK0UOVQJICQ"
+              }
+            },
+            "state_key": "",
+            "type": "m.room.topic"
+          }
+        },
+        {
+          "id": "$DLUPH09RrpgKuoQcAYnB5MnDkesYWQxnTaV-bvumEKI",
+          "pdu": {
+            "auth_events": [
+              "$hT8zJ0K2Uj9pd378HZOFHJKRCGdfyuqY-SEcBOJSqNU",
+              "$dmDN-8bmvaYWtwJEum5mfJTr7T7G21Gml9Doo61C-e8",
+              "$S5YTVdhL7pS7Q4-BI04Dsc9_9JwDgWrR7FJzjFsl9aM"
+            ],
+            "content": {
+              "topic": "right"
+            },
+            "depth": 4,
+            "hashes": {
+              "sha256": "QAnMW1Zx/7Y9jK+z0IpId8zHWMMXi9XX1bHet3+/qlM"
+            },
+            "origin_server_ts": 3000000,
+            "prev_events": [
+              "$-BLXB92gG87JxiFRMzyATTvDouYCxZY_9tMHF7_gCrU"
+            ],
+            "room_id": "!test:example.org",
+            "sender": "@alice:example.org",
+            "signatures": {
+              "example.org": {
+                "ed25519:test": "ukMxiswbQ/W14teTp/BzchpxwPVcY7sU/x/zZh/HXYfjZRhime4o5KtyjqMwU/uPJmh25weJjqIeImXN6O2CBQ"
+              }
+            },
+            "state_key": "",
+            "type": "m.room.topic"
+          }
+        },
+        {
+          "id": "$S5YTVdhL7pS7Q4-BI04Dsc9_9JwDgWrR7FJzjFsl9aM",
+          "pdu": {
+            "auth_events": [
+              "$hT8zJ0K2Uj9pd378HZOFHJKRCGdfyuqY-SEcBOJSqNU"
+            ],
+            "content": {
+              "membership": "join"
+            },
+            "depth": 1,
+            "hashes": {
+              "sha256": "27F+eOVJWuxYtBLlFLpTBQKmq5lQ5BbHjxzqpo5HBa0"
+            },
+            "origin_server_ts": 1000001,
+            "prev_events": [
+              "$hT8zJ0K2Uj9pd378HZOFHJKRCGdfyuqY-SEcBOJSqNU"
+            ],
+            "room_id": "!test:example.org",
+            "sender": "@alice:example.org",
+            "signatures": {
+              "example.org": {
+                "ed25519:test": "nbt0IyXRgZ5v2SvmDHQS/8HmTG5TnnJyACl32yoP9X2gMZ7k03WgtkzqTXTqp//SgBCoyzzVR8I1TNc9in/bCQ"
+              }
+            },
+            "state_key": "@alice:example.org",
+            "type": "m.room.member"
+          }
+        },
+        {
+          "id": "$dmDN-8bmvaYWtwJEum5mfJTr7T7G21Gml9Doo61C-e8",
+          "pdu": {
+            "auth_events": [
+              "$hT8zJ0K2Uj9pd378HZOFHJKRCGdfyuqY-SEcBOJSqNU",
+              "$S5YTVdhL7pS7Q4-BI04Dsc9_9JwDgWrR7FJzjFsl9aM"
+            ],
+            "content": {
+              "state_default": 50,
+              "users": {
+                "@alice:example.org": 100
+              }
+            },
+            "depth": 2,
+            "hashes": {
+              "sha256": "LV8BUUKzMaV1fkfEmsCsje36QoJv7hskSABOpmjOgXI"
+            },
+            "origin_server_ts": 1000002,
+            "prev_events": [
+              "$S5YTVdhL7pS7Q4-BI04Dsc9_9JwDgWrR7FJzjFsl9aM"
+            ],
+            "room_id": "!test:example.org",
+            "sender": "@alice:example.org",
+            "signatures": {
+              "example.org": {
+                "ed25519:test": "LD7DLjIya2CYMKVyINVnR7yzE58UDs4lck1XqsMotWvQiPZl2bH73fge+KNzxrAkdSEUwlFSC6qOFb1aF0RUBQ"
+              }
+            },
+            "state_key": "",
+            "type": "m.room.power_levels"
+          }
+        },
+        {
+          "id": "$hT8zJ0K2Uj9pd378HZOFHJKRCGdfyuqY-SEcBOJSqNU",
+          "pdu": {
+            "auth_events": [],
+            "content": {
+              "room_version": "11"
+            },
+            "depth": 0,
+            "hashes": {
+              "sha256": "NuREyOJZYkhZBdW4v5On6wmH+BfhffaAM9zu0/GXEPw"
+            },
+            "origin_server_ts": 1000000,
+            "prev_events": [],
+            "room_id": "!test:example.org",
+            "sender": "@alice:example.org",
+            "signatures": {
+              "example.org": {
+                "ed25519:test": "uQ75nq6O8OALU+MBcm+AfWjJO6ff/YGzIK1bjaYpF4pgF+cnh29+YBF3thsPUuhF08EOXF/XogmB7YjF4QUICg"
+              }
+            },
+            "state_key": "",
+            "type": "m.room.create"
+          }
+        }
+      ],
+      "name": "11:topics",
+      "room_id": "!test:example.org",
+      "states": [
+        [
+          [
+            "m.room.create",
+            "",
+            "$hT8zJ0K2Uj9pd378HZOFHJKRCGdfyuqY-SEcBOJSqNU"
+          ],
+          [
+            "m.room.join_rules",
+            "",
+            "$-BLXB92gG87JxiFRMzyATTvDouYCxZY_9tMHF7_gCrU"
+          ],
+          [
+            "m.room.member",
+            "@alice:example.org",
+            "$S5YTVdhL7pS7Q4-BI04Dsc9_9JwDgWrR7FJzjFsl9aM"
+          ],
+          [
+            "m.room.power_levels",
+            "",
+            "$dmDN-8bmvaYWtwJEum5mfJTr7T7G21Gml9Doo61C-e8"
+          ],
+          [
+            "m.room.topic",
+            "",
+            "$0-TzOT-fK31AglAMWx6RQhwyWYHK9gzracwVTi80sMk"
+          ]
+        ],
+        [
+          [
+            "m.room.create",
+            "",
+            "$hT8zJ0K2Uj9pd378HZOFHJKRCGdfyuqY-SEcBOJSqNU"
+          ],
+          [
+            "m.room.join_rules",
+            "",
+            "$-BLXB92gG87JxiFRMzyATTvDouYCxZY_9tMHF7_gCrU"
+          ],
+          [
+            "m.room.member",
+            "@alice:example.org",
+            "$S5YTVdhL7pS7Q4-BI04Dsc9_9JwDgWrR7FJzjFsl9aM"
+          ],
+          [
+            "m.room.power_levels",
+            "",
+            "$dmDN-8bmvaYWtwJEum5mfJTr7T7G21Gml9Doo61C-e8"
+          ],
+          [
+            "m.room.topic",
+            "",
+            "$DLUPH09RrpgKuoQcAYnB5MnDkesYWQxnTaV-bvumEKI"
+          ]
+        ]
+      ],
+      "version": "11",
+      "expected_state": [
+        [
+          "m.room.create",
+          "",
+          "$hT8zJ0K2Uj9pd378HZOFHJKRCGdfyuqY-SEcBOJSqNU"
+        ],
+        [
+          "m.room.join_rules",
+          "",
+          "$-BLXB92gG87JxiFRMzyATTvDouYCxZY_9tMHF7_gCrU"
+        ],
+        [
+          "m.room.member",
+          "@alice:example.org",
+          "$S5YTVdhL7pS7Q4-BI04Dsc9_9JwDgWrR7FJzjFsl9aM"
+        ],
+        [
+          "m.room.power_levels",
+          "",
+          "$dmDN-8bmvaYWtwJEum5mfJTr7T7G21Gml9Doo61C-e8"
+        ],
+        [
+          "m.room.topic",
+          "",
+          "$DLUPH09RrpgKuoQcAYnB5MnDkesYWQxnTaV-bvumEKI"
+        ]
+      ]
+    },
+    {
+      "events": [
+        {
+          "id": "$-BLXB92gG87JxiFRMzyATTvDouYCxZY_9tMHF7_gCrU",
+          "pdu": {
+            "auth_events": [
+              "$hT8zJ0K2Uj9pd378HZOFHJKRCGdfyuqY-SEcBOJSqNU",
+              "$dmDN-8bmvaYWtwJEum5mfJTr7T7G21Gml9Doo61C-e8",
+              "$S5YTVdhL7pS7Q4-BI04Dsc9_9JwDgWrR7FJzjFsl9aM"
+            ],
+            "content": {
+              "join_rule": "public"
+            },
+            "depth": 3,
+            "hashes": {
+              "sha256": "BAALBK2v5XK6GOduZ09ajUNWMtyHNcEdlGiBchIySOs"
+            },
+            "origin_server_ts": 1000003,
+            "prev_events": [
+              "$dmDN-8bmvaYWtwJEum5mfJTr7T7G21Gml9Doo61C-e8"
+            ],
+            "room_id": "!test:example.org",
+            "sender": "@alice:example.org",
+            "signatures": {
+              "example.org": {
+                "ed25519:test": "B5Ys0paYzO8puVWEBHjyAMMJwH91TEkW5J3Db7WScR7973PgWEuXLarHqUgaTWmQjveHSpPtDceK7h2Fkwv0DQ"
+              }
+            },
+            "state_key": "",
+            "type": "m.room.join_rules"
+          }
+        },
+        {
+          "id": "$4KWIdTwyyE-0850WfJpzPIPYl_zMfNRxmMmEDv8Ls5A",
+          "pdu": {
+            "auth_events": [
+              "$hT8zJ0K2Uj9pd378HZOFHJKRCGdfyuqY-SEcBOJSqNU",
+              "$9DwHm7XPO6kunKPlu3q4btcje3CBkNaFcTQDnQDfmDA",
+              "$LJG4v3_bUyb3DvABDzALkZdWhiART7zZ_Fa17z3SIm0"
+            ],
+            "content": {
+              "topic": "evade"
+            },
+            "depth": 7,
+            "hashes": {
+              "sha256": "mMRl9LQYSDc0fbA0xyyveyXK+xrlMZDXvjSYLdl9/p4"
+            },
+            "origin_server_ts": 1000007,
+            "prev_events": [
+              "$jRer7Tse2MDogVG_B8nxbrBFX8QmQgesrjKR1TGhbdE"
+            ],
+            "room_id": "!test:example.org",
+            "sender": "@bob:remote.org",
+            "signatures": {
+              "remote.org": {
+                "ed25519:test": "qkgn4CVlxS5vDz+56E927sqTKt2Vb9elUBydRSryoiDxy6YGs/C5sLMdBNFfglNk5LavEA5kc51g9Y1Oj5WzBA"
+              }
+            },
+            "state_key": "",
+            "type": "m.room.topic"
+          }
+        },
+        {
+          "id": "$9DwHm7XPO6kunKPlu3q4btcje3CBkNaFcTQDnQDfmDA",
+          "pdu": {
+            "auth_events": [
+              "$hT8zJ0K2Uj9pd378HZOFHJKRCGdfyuqY-SEcBOJSqNU",
+              "$dmDN-8bmvaYWtwJEum5mfJTr7T7G21Gml9Doo61C-e8",
+              "$S5YTVdhL7pS7Q4-BI04Dsc9_9JwDgWrR7FJzjFsl9aM"
+            ],
+            "content": {
+              "state_default": 50,
+              "users": {
+                "@alice:example.org": 100,
+                "@bob:remote.org": 50
+              }
+            },
+            "depth": 5,
+            "hashes": {
+              "sha256": "iJTMnNHRPRkprLnIwcDJIWCwobjYFNKwPHgemx1qCtY"
+            },
+            "origin_server_ts": 1000005,
+            "prev_events": [
+              "$LJG4v3_bUyb3DvABDzALkZdWhiART7zZ_Fa17z3SIm0"
+            ],
+            "room_id": "!test:example.org",
+            "sender": "@alice:example.org",
+            "signatures": {
+              "example.org": {
+                "ed25519:test": "tmGfDbm8ZXgn0+jHXLuxFdKGjN4HtBQITCMxcb4JSy9Be97XOJo2wEECRmkqL4Mf8qE8fH0+mmTR9Nb6z3LuCg"
+              }
+            },
+            "state_key": "",
+            "type": "m.room.power_levels"
+          }
+        },
+        {
+          "id": "$LJG4v3_bUyb3DvABDzALkZdWhiART7zZ_Fa17z3SIm0",
+          "pdu": {
+            "auth_events": [
+              "$-BLXB92gG87JxiFRMzyATTvDouYCxZY_9tMHF7_gCrU",
+              "$hT8zJ0K2Uj9pd378HZOFHJKRCGdfyuqY-SEcBOJSqNU",
+              "$dmDN-8bmvaYWtwJEum5mfJTr7T7G21Gml9Doo61C-e8"
+            ],
+            "content": {
+              "membership": "join"
+            },
+            "depth": 4,
+            "hashes": {
+              "sha256": "WBMAuyq98p0cfhVEfIAtxUifOImNHreA2bA6BPkxo60"
+            },
+            "origin_server_ts": 1000004,
+            "prev_events": [
+              "$-BLXB92gG87JxiFRMzyATTvDouYCxZY_9tMHF7_gCrU"
+            ],
+            "room_id": "!test:example.org",
+            "sender": "@bob:remote.org",
+            "signatures": {
+              "remote.org": {
+                "ed25519:test": "k5sSlKc683Kw56GgKlopv1uooq/M4gH+1AqWjL7QlTk9NlD7uzFCdpBwZiivlvdW4UuaCgaayFHFA1EXo8JmAA"
+              }
+            },
+            "state_key": "@bob:remote.org",
+            "type": "m.room.member"
+          }
+        },
+        {
+          "id": "$S5YTVdhL7pS7Q4-BI04Dsc9_9JwDgWrR7FJzjFsl9aM",
+          "pdu": {
+            "auth_events": [
+              "$hT8zJ0K2Uj9pd378HZOFHJKRCGdfyuqY-SEcBOJSqNU"
+            ],
+            "content": {
+              "membership": "join"
+            },
+            "depth": 1,
+            "hashes": {
+              "sha256": "27F+eOVJWuxYtBLlFLpTBQKmq5lQ5BbHjxzqpo5HBa0"
+            },
+            "origin_server_ts": 1000001,
+            "prev_events": [
+              "$hT8zJ0K2Uj9pd378HZOFHJKRCGdfyuqY-SEcBOJSqNU"
+            ],
+            "room_id": "!test:example.org",
+            "sender": "@alice:example.org",
+            "signatures": {
+              "example.org": {
+                "ed25519:test": "nbt0IyXRgZ5v2SvmDHQS/8HmTG5TnnJyACl32yoP9X2gMZ7k03WgtkzqTXTqp//SgBCoyzzVR8I1TNc9in/bCQ"
+              }
+            },
+            "state_key": "@alice:example.org",
+            "type": "m.room.member"
+          }
+        },
+        {
+          "id": "$dmDN-8bmvaYWtwJEum5mfJTr7T7G21Gml9Doo61C-e8",
+          "pdu": {
+            "auth_events": [
+              "$hT8zJ0K2Uj9pd378HZOFHJKRCGdfyuqY-SEcBOJSqNU",
+              "$S5YTVdhL7pS7Q4-BI04Dsc9_9JwDgWrR7FJzjFsl9aM"
+            ],
+            "content": {
+              "state_default": 50,
+              "users": {
+                "@alice:example.org": 100
+              }
+            },
+            "depth": 2,
+            "hashes": {
+              "sha256": "LV8BUUKzMaV1fkfEmsCsje36QoJv7hskSABOpmjOgXI"
+            },
+            "origin_server_ts": 1000002,
+            "prev_events": [
+              "$S5YTVdhL7pS7Q4-BI04Dsc9_9JwDgWrR7FJzjFsl9aM"
+            ],
+            "room_id": "!test:example.org",
+            "sender": "@alice:example.org",
+            "signatures": {
+              "example.org": {
+                "ed25519:test": "LD7DLjIya2CYMKVyINVnR7yzE58UDs4lck1XqsMotWvQiPZl2bH73fge+KNzxrAkdSEUwlFSC6qOFb1aF0RUBQ"
+              }
+            },
+            "state_key": "",
+            "type": "m.room.power_levels"
+          }
+        },
+        {
+          "id": "$hT8zJ0K2Uj9pd378HZOFHJKRCGdfyuqY-SEcBOJSqNU",
+          "pdu": {
+            "auth_events": [],
+            "content": {
+              "room_version": "11"
+            },
+            "depth": 0,
+            "hashes": {
+              "sha256": "NuREyOJZYkhZBdW4v5On6wmH+BfhffaAM9zu0/GXEPw"
+            },
+            "origin_server_ts": 1000000,
+            "prev_events": [],
+            "room_id": "!test:example.org",
+            "sender": "@alice:example.org",
+            "signatures": {
+              "example.org": {
+                "ed25519:test": "uQ75nq6O8OALU+MBcm+AfWjJO6ff/YGzIK1bjaYpF4pgF+cnh29+YBF3thsPUuhF08EOXF/XogmB7YjF4QUICg"
+              }
+            },
+            "state_key": "",
+            "type": "m.room.create"
+          }
+        },
+        {
+          "id": "$jRer7Tse2MDogVG_B8nxbrBFX8QmQgesrjKR1TGhbdE",
+          "pdu": {
+            "auth_events": [
+              "$hT8zJ0K2Uj9pd378HZOFHJKRCGdfyuqY-SEcBOJSqNU",
+              "$9DwHm7XPO6kunKPlu3q4btcje3CBkNaFcTQDnQDfmDA",
+              "$S5YTVdhL7pS7Q4-BI04Dsc9_9JwDgWrR7FJzjFsl9aM"
+            ],
+            "content": {
+              "topic": "original"
+            },
+            "depth": 6,
+            "hashes": {
+              "sha256": "HecsZ0K6P+zAE2gyYJ1s3VaKJLC7dYfPq8AqfKR6bzs"
+            },
+            "origin_server_ts": 1000006,
+            "prev_events": [
+              "$9DwHm7XPO6kunKPlu3q4btcje3CBkNaFcTQDnQDfmDA"
+            ],
+            "room_id": "!test:example.org",
+            "sender": "@alice:example.org",
+            "signatures": {
+              "example.org": {
+                "ed25519:test": "Li5DKED+FcM0POMGpjHjzQxwg2a8pPFwGyV25k7lU3g4q3YJ+gqm/hQkyuFPZ9Xk9iiXo6q3xYvAakH8fD1SAA"
+              }
+            },
+            "state_key": "",
+            "type": "m.room.topic"
+          }
+        },
+        {
+          "id": "$wzGjg655v-54oPxaC1t9RHh7_wGaRDnA1GBeX6GxDwQ",
+          "pdu": {
+            "auth_events": [
+              "$LJG4v3_bUyb3DvABDzALkZdWhiART7zZ_Fa17z3SIm0",
+              "$hT8zJ0K2Uj9pd378HZOFHJKRCGdfyuqY-SEcBOJSqNU",
+              "$9DwHm7XPO6kunKPlu3q4btcje3CBkNaFcTQDnQDfmDA",
+              "$S5YTVdhL7pS7Q4-BI04Dsc9_9JwDgWrR7FJzjFsl9aM"
+            ],
+            "content": {
+              "membership": "ban"
+            },
+            "depth": 7,
+            "hashes": {
+              "sha256": "jNEVO6Volk9LktYL7a37HBbXOaMwvhHVVFRWdNh3tyQ"
+            },
+            "origin_server_ts": 1000007,
+            "prev_events": [
+              "$jRer7Tse2MDogVG_B8nxbrBFX8QmQgesrjKR1TGhbdE"
+            ],
+            "room_id": "!test:example.org",
+            "sender": "@alice:example.org",
+            "signatures": {
+              "example.org": {
+                "ed25519:test": "BZDogKpUcD7JNZWukryeiWmvo7M2JLy5PsxCSi8UDw4PD/rg3yadQNlWSQ80TjCUDE8HXQUNV54uw9X9MxbTCA"
+              }
+            },
+            "state_key": "@bob:remote.org",
+            "type": "m.room.member"
+          }
+        }
+      ],
+      "name": "11:ban_topic",
+      "room_id": "!test:example.org",
+      "states": [
+        [
+          [
+            "m.room.create",
+            "",
+            "$hT8zJ0K2Uj9pd378HZOFHJKRCGdfyuqY-SEcBOJSqNU"
+          ],
+          [
+            "m.room.join_rules",
+            "",
+            "$-BLXB92gG87JxiFRMzyATTvDouYCxZY_9tMHF7_gCrU"
+          ],
+          [
+            "m.room.member",
+            "@alice:example.org",
+            "$S5YTVdhL7pS7Q4-BI04Dsc9_9JwDgWrR7FJzjFsl9aM"
+          ],
+          [
+            "m.room.member",
+            "@bob:remote.org",
+            "$wzGjg655v-54oPxaC1t9RHh7_wGaRDnA1GBeX6GxDwQ"
+          ],
+          [
+            "m.room.power_levels",
+            "",
+            "$9DwHm7XPO6kunKPlu3q4btcje3CBkNaFcTQDnQDfmDA"
+          ],
+          [
+            "m.room.topic",
+            "",
+            "$jRer7Tse2MDogVG_B8nxbrBFX8QmQgesrjKR1TGhbdE"
+          ]
+        ],
+        [
+          [
+            "m.room.create",
+            "",
+            "$hT8zJ0K2Uj9pd378HZOFHJKRCGdfyuqY-SEcBOJSqNU"
+          ],
+          [
+            "m.room.join_rules",
+            "",
+            "$-BLXB92gG87JxiFRMzyATTvDouYCxZY_9tMHF7_gCrU"
+          ],
+          [
+            "m.room.member",
+            "@alice:example.org",
+            "$S5YTVdhL7pS7Q4-BI04Dsc9_9JwDgWrR7FJzjFsl9aM"
+          ],
+          [
+            "m.room.member",
+            "@bob:remote.org",
+            "$LJG4v3_bUyb3DvABDzALkZdWhiART7zZ_Fa17z3SIm0"
+          ],
+          [
+            "m.room.power_levels",
+            "",
+            "$9DwHm7XPO6kunKPlu3q4btcje3CBkNaFcTQDnQDfmDA"
+          ],
+          [
+            "m.room.topic",
+            "",
+            "$4KWIdTwyyE-0850WfJpzPIPYl_zMfNRxmMmEDv8Ls5A"
+          ]
+        ]
+      ],
+      "version": "11",
+      "expected_state": [
+        [
+          "m.room.create",
+          "",
+          "$hT8zJ0K2Uj9pd378HZOFHJKRCGdfyuqY-SEcBOJSqNU"
+        ],
+        [
+          "m.room.join_rules",
+          "",
+          "$-BLXB92gG87JxiFRMzyATTvDouYCxZY_9tMHF7_gCrU"
+        ],
+        [
+          "m.room.member",
+          "@alice:example.org",
+          "$S5YTVdhL7pS7Q4-BI04Dsc9_9JwDgWrR7FJzjFsl9aM"
+        ],
+        [
+          "m.room.member",
+          "@bob:remote.org",
+          "$wzGjg655v-54oPxaC1t9RHh7_wGaRDnA1GBeX6GxDwQ"
+        ],
+        [
+          "m.room.power_levels",
+          "",
+          "$9DwHm7XPO6kunKPlu3q4btcje3CBkNaFcTQDnQDfmDA"
+        ],
+        [
+          "m.room.topic",
+          "",
+          "$jRer7Tse2MDogVG_B8nxbrBFX8QmQgesrjKR1TGhbdE"
+        ]
+      ]
+    },
+    {
+      "events": [
+        {
+          "id": "$-BLXB92gG87JxiFRMzyATTvDouYCxZY_9tMHF7_gCrU",
+          "pdu": {
+            "auth_events": [
+              "$hT8zJ0K2Uj9pd378HZOFHJKRCGdfyuqY-SEcBOJSqNU",
+              "$dmDN-8bmvaYWtwJEum5mfJTr7T7G21Gml9Doo61C-e8",
+              "$S5YTVdhL7pS7Q4-BI04Dsc9_9JwDgWrR7FJzjFsl9aM"
+            ],
+            "content": {
+              "join_rule": "public"
+            },
+            "depth": 3,
+            "hashes": {
+              "sha256": "BAALBK2v5XK6GOduZ09ajUNWMtyHNcEdlGiBchIySOs"
+            },
+            "origin_server_ts": 1000003,
+            "prev_events": [
+              "$dmDN-8bmvaYWtwJEum5mfJTr7T7G21Gml9Doo61C-e8"
+            ],
+            "room_id": "!test:example.org",
+            "sender": "@alice:example.org",
+            "signatures": {
+              "example.org": {
+                "ed25519:test": "B5Ys0paYzO8puVWEBHjyAMMJwH91TEkW5J3Db7WScR7973PgWEuXLarHqUgaTWmQjveHSpPtDceK7h2Fkwv0DQ"
+              }
+            },
+            "state_key": "",
+            "type": "m.room.join_rules"
+          }
+        },
+        {
+          "id": "$9DwHm7XPO6kunKPlu3q4btcje3CBkNaFcTQDnQDfmDA",
+          "pdu": {
+            "auth_events": [
+              "$hT8zJ0K2Uj9pd378HZOFHJKRCGdfyuqY-SEcBOJSqNU",
+              "$dmDN-8bmvaYWtwJEum5mfJTr7T7G21Gml9Doo61C-e8",
+              "$S5YTVdhL7pS7Q4-BI04Dsc9_9JwDgWrR7FJzjFsl9aM"
+            ],
+            "content": {
+              "state_default": 50,
+              "users": {
+                "@alice:example.org": 100,
+                "@bob:remote.org": 50
+              }
+            },
+            "depth": 5,
+            "hashes": {
+              "sha256": "iJTMnNHRPRkprLnIwcDJIWCwobjYFNKwPHgemx1qCtY"
+            },
+            "origin_server_ts": 1000005,
+            "prev_events": [
+              "$LJG4v3_bUyb3DvABDzALkZdWhiART7zZ_Fa17z3SIm0"
+            ],
+            "room_id": "!test:example.org",
+            "sender": "@alice:example.org",
+            "signatures": {
+              "example.org": {
+                "ed25519:test": "tmGfDbm8ZXgn0+jHXLuxFdKGjN4HtBQITCMxcb4JSy9Be97XOJo2wEECRmkqL4Mf8qE8fH0+mmTR9Nb6z3LuCg"
+              }
+            },
+            "state_key": "",
+            "type": "m.room.power_levels"
+          }
+        },
+        {
+          "id": "$L0ZGqXfWAsHdakhWrpqBPVu1W9uk9ilnJARPIV6nTpc",
+          "pdu": {
+            "auth_events": [
+              "$hT8zJ0K2Uj9pd378HZOFHJKRCGdfyuqY-SEcBOJSqNU",
+              "$9DwHm7XPO6kunKPlu3q4btcje3CBkNaFcTQDnQDfmDA",
+              "$LJG4v3_bUyb3DvABDzALkZdWhiART7zZ_Fa17z3SIm0"
+            ],
+            "content": {
+              "state_default": 0,
+              "users": {
+                "@alice:example.org": 100,
+                "@bob:remote.org": 50
+              }
+            },
+            "depth": 7,
+            "hashes": {
+              "sha256": "5CF48gFfBvrQ07ytltjpKVhg87QPoZA4kOEFtqYk4jI"
+            },
+            "origin_server_ts": 1000007,
+            "prev_events": [
+              "$jRer7Tse2MDogVG_B8nxbrBFX8QmQgesrjKR1TGhbdE"
+            ],
+            "room_id": "!test:example.org",
+            "sender": "@bob:remote.org",
+            "signatures": {
+              "remote.org": {
+                "ed25519:test": "b5grS7RH484SbquSFBsxKufnIa0p7NU0Y6a7O+UraFSg7t9p6OYTQkKzDdN0l3LdO7j8jdlM8UCjStfxWJakDg"
+              }
+            },
+            "state_key": "",
+            "type": "m.room.power_levels"
+          }
+        },
+        {
+          "id": "$LJG4v3_bUyb3DvABDzALkZdWhiART7zZ_Fa17z3SIm0",
+          "pdu": {
+            "auth_events": [
+              "$-BLXB92gG87JxiFRMzyATTvDouYCxZY_9tMHF7_gCrU",
+              "$hT8zJ0K2Uj9pd378HZOFHJKRCGdfyuqY-SEcBOJSqNU",
+              "$dmDN-8bmvaYWtwJEum5mfJTr7T7G21Gml9Doo61C-e8"
+            ],
+            "content": {
+              "membership": "join"
+            },
+            "depth": 4,
+            "hashes": {
+              "sha256": "WBMAuyq98p0cfhVEfIAtxUifOImNHreA2bA6BPkxo60"
+            },
+            "origin_server_ts": 1000004,
+            "prev_events": [
+              "$-BLXB92gG87JxiFRMzyATTvDouYCxZY_9tMHF7_gCrU"
+            ],
+            "room_id": "!test:example.org",
+            "sender": "@bob:remote.org",
+            "signatures": {
+              "remote.org": {
+                "ed25519:test": "k5sSlKc683Kw56GgKlopv1uooq/M4gH+1AqWjL7QlTk9NlD7uzFCdpBwZiivlvdW4UuaCgaayFHFA1EXo8JmAA"
+              }
+            },
+            "state_key": "@bob:remote.org",
+            "type": "m.room.member"
+          }
+        },
+        {
+          "id": "$S5YTVdhL7pS7Q4-BI04Dsc9_9JwDgWrR7FJzjFsl9aM",
+          "pdu": {
+            "auth_events": [
+              "$hT8zJ0K2Uj9pd378HZOFHJKRCGdfyuqY-SEcBOJSqNU"
+            ],
+            "content": {
+              "membership": "join"
+            },
+            "depth": 1,
+            "hashes": {
+              "sha256": "27F+eOVJWuxYtBLlFLpTBQKmq5lQ5BbHjxzqpo5HBa0"
+            },
+            "origin_server_ts": 1000001,
+            "prev_events": [
+              "$hT8zJ0K2Uj9pd378HZOFHJKRCGdfyuqY-SEcBOJSqNU"
+            ],
+            "room_id": "!test:example.org",
+            "sender": "@alice:example.org",
+            "signatures": {
+              "example.org": {
+                "ed25519:test": "nbt0IyXRgZ5v2SvmDHQS/8HmTG5TnnJyACl32yoP9X2gMZ7k03WgtkzqTXTqp//SgBCoyzzVR8I1TNc9in/bCQ"
+              }
+            },
+            "state_key": "@alice:example.org",
+            "type": "m.room.member"
+          }
+        },
+        {
+          "id": "$dmDN-8bmvaYWtwJEum5mfJTr7T7G21Gml9Doo61C-e8",
+          "pdu": {
+            "auth_events": [
+              "$hT8zJ0K2Uj9pd378HZOFHJKRCGdfyuqY-SEcBOJSqNU",
+              "$S5YTVdhL7pS7Q4-BI04Dsc9_9JwDgWrR7FJzjFsl9aM"
+            ],
+            "content": {
+              "state_default": 50,
+              "users": {
+                "@alice:example.org": 100
+              }
+            },
+            "depth": 2,
+            "hashes": {
+              "sha256": "LV8BUUKzMaV1fkfEmsCsje36QoJv7hskSABOpmjOgXI"
+            },
+            "origin_server_ts": 1000002,
+            "prev_events": [
+              "$S5YTVdhL7pS7Q4-BI04Dsc9_9JwDgWrR7FJzjFsl9aM"
+            ],
+            "room_id": "!test:example.org",
+            "sender": "@alice:example.org",
+            "signatures": {
+              "example.org": {
+                "ed25519:test": "LD7DLjIya2CYMKVyINVnR7yzE58UDs4lck1XqsMotWvQiPZl2bH73fge+KNzxrAkdSEUwlFSC6qOFb1aF0RUBQ"
+              }
+            },
+            "state_key": "",
+            "type": "m.room.power_levels"
+          }
+        },
+        {
+          "id": "$hT8zJ0K2Uj9pd378HZOFHJKRCGdfyuqY-SEcBOJSqNU",
+          "pdu": {
+            "auth_events": [],
+            "content": {
+              "room_version": "11"
+            },
+            "depth": 0,
+            "hashes": {
+              "sha256": "NuREyOJZYkhZBdW4v5On6wmH+BfhffaAM9zu0/GXEPw"
+            },
+            "origin_server_ts": 1000000,
+            "prev_events": [],
+            "room_id": "!test:example.org",
+            "sender": "@alice:example.org",
+            "signatures": {
+              "example.org": {
+                "ed25519:test": "uQ75nq6O8OALU+MBcm+AfWjJO6ff/YGzIK1bjaYpF4pgF+cnh29+YBF3thsPUuhF08EOXF/XogmB7YjF4QUICg"
+              }
+            },
+            "state_key": "",
+            "type": "m.room.create"
+          }
+        },
+        {
+          "id": "$jRer7Tse2MDogVG_B8nxbrBFX8QmQgesrjKR1TGhbdE",
+          "pdu": {
+            "auth_events": [
+              "$hT8zJ0K2Uj9pd378HZOFHJKRCGdfyuqY-SEcBOJSqNU",
+              "$9DwHm7XPO6kunKPlu3q4btcje3CBkNaFcTQDnQDfmDA",
+              "$S5YTVdhL7pS7Q4-BI04Dsc9_9JwDgWrR7FJzjFsl9aM"
+            ],
+            "content": {
+              "topic": "original"
+            },
+            "depth": 6,
+            "hashes": {
+              "sha256": "HecsZ0K6P+zAE2gyYJ1s3VaKJLC7dYfPq8AqfKR6bzs"
+            },
+            "origin_server_ts": 1000006,
+            "prev_events": [
+              "$9DwHm7XPO6kunKPlu3q4btcje3CBkNaFcTQDnQDfmDA"
+            ],
+            "room_id": "!test:example.org",
+            "sender": "@alice:example.org",
+            "signatures": {
+              "example.org": {
+                "ed25519:test": "Li5DKED+FcM0POMGpjHjzQxwg2a8pPFwGyV25k7lU3g4q3YJ+gqm/hQkyuFPZ9Xk9iiXo6q3xYvAakH8fD1SAA"
+              }
+            },
+            "state_key": "",
+            "type": "m.room.topic"
+          }
+        },
+        {
+          "id": "$wzGjg655v-54oPxaC1t9RHh7_wGaRDnA1GBeX6GxDwQ",
+          "pdu": {
+            "auth_events": [
+              "$LJG4v3_bUyb3DvABDzALkZdWhiART7zZ_Fa17z3SIm0",
+              "$hT8zJ0K2Uj9pd378HZOFHJKRCGdfyuqY-SEcBOJSqNU",
+              "$9DwHm7XPO6kunKPlu3q4btcje3CBkNaFcTQDnQDfmDA",
+              "$S5YTVdhL7pS7Q4-BI04Dsc9_9JwDgWrR7FJzjFsl9aM"
+            ],
+            "content": {
+              "membership": "ban"
+            },
+            "depth": 7,
+            "hashes": {
+              "sha256": "jNEVO6Volk9LktYL7a37HBbXOaMwvhHVVFRWdNh3tyQ"
+            },
+            "origin_server_ts": 1000007,
+            "prev_events": [
+              "$jRer7Tse2MDogVG_B8nxbrBFX8QmQgesrjKR1TGhbdE"
+            ],
+            "room_id": "!test:example.org",
+            "sender": "@alice:example.org",
+            "signatures": {
+              "example.org": {
+                "ed25519:test": "BZDogKpUcD7JNZWukryeiWmvo7M2JLy5PsxCSi8UDw4PD/rg3yadQNlWSQ80TjCUDE8HXQUNV54uw9X9MxbTCA"
+              }
+            },
+            "state_key": "@bob:remote.org",
+            "type": "m.room.member"
+          }
+        }
+      ],
+      "name": "11:power_fork",
+      "room_id": "!test:example.org",
+      "states": [
+        [
+          [
+            "m.room.create",
+            "",
+            "$hT8zJ0K2Uj9pd378HZOFHJKRCGdfyuqY-SEcBOJSqNU"
+          ],
+          [
+            "m.room.join_rules",
+            "",
+            "$-BLXB92gG87JxiFRMzyATTvDouYCxZY_9tMHF7_gCrU"
+          ],
+          [
+            "m.room.member",
+            "@alice:example.org",
+            "$S5YTVdhL7pS7Q4-BI04Dsc9_9JwDgWrR7FJzjFsl9aM"
+          ],
+          [
+            "m.room.member",
+            "@bob:remote.org",
+            "$wzGjg655v-54oPxaC1t9RHh7_wGaRDnA1GBeX6GxDwQ"
+          ],
+          [
+            "m.room.power_levels",
+            "",
+            "$9DwHm7XPO6kunKPlu3q4btcje3CBkNaFcTQDnQDfmDA"
+          ],
+          [
+            "m.room.topic",
+            "",
+            "$jRer7Tse2MDogVG_B8nxbrBFX8QmQgesrjKR1TGhbdE"
+          ]
+        ],
+        [
+          [
+            "m.room.create",
+            "",
+            "$hT8zJ0K2Uj9pd378HZOFHJKRCGdfyuqY-SEcBOJSqNU"
+          ],
+          [
+            "m.room.join_rules",
+            "",
+            "$-BLXB92gG87JxiFRMzyATTvDouYCxZY_9tMHF7_gCrU"
+          ],
+          [
+            "m.room.member",
+            "@alice:example.org",
+            "$S5YTVdhL7pS7Q4-BI04Dsc9_9JwDgWrR7FJzjFsl9aM"
+          ],
+          [
+            "m.room.member",
+            "@bob:remote.org",
+            "$LJG4v3_bUyb3DvABDzALkZdWhiART7zZ_Fa17z3SIm0"
+          ],
+          [
+            "m.room.power_levels",
+            "",
+            "$L0ZGqXfWAsHdakhWrpqBPVu1W9uk9ilnJARPIV6nTpc"
+          ],
+          [
+            "m.room.topic",
+            "",
+            "$jRer7Tse2MDogVG_B8nxbrBFX8QmQgesrjKR1TGhbdE"
+          ]
+        ]
+      ],
+      "version": "11",
+      "expected_state": [
+        [
+          "m.room.create",
+          "",
+          "$hT8zJ0K2Uj9pd378HZOFHJKRCGdfyuqY-SEcBOJSqNU"
+        ],
+        [
+          "m.room.join_rules",
+          "",
+          "$-BLXB92gG87JxiFRMzyATTvDouYCxZY_9tMHF7_gCrU"
+        ],
+        [
+          "m.room.member",
+          "@alice:example.org",
+          "$S5YTVdhL7pS7Q4-BI04Dsc9_9JwDgWrR7FJzjFsl9aM"
+        ],
+        [
+          "m.room.member",
+          "@bob:remote.org",
+          "$wzGjg655v-54oPxaC1t9RHh7_wGaRDnA1GBeX6GxDwQ"
+        ],
+        [
+          "m.room.power_levels",
+          "",
+          "$9DwHm7XPO6kunKPlu3q4btcje3CBkNaFcTQDnQDfmDA"
+        ],
+        [
+          "m.room.topic",
+          "",
+          "$jRer7Tse2MDogVG_B8nxbrBFX8QmQgesrjKR1TGhbdE"
+        ]
+      ]
+    },
+    {
+      "events": [
+        {
+          "id": "$-BLXB92gG87JxiFRMzyATTvDouYCxZY_9tMHF7_gCrU",
+          "pdu": {
+            "auth_events": [
+              "$hT8zJ0K2Uj9pd378HZOFHJKRCGdfyuqY-SEcBOJSqNU",
+              "$dmDN-8bmvaYWtwJEum5mfJTr7T7G21Gml9Doo61C-e8",
+              "$S5YTVdhL7pS7Q4-BI04Dsc9_9JwDgWrR7FJzjFsl9aM"
+            ],
+            "content": {
+              "join_rule": "public"
+            },
+            "depth": 3,
+            "hashes": {
+              "sha256": "BAALBK2v5XK6GOduZ09ajUNWMtyHNcEdlGiBchIySOs"
+            },
+            "origin_server_ts": 1000003,
+            "prev_events": [
+              "$dmDN-8bmvaYWtwJEum5mfJTr7T7G21Gml9Doo61C-e8"
+            ],
+            "room_id": "!test:example.org",
+            "sender": "@alice:example.org",
+            "signatures": {
+              "example.org": {
+                "ed25519:test": "B5Ys0paYzO8puVWEBHjyAMMJwH91TEkW5J3Db7WScR7973PgWEuXLarHqUgaTWmQjveHSpPtDceK7h2Fkwv0DQ"
+              }
+            },
+            "state_key": "",
+            "type": "m.room.join_rules"
+          }
+        },
+        {
+          "id": "$LJG4v3_bUyb3DvABDzALkZdWhiART7zZ_Fa17z3SIm0",
+          "pdu": {
+            "auth_events": [
+              "$-BLXB92gG87JxiFRMzyATTvDouYCxZY_9tMHF7_gCrU",
+              "$hT8zJ0K2Uj9pd378HZOFHJKRCGdfyuqY-SEcBOJSqNU",
+              "$dmDN-8bmvaYWtwJEum5mfJTr7T7G21Gml9Doo61C-e8"
+            ],
+            "content": {
+              "membership": "join"
+            },
+            "depth": 4,
+            "hashes": {
+              "sha256": "WBMAuyq98p0cfhVEfIAtxUifOImNHreA2bA6BPkxo60"
+            },
+            "origin_server_ts": 1000004,
+            "prev_events": [
+              "$-BLXB92gG87JxiFRMzyATTvDouYCxZY_9tMHF7_gCrU"
+            ],
+            "room_id": "!test:example.org",
+            "sender": "@bob:remote.org",
+            "signatures": {
+              "remote.org": {
+                "ed25519:test": "k5sSlKc683Kw56GgKlopv1uooq/M4gH+1AqWjL7QlTk9NlD7uzFCdpBwZiivlvdW4UuaCgaayFHFA1EXo8JmAA"
+              }
+            },
+            "state_key": "@bob:remote.org",
+            "type": "m.room.member"
+          }
+        },
+        {
+          "id": "$RmZQheT1Rpz2ZpQr70yED7I_OBzyx7u-CqfyoSJc1wk",
+          "pdu": {
+            "auth_events": [
+              "$hT8zJ0K2Uj9pd378HZOFHJKRCGdfyuqY-SEcBOJSqNU",
+              "$dmDN-8bmvaYWtwJEum5mfJTr7T7G21Gml9Doo61C-e8",
+              "$S5YTVdhL7pS7Q4-BI04Dsc9_9JwDgWrR7FJzjFsl9aM"
+            ],
+            "content": {
+              "join_rule": "invite"
+            },
+            "depth": 4,
+            "hashes": {
+              "sha256": "c2YOFmm32Ap0wXSA54frot/QYO8sY/ZV3C3ce26/s1s"
+            },
+            "origin_server_ts": 1000004,
+            "prev_events": [
+              "$-BLXB92gG87JxiFRMzyATTvDouYCxZY_9tMHF7_gCrU"
+            ],
+            "room_id": "!test:example.org",
+            "sender": "@alice:example.org",
+            "signatures": {
+              "example.org": {
+                "ed25519:test": "KaTe94D5wzYRn6L5WD97tVBT6BHd5/0XTcR6U1PvPSW2dZ1v+hhzGmqWvzNj+UM5qZwkreHMg7UQSa4MmvOOAg"
+              }
+            },
+            "state_key": "",
+            "type": "m.room.join_rules"
+          }
+        },
+        {
+          "id": "$S5YTVdhL7pS7Q4-BI04Dsc9_9JwDgWrR7FJzjFsl9aM",
+          "pdu": {
+            "auth_events": [
+              "$hT8zJ0K2Uj9pd378HZOFHJKRCGdfyuqY-SEcBOJSqNU"
+            ],
+            "content": {
+              "membership": "join"
+            },
+            "depth": 1,
+            "hashes": {
+              "sha256": "27F+eOVJWuxYtBLlFLpTBQKmq5lQ5BbHjxzqpo5HBa0"
+            },
+            "origin_server_ts": 1000001,
+            "prev_events": [
+              "$hT8zJ0K2Uj9pd378HZOFHJKRCGdfyuqY-SEcBOJSqNU"
+            ],
+            "room_id": "!test:example.org",
+            "sender": "@alice:example.org",
+            "signatures": {
+              "example.org": {
+                "ed25519:test": "nbt0IyXRgZ5v2SvmDHQS/8HmTG5TnnJyACl32yoP9X2gMZ7k03WgtkzqTXTqp//SgBCoyzzVR8I1TNc9in/bCQ"
+              }
+            },
+            "state_key": "@alice:example.org",
+            "type": "m.room.member"
+          }
+        },
+        {
+          "id": "$dmDN-8bmvaYWtwJEum5mfJTr7T7G21Gml9Doo61C-e8",
+          "pdu": {
+            "auth_events": [
+              "$hT8zJ0K2Uj9pd378HZOFHJKRCGdfyuqY-SEcBOJSqNU",
+              "$S5YTVdhL7pS7Q4-BI04Dsc9_9JwDgWrR7FJzjFsl9aM"
+            ],
+            "content": {
+              "state_default": 50,
+              "users": {
+                "@alice:example.org": 100
+              }
+            },
+            "depth": 2,
+            "hashes": {
+              "sha256": "LV8BUUKzMaV1fkfEmsCsje36QoJv7hskSABOpmjOgXI"
+            },
+            "origin_server_ts": 1000002,
+            "prev_events": [
+              "$S5YTVdhL7pS7Q4-BI04Dsc9_9JwDgWrR7FJzjFsl9aM"
+            ],
+            "room_id": "!test:example.org",
+            "sender": "@alice:example.org",
+            "signatures": {
+              "example.org": {
+                "ed25519:test": "LD7DLjIya2CYMKVyINVnR7yzE58UDs4lck1XqsMotWvQiPZl2bH73fge+KNzxrAkdSEUwlFSC6qOFb1aF0RUBQ"
+              }
+            },
+            "state_key": "",
+            "type": "m.room.power_levels"
+          }
+        },
+        {
+          "id": "$hT8zJ0K2Uj9pd378HZOFHJKRCGdfyuqY-SEcBOJSqNU",
+          "pdu": {
+            "auth_events": [],
+            "content": {
+              "room_version": "11"
+            },
+            "depth": 0,
+            "hashes": {
+              "sha256": "NuREyOJZYkhZBdW4v5On6wmH+BfhffaAM9zu0/GXEPw"
+            },
+            "origin_server_ts": 1000000,
+            "prev_events": [],
+            "room_id": "!test:example.org",
+            "sender": "@alice:example.org",
+            "signatures": {
+              "example.org": {
+                "ed25519:test": "uQ75nq6O8OALU+MBcm+AfWjJO6ff/YGzIK1bjaYpF4pgF+cnh29+YBF3thsPUuhF08EOXF/XogmB7YjF4QUICg"
+              }
+            },
+            "state_key": "",
+            "type": "m.room.create"
+          }
+        }
+      ],
+      "name": "11:join_rule",
+      "room_id": "!test:example.org",
+      "states": [
+        [
+          [
+            "m.room.create",
+            "",
+            "$hT8zJ0K2Uj9pd378HZOFHJKRCGdfyuqY-SEcBOJSqNU"
+          ],
+          [
+            "m.room.join_rules",
+            "",
+            "$RmZQheT1Rpz2ZpQr70yED7I_OBzyx7u-CqfyoSJc1wk"
+          ],
+          [
+            "m.room.member",
+            "@alice:example.org",
+            "$S5YTVdhL7pS7Q4-BI04Dsc9_9JwDgWrR7FJzjFsl9aM"
+          ],
+          [
+            "m.room.power_levels",
+            "",
+            "$dmDN-8bmvaYWtwJEum5mfJTr7T7G21Gml9Doo61C-e8"
+          ]
+        ],
+        [
+          [
+            "m.room.create",
+            "",
+            "$hT8zJ0K2Uj9pd378HZOFHJKRCGdfyuqY-SEcBOJSqNU"
+          ],
+          [
+            "m.room.join_rules",
+            "",
+            "$-BLXB92gG87JxiFRMzyATTvDouYCxZY_9tMHF7_gCrU"
+          ],
+          [
+            "m.room.member",
+            "@alice:example.org",
+            "$S5YTVdhL7pS7Q4-BI04Dsc9_9JwDgWrR7FJzjFsl9aM"
+          ],
+          [
+            "m.room.member",
+            "@bob:remote.org",
+            "$LJG4v3_bUyb3DvABDzALkZdWhiART7zZ_Fa17z3SIm0"
+          ],
+          [
+            "m.room.power_levels",
+            "",
+            "$dmDN-8bmvaYWtwJEum5mfJTr7T7G21Gml9Doo61C-e8"
+          ]
+        ]
+      ],
+      "version": "11",
+      "expected_state": [
+        [
+          "m.room.create",
+          "",
+          "$hT8zJ0K2Uj9pd378HZOFHJKRCGdfyuqY-SEcBOJSqNU"
+        ],
+        [
+          "m.room.join_rules",
+          "",
+          "$RmZQheT1Rpz2ZpQr70yED7I_OBzyx7u-CqfyoSJc1wk"
+        ],
+        [
+          "m.room.member",
+          "@alice:example.org",
+          "$S5YTVdhL7pS7Q4-BI04Dsc9_9JwDgWrR7FJzjFsl9aM"
+        ],
+        [
+          "m.room.power_levels",
+          "",
+          "$dmDN-8bmvaYWtwJEum5mfJTr7T7G21Gml9Doo61C-e8"
+        ]
+      ]
+    },
+    {
+      "events": [
+        {
+          "id": "$1n3l9791i-qNBjeTdwODguqvOh8y8fJfHJtwzvsQwPA",
+          "pdu": {
+            "auth_events": [],
+            "content": {
+              "membership": "join"
+            },
+            "depth": 1,
+            "hashes": {
+              "sha256": "/ObjLHimalNwUNudpjefZCvgV/fCQ6u8O8cWskoNp9A"
+            },
+            "origin_server_ts": 1000001,
+            "prev_events": [
+              "$U2le6NXYZCMClJy9SNC6odNWTstCt_Kk_XbKnY25aOg"
+            ],
+            "room_id": "!U2le6NXYZCMClJy9SNC6odNWTstCt_Kk_XbKnY25aOg",
+            "sender": "@alice:example.org",
+            "signatures": {
+              "example.org": {
+                "ed25519:test": "8QNPSaYIKxOk7NPHNWrTQ0I8aIBzvULb8pSMX0rhsBDezYOV5yfCrprV8PWCAHuD5RlHtCyN7QpdhLxlubNwBQ"
+              }
+            },
+            "state_key": "@alice:example.org",
+            "type": "m.room.member"
+          }
+        },
+        {
+          "id": "$6f2Gh5cnTvszppq2UaC28LfKOFFHqv38xLbBGnyjDQM",
+          "pdu": {
+            "auth_events": [
+              "$AFdXNwjtq3qdUmF950kfh8xdNQfOS5g0o8CHbwydIRI",
+              "$1n3l9791i-qNBjeTdwODguqvOh8y8fJfHJtwzvsQwPA"
+            ],
+            "content": {
+              "join_rule": "public"
+            },
+            "depth": 3,
+            "hashes": {
+              "sha256": "4Qhp8YTCirKd8FJXY4eI5/9lBeGRD6txWr8PEA1H1dQ"
+            },
+            "origin_server_ts": 1000003,
+            "prev_events": [
+              "$AFdXNwjtq3qdUmF950kfh8xdNQfOS5g0o8CHbwydIRI"
+            ],
+            "room_id": "!U2le6NXYZCMClJy9SNC6odNWTstCt_Kk_XbKnY25aOg",
+            "sender": "@alice:example.org",
+            "signatures": {
+              "example.org": {
+                "ed25519:test": "+R9dF1HDxYX0unQUKx8ukdFcLrSfx4JR7+OLJqFvrlVl0VsyK9HDVW3v8EDH3UEyrZopgI/0YUqF/DxFq5v7CQ"
+              }
+            },
+            "state_key": "",
+            "type": "m.room.join_rules"
+          }
+        },
+        {
+          "id": "$AFdXNwjtq3qdUmF950kfh8xdNQfOS5g0o8CHbwydIRI",
+          "pdu": {
+            "auth_events": [
+              "$1n3l9791i-qNBjeTdwODguqvOh8y8fJfHJtwzvsQwPA"
+            ],
+            "content": {
+              "state_default": 50,
+              "users": {}
+            },
+            "depth": 2,
+            "hashes": {
+              "sha256": "ad4yOAZ99Bs5JzWEQcorNlHoi7OA26/RtEpnV7EByLQ"
+            },
+            "origin_server_ts": 1000002,
+            "prev_events": [
+              "$1n3l9791i-qNBjeTdwODguqvOh8y8fJfHJtwzvsQwPA"
+            ],
+            "room_id": "!U2le6NXYZCMClJy9SNC6odNWTstCt_Kk_XbKnY25aOg",
+            "sender": "@alice:example.org",
+            "signatures": {
+              "example.org": {
+                "ed25519:test": "P54UcHw3ADIFnYdio/eFOgiTRGURfMVLuBdWQtTWwNskOkmrwNdcgO6guBqL6wFmSNz0lSG4pY6hQR5R8KHZBw"
+              }
+            },
+            "state_key": "",
+            "type": "m.room.power_levels"
+          }
+        },
+        {
+          "id": "$QTcktLCllgc_Wud1qClx85L2TYlKoVg1YSN7dYSPl-E",
+          "pdu": {
+            "auth_events": [
+              "$AFdXNwjtq3qdUmF950kfh8xdNQfOS5g0o8CHbwydIRI",
+              "$1n3l9791i-qNBjeTdwODguqvOh8y8fJfHJtwzvsQwPA"
+            ],
+            "content": {
+              "topic": "right"
+            },
+            "depth": 4,
+            "hashes": {
+              "sha256": "ohZin6wjakqT7JLiERKwX9IQVbV6Ngx5AYobtdq7FoM"
+            },
+            "origin_server_ts": 3000000,
+            "prev_events": [
+              "$6f2Gh5cnTvszppq2UaC28LfKOFFHqv38xLbBGnyjDQM"
+            ],
+            "room_id": "!U2le6NXYZCMClJy9SNC6odNWTstCt_Kk_XbKnY25aOg",
+            "sender": "@alice:example.org",
+            "signatures": {
+              "example.org": {
+                "ed25519:test": "RQwGN4PDMmxdmY5VpV2SesJVN5sYgrMU2aRNree7Dq/RCdmtlrUznXBwVpZRSZMosI3eMamcO8ulvi38RDq0BQ"
+              }
+            },
+            "state_key": "",
+            "type": "m.room.topic"
+          }
+        },
+        {
+          "id": "$U2le6NXYZCMClJy9SNC6odNWTstCt_Kk_XbKnY25aOg",
+          "pdu": {
+            "auth_events": [],
+            "content": {
+              "room_version": "12"
+            },
+            "depth": 0,
+            "hashes": {
+              "sha256": "ZuY2zbKaMLZLKqhkwkyioPNbGW3PHkIA0OwXVowv4KI"
+            },
+            "origin_server_ts": 1000000,
+            "prev_events": [],
+            "sender": "@alice:example.org",
+            "signatures": {
+              "example.org": {
+                "ed25519:test": "CvIwYlf4v9Uvmw4d/fXP6temLnLMtcglq+vYolSNjnzr8nVQ9xoHd6Yu8JkDxHyEc74pzjh240lV5xDVUu4VCg"
+              }
+            },
+            "state_key": "",
+            "type": "m.room.create"
+          }
+        },
+        {
+          "id": "$m9JcM7aFjPebwyBP0QCbzbcGAP54hXy82HINe3iysqQ",
+          "pdu": {
+            "auth_events": [
+              "$AFdXNwjtq3qdUmF950kfh8xdNQfOS5g0o8CHbwydIRI",
+              "$1n3l9791i-qNBjeTdwODguqvOh8y8fJfHJtwzvsQwPA"
+            ],
+            "content": {
+              "topic": "left"
+            },
+            "depth": 4,
+            "hashes": {
+              "sha256": "+jXgTwLfKqc3PBSP92HVX7Bjiaxd8ms8Lw4mClBPjhI"
+            },
+            "origin_server_ts": 3000000,
+            "prev_events": [
+              "$6f2Gh5cnTvszppq2UaC28LfKOFFHqv38xLbBGnyjDQM"
+            ],
+            "room_id": "!U2le6NXYZCMClJy9SNC6odNWTstCt_Kk_XbKnY25aOg",
+            "sender": "@alice:example.org",
+            "signatures": {
+              "example.org": {
+                "ed25519:test": "T4vxLY5cFzaGh2sP+9OogE5xsQt2rBAnlCVFFVwhNxu+Kyk8lsUVKE4nAkw6a03Z4r09q1xDKT9KT/zu/c5yAw"
+              }
+            },
+            "state_key": "",
+            "type": "m.room.topic"
+          }
+        }
+      ],
+      "name": "12:topics",
+      "room_id": "!U2le6NXYZCMClJy9SNC6odNWTstCt_Kk_XbKnY25aOg",
+      "states": [
+        [
+          [
+            "m.room.create",
+            "",
+            "$U2le6NXYZCMClJy9SNC6odNWTstCt_Kk_XbKnY25aOg"
+          ],
+          [
+            "m.room.join_rules",
+            "",
+            "$6f2Gh5cnTvszppq2UaC28LfKOFFHqv38xLbBGnyjDQM"
+          ],
+          [
+            "m.room.member",
+            "@alice:example.org",
+            "$1n3l9791i-qNBjeTdwODguqvOh8y8fJfHJtwzvsQwPA"
+          ],
+          [
+            "m.room.power_levels",
+            "",
+            "$AFdXNwjtq3qdUmF950kfh8xdNQfOS5g0o8CHbwydIRI"
+          ],
+          [
+            "m.room.topic",
+            "",
+            "$m9JcM7aFjPebwyBP0QCbzbcGAP54hXy82HINe3iysqQ"
+          ]
+        ],
+        [
+          [
+            "m.room.create",
+            "",
+            "$U2le6NXYZCMClJy9SNC6odNWTstCt_Kk_XbKnY25aOg"
+          ],
+          [
+            "m.room.join_rules",
+            "",
+            "$6f2Gh5cnTvszppq2UaC28LfKOFFHqv38xLbBGnyjDQM"
+          ],
+          [
+            "m.room.member",
+            "@alice:example.org",
+            "$1n3l9791i-qNBjeTdwODguqvOh8y8fJfHJtwzvsQwPA"
+          ],
+          [
+            "m.room.power_levels",
+            "",
+            "$AFdXNwjtq3qdUmF950kfh8xdNQfOS5g0o8CHbwydIRI"
+          ],
+          [
+            "m.room.topic",
+            "",
+            "$QTcktLCllgc_Wud1qClx85L2TYlKoVg1YSN7dYSPl-E"
+          ]
+        ]
+      ],
+      "version": "12",
+      "expected_state": [
+        [
+          "m.room.create",
+          "",
+          "$U2le6NXYZCMClJy9SNC6odNWTstCt_Kk_XbKnY25aOg"
+        ],
+        [
+          "m.room.join_rules",
+          "",
+          "$6f2Gh5cnTvszppq2UaC28LfKOFFHqv38xLbBGnyjDQM"
+        ],
+        [
+          "m.room.member",
+          "@alice:example.org",
+          "$1n3l9791i-qNBjeTdwODguqvOh8y8fJfHJtwzvsQwPA"
+        ],
+        [
+          "m.room.power_levels",
+          "",
+          "$AFdXNwjtq3qdUmF950kfh8xdNQfOS5g0o8CHbwydIRI"
+        ],
+        [
+          "m.room.topic",
+          "",
+          "$m9JcM7aFjPebwyBP0QCbzbcGAP54hXy82HINe3iysqQ"
+        ]
+      ]
+    },
+    {
+      "events": [
+        {
+          "id": "$1n3l9791i-qNBjeTdwODguqvOh8y8fJfHJtwzvsQwPA",
+          "pdu": {
+            "auth_events": [],
+            "content": {
+              "membership": "join"
+            },
+            "depth": 1,
+            "hashes": {
+              "sha256": "/ObjLHimalNwUNudpjefZCvgV/fCQ6u8O8cWskoNp9A"
+            },
+            "origin_server_ts": 1000001,
+            "prev_events": [
+              "$U2le6NXYZCMClJy9SNC6odNWTstCt_Kk_XbKnY25aOg"
+            ],
+            "room_id": "!U2le6NXYZCMClJy9SNC6odNWTstCt_Kk_XbKnY25aOg",
+            "sender": "@alice:example.org",
+            "signatures": {
+              "example.org": {
+                "ed25519:test": "8QNPSaYIKxOk7NPHNWrTQ0I8aIBzvULb8pSMX0rhsBDezYOV5yfCrprV8PWCAHuD5RlHtCyN7QpdhLxlubNwBQ"
+              }
+            },
+            "state_key": "@alice:example.org",
+            "type": "m.room.member"
+          }
+        },
+        {
+          "id": "$1sRAbj4voOOMTgxcpqsa5OOquRjRONCe2LkgjBDFwp8",
+          "pdu": {
+            "auth_events": [
+              "$L8j4kquzN-w7P8m4htB5npWFv3ZO72I54a5zQuIMJ2I",
+              "$n9edUCHHja27ErCwde-mBR3707lCF0MzrVGpj4JHiYY"
+            ],
+            "content": {
+              "topic": "evade"
+            },
+            "depth": 7,
+            "hashes": {
+              "sha256": "EXMY8xGjK2rNP6HUiIs1nfGh8nVMnXQXezsMl1aOlug"
+            },
+            "origin_server_ts": 1000007,
+            "prev_events": [
+              "$obFVDb1XOMkhDWx-y45A-o1fTNqXP8SOmBM_Cu-Avqk"
+            ],
+            "room_id": "!U2le6NXYZCMClJy9SNC6odNWTstCt_Kk_XbKnY25aOg",
+            "sender": "@bob:remote.org",
+            "signatures": {
+              "remote.org": {
+                "ed25519:test": "XxQNiXq2sqevH40Fqd1hwAOqahd/HxgoWZOf2Wo2u8b4bm4GD+XLZd3znJOW5aU93U+45yl68W96jtCw5a5qDQ"
+              }
+            },
+            "state_key": "",
+            "type": "m.room.topic"
+          }
+        },
+        {
+          "id": "$6f2Gh5cnTvszppq2UaC28LfKOFFHqv38xLbBGnyjDQM",
+          "pdu": {
+            "auth_events": [
+              "$AFdXNwjtq3qdUmF950kfh8xdNQfOS5g0o8CHbwydIRI",
+              "$1n3l9791i-qNBjeTdwODguqvOh8y8fJfHJtwzvsQwPA"
+            ],
+            "content": {
+              "join_rule": "public"
+            },
+            "depth": 3,
+            "hashes": {
+              "sha256": "4Qhp8YTCirKd8FJXY4eI5/9lBeGRD6txWr8PEA1H1dQ"
+            },
+            "origin_server_ts": 1000003,
+            "prev_events": [
+              "$AFdXNwjtq3qdUmF950kfh8xdNQfOS5g0o8CHbwydIRI"
+            ],
+            "room_id": "!U2le6NXYZCMClJy9SNC6odNWTstCt_Kk_XbKnY25aOg",
+            "sender": "@alice:example.org",
+            "signatures": {
+              "example.org": {
+                "ed25519:test": "+R9dF1HDxYX0unQUKx8ukdFcLrSfx4JR7+OLJqFvrlVl0VsyK9HDVW3v8EDH3UEyrZopgI/0YUqF/DxFq5v7CQ"
+              }
+            },
+            "state_key": "",
+            "type": "m.room.join_rules"
+          }
+        },
+        {
+          "id": "$AFdXNwjtq3qdUmF950kfh8xdNQfOS5g0o8CHbwydIRI",
+          "pdu": {
+            "auth_events": [
+              "$1n3l9791i-qNBjeTdwODguqvOh8y8fJfHJtwzvsQwPA"
+            ],
+            "content": {
+              "state_default": 50,
+              "users": {}
+            },
+            "depth": 2,
+            "hashes": {
+              "sha256": "ad4yOAZ99Bs5JzWEQcorNlHoi7OA26/RtEpnV7EByLQ"
+            },
+            "origin_server_ts": 1000002,
+            "prev_events": [
+              "$1n3l9791i-qNBjeTdwODguqvOh8y8fJfHJtwzvsQwPA"
+            ],
+            "room_id": "!U2le6NXYZCMClJy9SNC6odNWTstCt_Kk_XbKnY25aOg",
+            "sender": "@alice:example.org",
+            "signatures": {
+              "example.org": {
+                "ed25519:test": "P54UcHw3ADIFnYdio/eFOgiTRGURfMVLuBdWQtTWwNskOkmrwNdcgO6guBqL6wFmSNz0lSG4pY6hQR5R8KHZBw"
+              }
+            },
+            "state_key": "",
+            "type": "m.room.power_levels"
+          }
+        },
+        {
+          "id": "$L8j4kquzN-w7P8m4htB5npWFv3ZO72I54a5zQuIMJ2I",
+          "pdu": {
+            "auth_events": [
+              "$AFdXNwjtq3qdUmF950kfh8xdNQfOS5g0o8CHbwydIRI",
+              "$1n3l9791i-qNBjeTdwODguqvOh8y8fJfHJtwzvsQwPA"
+            ],
+            "content": {
+              "state_default": 50,
+              "users": {
+                "@bob:remote.org": 50
+              }
+            },
+            "depth": 5,
+            "hashes": {
+              "sha256": "36lWUJEKgyNIxOAg+eUE1KUdYq9pziIwQ5wFwjnncg4"
+            },
+            "origin_server_ts": 1000005,
+            "prev_events": [
+              "$n9edUCHHja27ErCwde-mBR3707lCF0MzrVGpj4JHiYY"
+            ],
+            "room_id": "!U2le6NXYZCMClJy9SNC6odNWTstCt_Kk_XbKnY25aOg",
+            "sender": "@alice:example.org",
+            "signatures": {
+              "example.org": {
+                "ed25519:test": "F07NPGoC28zeMRfut7ZarlxzR3WfDMty+jtgEp/Cv+t2w1lALr2fu+ENRfKzLNB5oGyh7T3uGfY8+dz4Ck/lAQ"
+              }
+            },
+            "state_key": "",
+            "type": "m.room.power_levels"
+          }
+        },
+        {
+          "id": "$U2le6NXYZCMClJy9SNC6odNWTstCt_Kk_XbKnY25aOg",
+          "pdu": {
+            "auth_events": [],
+            "content": {
+              "room_version": "12"
+            },
+            "depth": 0,
+            "hashes": {
+              "sha256": "ZuY2zbKaMLZLKqhkwkyioPNbGW3PHkIA0OwXVowv4KI"
+            },
+            "origin_server_ts": 1000000,
+            "prev_events": [],
+            "sender": "@alice:example.org",
+            "signatures": {
+              "example.org": {
+                "ed25519:test": "CvIwYlf4v9Uvmw4d/fXP6temLnLMtcglq+vYolSNjnzr8nVQ9xoHd6Yu8JkDxHyEc74pzjh240lV5xDVUu4VCg"
+              }
+            },
+            "state_key": "",
+            "type": "m.room.create"
+          }
+        },
+        {
+          "id": "$n9edUCHHja27ErCwde-mBR3707lCF0MzrVGpj4JHiYY",
+          "pdu": {
+            "auth_events": [
+              "$6f2Gh5cnTvszppq2UaC28LfKOFFHqv38xLbBGnyjDQM",
+              "$AFdXNwjtq3qdUmF950kfh8xdNQfOS5g0o8CHbwydIRI"
+            ],
+            "content": {
+              "membership": "join"
+            },
+            "depth": 4,
+            "hashes": {
+              "sha256": "4tRScCZ6gnjils8I5xboW0e4gNIpsBWnUgp2Pd+h5RM"
+            },
+            "origin_server_ts": 1000004,
+            "prev_events": [
+              "$6f2Gh5cnTvszppq2UaC28LfKOFFHqv38xLbBGnyjDQM"
+            ],
+            "room_id": "!U2le6NXYZCMClJy9SNC6odNWTstCt_Kk_XbKnY25aOg",
+            "sender": "@bob:remote.org",
+            "signatures": {
+              "remote.org": {
+                "ed25519:test": "aRKF8Xi8LIw3wl9UMxHbQ8Ypqvf5RhM/M4gKSNbHUgD6tufHOnB0/4IjXGFtfGJ07X1+6K/UYFy6N9I4Rq5NDA"
+              }
+            },
+            "state_key": "@bob:remote.org",
+            "type": "m.room.member"
+          }
+        },
+        {
+          "id": "$obFVDb1XOMkhDWx-y45A-o1fTNqXP8SOmBM_Cu-Avqk",
+          "pdu": {
+            "auth_events": [
+              "$L8j4kquzN-w7P8m4htB5npWFv3ZO72I54a5zQuIMJ2I",
+              "$1n3l9791i-qNBjeTdwODguqvOh8y8fJfHJtwzvsQwPA"
+            ],
+            "content": {
+              "topic": "original"
+            },
+            "depth": 6,
+            "hashes": {
+              "sha256": "3LGoq9uSVAJi3YmQocDB/xTAqAyLrfmN3EMLgYg5Uw4"
+            },
+            "origin_server_ts": 1000006,
+            "prev_events": [
+              "$L8j4kquzN-w7P8m4htB5npWFv3ZO72I54a5zQuIMJ2I"
+            ],
+            "room_id": "!U2le6NXYZCMClJy9SNC6odNWTstCt_Kk_XbKnY25aOg",
+            "sender": "@alice:example.org",
+            "signatures": {
+              "example.org": {
+                "ed25519:test": "9hOrk8/snjWe9pNhFc9alnaAvmwPPzGNMdJfsi8Svn0B5auDqsw6UdxS4EQ8scAXYyuwUF2pU2+qm3IBNqcMAw"
+              }
+            },
+            "state_key": "",
+            "type": "m.room.topic"
+          }
+        },
+        {
+          "id": "$zwy0Q8TVFftWZvaCKHnkaJ3WL19bHY1ULpRRByaFSxE",
+          "pdu": {
+            "auth_events": [
+              "$n9edUCHHja27ErCwde-mBR3707lCF0MzrVGpj4JHiYY",
+              "$L8j4kquzN-w7P8m4htB5npWFv3ZO72I54a5zQuIMJ2I",
+              "$1n3l9791i-qNBjeTdwODguqvOh8y8fJfHJtwzvsQwPA"
+            ],
+            "content": {
+              "membership": "ban"
+            },
+            "depth": 7,
+            "hashes": {
+              "sha256": "OTBEsxpJmUDNzpQIHSumyODGzPY27q6KEyIMjsWpv9A"
+            },
+            "origin_server_ts": 1000007,
+            "prev_events": [
+              "$obFVDb1XOMkhDWx-y45A-o1fTNqXP8SOmBM_Cu-Avqk"
+            ],
+            "room_id": "!U2le6NXYZCMClJy9SNC6odNWTstCt_Kk_XbKnY25aOg",
+            "sender": "@alice:example.org",
+            "signatures": {
+              "example.org": {
+                "ed25519:test": "VOclm/UN/D4AKfhksn2ug3M81ZEyoUV82EKaTI4BmjV76vkvjCfyZAALk1LxTfdVRv6zyITyAYmdBf4+eQb9AA"
+              }
+            },
+            "state_key": "@bob:remote.org",
+            "type": "m.room.member"
+          }
+        }
+      ],
+      "name": "12:ban_topic",
+      "room_id": "!U2le6NXYZCMClJy9SNC6odNWTstCt_Kk_XbKnY25aOg",
+      "states": [
+        [
+          [
+            "m.room.create",
+            "",
+            "$U2le6NXYZCMClJy9SNC6odNWTstCt_Kk_XbKnY25aOg"
+          ],
+          [
+            "m.room.join_rules",
+            "",
+            "$6f2Gh5cnTvszppq2UaC28LfKOFFHqv38xLbBGnyjDQM"
+          ],
+          [
+            "m.room.member",
+            "@alice:example.org",
+            "$1n3l9791i-qNBjeTdwODguqvOh8y8fJfHJtwzvsQwPA"
+          ],
+          [
+            "m.room.member",
+            "@bob:remote.org",
+            "$zwy0Q8TVFftWZvaCKHnkaJ3WL19bHY1ULpRRByaFSxE"
+          ],
+          [
+            "m.room.power_levels",
+            "",
+            "$L8j4kquzN-w7P8m4htB5npWFv3ZO72I54a5zQuIMJ2I"
+          ],
+          [
+            "m.room.topic",
+            "",
+            "$obFVDb1XOMkhDWx-y45A-o1fTNqXP8SOmBM_Cu-Avqk"
+          ]
+        ],
+        [
+          [
+            "m.room.create",
+            "",
+            "$U2le6NXYZCMClJy9SNC6odNWTstCt_Kk_XbKnY25aOg"
+          ],
+          [
+            "m.room.join_rules",
+            "",
+            "$6f2Gh5cnTvszppq2UaC28LfKOFFHqv38xLbBGnyjDQM"
+          ],
+          [
+            "m.room.member",
+            "@alice:example.org",
+            "$1n3l9791i-qNBjeTdwODguqvOh8y8fJfHJtwzvsQwPA"
+          ],
+          [
+            "m.room.member",
+            "@bob:remote.org",
+            "$n9edUCHHja27ErCwde-mBR3707lCF0MzrVGpj4JHiYY"
+          ],
+          [
+            "m.room.power_levels",
+            "",
+            "$L8j4kquzN-w7P8m4htB5npWFv3ZO72I54a5zQuIMJ2I"
+          ],
+          [
+            "m.room.topic",
+            "",
+            "$1sRAbj4voOOMTgxcpqsa5OOquRjRONCe2LkgjBDFwp8"
+          ]
+        ]
+      ],
+      "version": "12",
+      "expected_state": [
+        [
+          "m.room.create",
+          "",
+          "$U2le6NXYZCMClJy9SNC6odNWTstCt_Kk_XbKnY25aOg"
+        ],
+        [
+          "m.room.join_rules",
+          "",
+          "$6f2Gh5cnTvszppq2UaC28LfKOFFHqv38xLbBGnyjDQM"
+        ],
+        [
+          "m.room.member",
+          "@alice:example.org",
+          "$1n3l9791i-qNBjeTdwODguqvOh8y8fJfHJtwzvsQwPA"
+        ],
+        [
+          "m.room.member",
+          "@bob:remote.org",
+          "$zwy0Q8TVFftWZvaCKHnkaJ3WL19bHY1ULpRRByaFSxE"
+        ],
+        [
+          "m.room.power_levels",
+          "",
+          "$L8j4kquzN-w7P8m4htB5npWFv3ZO72I54a5zQuIMJ2I"
+        ],
+        [
+          "m.room.topic",
+          "",
+          "$obFVDb1XOMkhDWx-y45A-o1fTNqXP8SOmBM_Cu-Avqk"
+        ]
+      ]
+    },
+    {
+      "events": [
+        {
+          "id": "$1n3l9791i-qNBjeTdwODguqvOh8y8fJfHJtwzvsQwPA",
+          "pdu": {
+            "auth_events": [],
+            "content": {
+              "membership": "join"
+            },
+            "depth": 1,
+            "hashes": {
+              "sha256": "/ObjLHimalNwUNudpjefZCvgV/fCQ6u8O8cWskoNp9A"
+            },
+            "origin_server_ts": 1000001,
+            "prev_events": [
+              "$U2le6NXYZCMClJy9SNC6odNWTstCt_Kk_XbKnY25aOg"
+            ],
+            "room_id": "!U2le6NXYZCMClJy9SNC6odNWTstCt_Kk_XbKnY25aOg",
+            "sender": "@alice:example.org",
+            "signatures": {
+              "example.org": {
+                "ed25519:test": "8QNPSaYIKxOk7NPHNWrTQ0I8aIBzvULb8pSMX0rhsBDezYOV5yfCrprV8PWCAHuD5RlHtCyN7QpdhLxlubNwBQ"
+              }
+            },
+            "state_key": "@alice:example.org",
+            "type": "m.room.member"
+          }
+        },
+        {
+          "id": "$6f2Gh5cnTvszppq2UaC28LfKOFFHqv38xLbBGnyjDQM",
+          "pdu": {
+            "auth_events": [
+              "$AFdXNwjtq3qdUmF950kfh8xdNQfOS5g0o8CHbwydIRI",
+              "$1n3l9791i-qNBjeTdwODguqvOh8y8fJfHJtwzvsQwPA"
+            ],
+            "content": {
+              "join_rule": "public"
+            },
+            "depth": 3,
+            "hashes": {
+              "sha256": "4Qhp8YTCirKd8FJXY4eI5/9lBeGRD6txWr8PEA1H1dQ"
+            },
+            "origin_server_ts": 1000003,
+            "prev_events": [
+              "$AFdXNwjtq3qdUmF950kfh8xdNQfOS5g0o8CHbwydIRI"
+            ],
+            "room_id": "!U2le6NXYZCMClJy9SNC6odNWTstCt_Kk_XbKnY25aOg",
+            "sender": "@alice:example.org",
+            "signatures": {
+              "example.org": {
+                "ed25519:test": "+R9dF1HDxYX0unQUKx8ukdFcLrSfx4JR7+OLJqFvrlVl0VsyK9HDVW3v8EDH3UEyrZopgI/0YUqF/DxFq5v7CQ"
+              }
+            },
+            "state_key": "",
+            "type": "m.room.join_rules"
+          }
+        },
+        {
+          "id": "$AFdXNwjtq3qdUmF950kfh8xdNQfOS5g0o8CHbwydIRI",
+          "pdu": {
+            "auth_events": [
+              "$1n3l9791i-qNBjeTdwODguqvOh8y8fJfHJtwzvsQwPA"
+            ],
+            "content": {
+              "state_default": 50,
+              "users": {}
+            },
+            "depth": 2,
+            "hashes": {
+              "sha256": "ad4yOAZ99Bs5JzWEQcorNlHoi7OA26/RtEpnV7EByLQ"
+            },
+            "origin_server_ts": 1000002,
+            "prev_events": [
+              "$1n3l9791i-qNBjeTdwODguqvOh8y8fJfHJtwzvsQwPA"
+            ],
+            "room_id": "!U2le6NXYZCMClJy9SNC6odNWTstCt_Kk_XbKnY25aOg",
+            "sender": "@alice:example.org",
+            "signatures": {
+              "example.org": {
+                "ed25519:test": "P54UcHw3ADIFnYdio/eFOgiTRGURfMVLuBdWQtTWwNskOkmrwNdcgO6guBqL6wFmSNz0lSG4pY6hQR5R8KHZBw"
+              }
+            },
+            "state_key": "",
+            "type": "m.room.power_levels"
+          }
+        },
+        {
+          "id": "$CsgK0ZfDeH2NGh4v6iqKR6OtuM0wKSiJKdNVSQlltWU",
+          "pdu": {
+            "auth_events": [
+              "$L8j4kquzN-w7P8m4htB5npWFv3ZO72I54a5zQuIMJ2I",
+              "$n9edUCHHja27ErCwde-mBR3707lCF0MzrVGpj4JHiYY"
+            ],
+            "content": {
+              "state_default": 0,
+              "users": {
+                "@bob:remote.org": 50
+              }
+            },
+            "depth": 7,
+            "hashes": {
+              "sha256": "rpsYyVIuXCZ3qqKIqx/kb30RYOnSegwVHoOi+nnKbtU"
+            },
+            "origin_server_ts": 1000007,
+            "prev_events": [
+              "$obFVDb1XOMkhDWx-y45A-o1fTNqXP8SOmBM_Cu-Avqk"
+            ],
+            "room_id": "!U2le6NXYZCMClJy9SNC6odNWTstCt_Kk_XbKnY25aOg",
+            "sender": "@bob:remote.org",
+            "signatures": {
+              "remote.org": {
+                "ed25519:test": "u2tgew11icHC+l2sI9s7fDHCJd2/DAJCHOZwZMA4w6+0SPq/BZFaxCO/L1tiIgbtvySjnkr1sOTajkiitof9Dg"
+              }
+            },
+            "state_key": "",
+            "type": "m.room.power_levels"
+          }
+        },
+        {
+          "id": "$L8j4kquzN-w7P8m4htB5npWFv3ZO72I54a5zQuIMJ2I",
+          "pdu": {
+            "auth_events": [
+              "$AFdXNwjtq3qdUmF950kfh8xdNQfOS5g0o8CHbwydIRI",
+              "$1n3l9791i-qNBjeTdwODguqvOh8y8fJfHJtwzvsQwPA"
+            ],
+            "content": {
+              "state_default": 50,
+              "users": {
+                "@bob:remote.org": 50
+              }
+            },
+            "depth": 5,
+            "hashes": {
+              "sha256": "36lWUJEKgyNIxOAg+eUE1KUdYq9pziIwQ5wFwjnncg4"
+            },
+            "origin_server_ts": 1000005,
+            "prev_events": [
+              "$n9edUCHHja27ErCwde-mBR3707lCF0MzrVGpj4JHiYY"
+            ],
+            "room_id": "!U2le6NXYZCMClJy9SNC6odNWTstCt_Kk_XbKnY25aOg",
+            "sender": "@alice:example.org",
+            "signatures": {
+              "example.org": {
+                "ed25519:test": "F07NPGoC28zeMRfut7ZarlxzR3WfDMty+jtgEp/Cv+t2w1lALr2fu+ENRfKzLNB5oGyh7T3uGfY8+dz4Ck/lAQ"
+              }
+            },
+            "state_key": "",
+            "type": "m.room.power_levels"
+          }
+        },
+        {
+          "id": "$U2le6NXYZCMClJy9SNC6odNWTstCt_Kk_XbKnY25aOg",
+          "pdu": {
+            "auth_events": [],
+            "content": {
+              "room_version": "12"
+            },
+            "depth": 0,
+            "hashes": {
+              "sha256": "ZuY2zbKaMLZLKqhkwkyioPNbGW3PHkIA0OwXVowv4KI"
+            },
+            "origin_server_ts": 1000000,
+            "prev_events": [],
+            "sender": "@alice:example.org",
+            "signatures": {
+              "example.org": {
+                "ed25519:test": "CvIwYlf4v9Uvmw4d/fXP6temLnLMtcglq+vYolSNjnzr8nVQ9xoHd6Yu8JkDxHyEc74pzjh240lV5xDVUu4VCg"
+              }
+            },
+            "state_key": "",
+            "type": "m.room.create"
+          }
+        },
+        {
+          "id": "$n9edUCHHja27ErCwde-mBR3707lCF0MzrVGpj4JHiYY",
+          "pdu": {
+            "auth_events": [
+              "$6f2Gh5cnTvszppq2UaC28LfKOFFHqv38xLbBGnyjDQM",
+              "$AFdXNwjtq3qdUmF950kfh8xdNQfOS5g0o8CHbwydIRI"
+            ],
+            "content": {
+              "membership": "join"
+            },
+            "depth": 4,
+            "hashes": {
+              "sha256": "4tRScCZ6gnjils8I5xboW0e4gNIpsBWnUgp2Pd+h5RM"
+            },
+            "origin_server_ts": 1000004,
+            "prev_events": [
+              "$6f2Gh5cnTvszppq2UaC28LfKOFFHqv38xLbBGnyjDQM"
+            ],
+            "room_id": "!U2le6NXYZCMClJy9SNC6odNWTstCt_Kk_XbKnY25aOg",
+            "sender": "@bob:remote.org",
+            "signatures": {
+              "remote.org": {
+                "ed25519:test": "aRKF8Xi8LIw3wl9UMxHbQ8Ypqvf5RhM/M4gKSNbHUgD6tufHOnB0/4IjXGFtfGJ07X1+6K/UYFy6N9I4Rq5NDA"
+              }
+            },
+            "state_key": "@bob:remote.org",
+            "type": "m.room.member"
+          }
+        },
+        {
+          "id": "$obFVDb1XOMkhDWx-y45A-o1fTNqXP8SOmBM_Cu-Avqk",
+          "pdu": {
+            "auth_events": [
+              "$L8j4kquzN-w7P8m4htB5npWFv3ZO72I54a5zQuIMJ2I",
+              "$1n3l9791i-qNBjeTdwODguqvOh8y8fJfHJtwzvsQwPA"
+            ],
+            "content": {
+              "topic": "original"
+            },
+            "depth": 6,
+            "hashes": {
+              "sha256": "3LGoq9uSVAJi3YmQocDB/xTAqAyLrfmN3EMLgYg5Uw4"
+            },
+            "origin_server_ts": 1000006,
+            "prev_events": [
+              "$L8j4kquzN-w7P8m4htB5npWFv3ZO72I54a5zQuIMJ2I"
+            ],
+            "room_id": "!U2le6NXYZCMClJy9SNC6odNWTstCt_Kk_XbKnY25aOg",
+            "sender": "@alice:example.org",
+            "signatures": {
+              "example.org": {
+                "ed25519:test": "9hOrk8/snjWe9pNhFc9alnaAvmwPPzGNMdJfsi8Svn0B5auDqsw6UdxS4EQ8scAXYyuwUF2pU2+qm3IBNqcMAw"
+              }
+            },
+            "state_key": "",
+            "type": "m.room.topic"
+          }
+        },
+        {
+          "id": "$zwy0Q8TVFftWZvaCKHnkaJ3WL19bHY1ULpRRByaFSxE",
+          "pdu": {
+            "auth_events": [
+              "$n9edUCHHja27ErCwde-mBR3707lCF0MzrVGpj4JHiYY",
+              "$L8j4kquzN-w7P8m4htB5npWFv3ZO72I54a5zQuIMJ2I",
+              "$1n3l9791i-qNBjeTdwODguqvOh8y8fJfHJtwzvsQwPA"
+            ],
+            "content": {
+              "membership": "ban"
+            },
+            "depth": 7,
+            "hashes": {
+              "sha256": "OTBEsxpJmUDNzpQIHSumyODGzPY27q6KEyIMjsWpv9A"
+            },
+            "origin_server_ts": 1000007,
+            "prev_events": [
+              "$obFVDb1XOMkhDWx-y45A-o1fTNqXP8SOmBM_Cu-Avqk"
+            ],
+            "room_id": "!U2le6NXYZCMClJy9SNC6odNWTstCt_Kk_XbKnY25aOg",
+            "sender": "@alice:example.org",
+            "signatures": {
+              "example.org": {
+                "ed25519:test": "VOclm/UN/D4AKfhksn2ug3M81ZEyoUV82EKaTI4BmjV76vkvjCfyZAALk1LxTfdVRv6zyITyAYmdBf4+eQb9AA"
+              }
+            },
+            "state_key": "@bob:remote.org",
+            "type": "m.room.member"
+          }
+        }
+      ],
+      "name": "12:power_fork",
+      "room_id": "!U2le6NXYZCMClJy9SNC6odNWTstCt_Kk_XbKnY25aOg",
+      "states": [
+        [
+          [
+            "m.room.create",
+            "",
+            "$U2le6NXYZCMClJy9SNC6odNWTstCt_Kk_XbKnY25aOg"
+          ],
+          [
+            "m.room.join_rules",
+            "",
+            "$6f2Gh5cnTvszppq2UaC28LfKOFFHqv38xLbBGnyjDQM"
+          ],
+          [
+            "m.room.member",
+            "@alice:example.org",
+            "$1n3l9791i-qNBjeTdwODguqvOh8y8fJfHJtwzvsQwPA"
+          ],
+          [
+            "m.room.member",
+            "@bob:remote.org",
+            "$zwy0Q8TVFftWZvaCKHnkaJ3WL19bHY1ULpRRByaFSxE"
+          ],
+          [
+            "m.room.power_levels",
+            "",
+            "$L8j4kquzN-w7P8m4htB5npWFv3ZO72I54a5zQuIMJ2I"
+          ],
+          [
+            "m.room.topic",
+            "",
+            "$obFVDb1XOMkhDWx-y45A-o1fTNqXP8SOmBM_Cu-Avqk"
+          ]
+        ],
+        [
+          [
+            "m.room.create",
+            "",
+            "$U2le6NXYZCMClJy9SNC6odNWTstCt_Kk_XbKnY25aOg"
+          ],
+          [
+            "m.room.join_rules",
+            "",
+            "$6f2Gh5cnTvszppq2UaC28LfKOFFHqv38xLbBGnyjDQM"
+          ],
+          [
+            "m.room.member",
+            "@alice:example.org",
+            "$1n3l9791i-qNBjeTdwODguqvOh8y8fJfHJtwzvsQwPA"
+          ],
+          [
+            "m.room.member",
+            "@bob:remote.org",
+            "$n9edUCHHja27ErCwde-mBR3707lCF0MzrVGpj4JHiYY"
+          ],
+          [
+            "m.room.power_levels",
+            "",
+            "$CsgK0ZfDeH2NGh4v6iqKR6OtuM0wKSiJKdNVSQlltWU"
+          ],
+          [
+            "m.room.topic",
+            "",
+            "$obFVDb1XOMkhDWx-y45A-o1fTNqXP8SOmBM_Cu-Avqk"
+          ]
+        ]
+      ],
+      "version": "12",
+      "expected_state": [
+        [
+          "m.room.create",
+          "",
+          "$U2le6NXYZCMClJy9SNC6odNWTstCt_Kk_XbKnY25aOg"
+        ],
+        [
+          "m.room.join_rules",
+          "",
+          "$6f2Gh5cnTvszppq2UaC28LfKOFFHqv38xLbBGnyjDQM"
+        ],
+        [
+          "m.room.member",
+          "@alice:example.org",
+          "$1n3l9791i-qNBjeTdwODguqvOh8y8fJfHJtwzvsQwPA"
+        ],
+        [
+          "m.room.member",
+          "@bob:remote.org",
+          "$zwy0Q8TVFftWZvaCKHnkaJ3WL19bHY1ULpRRByaFSxE"
+        ],
+        [
+          "m.room.power_levels",
+          "",
+          "$L8j4kquzN-w7P8m4htB5npWFv3ZO72I54a5zQuIMJ2I"
+        ],
+        [
+          "m.room.topic",
+          "",
+          "$obFVDb1XOMkhDWx-y45A-o1fTNqXP8SOmBM_Cu-Avqk"
+        ]
+      ]
+    },
+    {
+      "events": [
+        {
+          "id": "$1n3l9791i-qNBjeTdwODguqvOh8y8fJfHJtwzvsQwPA",
+          "pdu": {
+            "auth_events": [],
+            "content": {
+              "membership": "join"
+            },
+            "depth": 1,
+            "hashes": {
+              "sha256": "/ObjLHimalNwUNudpjefZCvgV/fCQ6u8O8cWskoNp9A"
+            },
+            "origin_server_ts": 1000001,
+            "prev_events": [
+              "$U2le6NXYZCMClJy9SNC6odNWTstCt_Kk_XbKnY25aOg"
+            ],
+            "room_id": "!U2le6NXYZCMClJy9SNC6odNWTstCt_Kk_XbKnY25aOg",
+            "sender": "@alice:example.org",
+            "signatures": {
+              "example.org": {
+                "ed25519:test": "8QNPSaYIKxOk7NPHNWrTQ0I8aIBzvULb8pSMX0rhsBDezYOV5yfCrprV8PWCAHuD5RlHtCyN7QpdhLxlubNwBQ"
+              }
+            },
+            "state_key": "@alice:example.org",
+            "type": "m.room.member"
+          }
+        },
+        {
+          "id": "$6f2Gh5cnTvszppq2UaC28LfKOFFHqv38xLbBGnyjDQM",
+          "pdu": {
+            "auth_events": [
+              "$AFdXNwjtq3qdUmF950kfh8xdNQfOS5g0o8CHbwydIRI",
+              "$1n3l9791i-qNBjeTdwODguqvOh8y8fJfHJtwzvsQwPA"
+            ],
+            "content": {
+              "join_rule": "public"
+            },
+            "depth": 3,
+            "hashes": {
+              "sha256": "4Qhp8YTCirKd8FJXY4eI5/9lBeGRD6txWr8PEA1H1dQ"
+            },
+            "origin_server_ts": 1000003,
+            "prev_events": [
+              "$AFdXNwjtq3qdUmF950kfh8xdNQfOS5g0o8CHbwydIRI"
+            ],
+            "room_id": "!U2le6NXYZCMClJy9SNC6odNWTstCt_Kk_XbKnY25aOg",
+            "sender": "@alice:example.org",
+            "signatures": {
+              "example.org": {
+                "ed25519:test": "+R9dF1HDxYX0unQUKx8ukdFcLrSfx4JR7+OLJqFvrlVl0VsyK9HDVW3v8EDH3UEyrZopgI/0YUqF/DxFq5v7CQ"
+              }
+            },
+            "state_key": "",
+            "type": "m.room.join_rules"
+          }
+        },
+        {
+          "id": "$AFdXNwjtq3qdUmF950kfh8xdNQfOS5g0o8CHbwydIRI",
+          "pdu": {
+            "auth_events": [
+              "$1n3l9791i-qNBjeTdwODguqvOh8y8fJfHJtwzvsQwPA"
+            ],
+            "content": {
+              "state_default": 50,
+              "users": {}
+            },
+            "depth": 2,
+            "hashes": {
+              "sha256": "ad4yOAZ99Bs5JzWEQcorNlHoi7OA26/RtEpnV7EByLQ"
+            },
+            "origin_server_ts": 1000002,
+            "prev_events": [
+              "$1n3l9791i-qNBjeTdwODguqvOh8y8fJfHJtwzvsQwPA"
+            ],
+            "room_id": "!U2le6NXYZCMClJy9SNC6odNWTstCt_Kk_XbKnY25aOg",
+            "sender": "@alice:example.org",
+            "signatures": {
+              "example.org": {
+                "ed25519:test": "P54UcHw3ADIFnYdio/eFOgiTRGURfMVLuBdWQtTWwNskOkmrwNdcgO6guBqL6wFmSNz0lSG4pY6hQR5R8KHZBw"
+              }
+            },
+            "state_key": "",
+            "type": "m.room.power_levels"
+          }
+        },
+        {
+          "id": "$U2le6NXYZCMClJy9SNC6odNWTstCt_Kk_XbKnY25aOg",
+          "pdu": {
+            "auth_events": [],
+            "content": {
+              "room_version": "12"
+            },
+            "depth": 0,
+            "hashes": {
+              "sha256": "ZuY2zbKaMLZLKqhkwkyioPNbGW3PHkIA0OwXVowv4KI"
+            },
+            "origin_server_ts": 1000000,
+            "prev_events": [],
+            "sender": "@alice:example.org",
+            "signatures": {
+              "example.org": {
+                "ed25519:test": "CvIwYlf4v9Uvmw4d/fXP6temLnLMtcglq+vYolSNjnzr8nVQ9xoHd6Yu8JkDxHyEc74pzjh240lV5xDVUu4VCg"
+              }
+            },
+            "state_key": "",
+            "type": "m.room.create"
+          }
+        },
+        {
+          "id": "$n9edUCHHja27ErCwde-mBR3707lCF0MzrVGpj4JHiYY",
+          "pdu": {
+            "auth_events": [
+              "$6f2Gh5cnTvszppq2UaC28LfKOFFHqv38xLbBGnyjDQM",
+              "$AFdXNwjtq3qdUmF950kfh8xdNQfOS5g0o8CHbwydIRI"
+            ],
+            "content": {
+              "membership": "join"
+            },
+            "depth": 4,
+            "hashes": {
+              "sha256": "4tRScCZ6gnjils8I5xboW0e4gNIpsBWnUgp2Pd+h5RM"
+            },
+            "origin_server_ts": 1000004,
+            "prev_events": [
+              "$6f2Gh5cnTvszppq2UaC28LfKOFFHqv38xLbBGnyjDQM"
+            ],
+            "room_id": "!U2le6NXYZCMClJy9SNC6odNWTstCt_Kk_XbKnY25aOg",
+            "sender": "@bob:remote.org",
+            "signatures": {
+              "remote.org": {
+                "ed25519:test": "aRKF8Xi8LIw3wl9UMxHbQ8Ypqvf5RhM/M4gKSNbHUgD6tufHOnB0/4IjXGFtfGJ07X1+6K/UYFy6N9I4Rq5NDA"
+              }
+            },
+            "state_key": "@bob:remote.org",
+            "type": "m.room.member"
+          }
+        },
+        {
+          "id": "$nNp6FHGL7RVxbVfigjBmgfcPtVKArY9N0LRf30rVtt0",
+          "pdu": {
+            "auth_events": [
+              "$AFdXNwjtq3qdUmF950kfh8xdNQfOS5g0o8CHbwydIRI",
+              "$1n3l9791i-qNBjeTdwODguqvOh8y8fJfHJtwzvsQwPA"
+            ],
+            "content": {
+              "join_rule": "invite"
+            },
+            "depth": 4,
+            "hashes": {
+              "sha256": "hBqpCt2j1Ax9c27XonZLYhcucZveUuUd3mQJ7GV3DR4"
+            },
+            "origin_server_ts": 1000004,
+            "prev_events": [
+              "$6f2Gh5cnTvszppq2UaC28LfKOFFHqv38xLbBGnyjDQM"
+            ],
+            "room_id": "!U2le6NXYZCMClJy9SNC6odNWTstCt_Kk_XbKnY25aOg",
+            "sender": "@alice:example.org",
+            "signatures": {
+              "example.org": {
+                "ed25519:test": "N/a52+n+VIvRlaz+NYMqIVEQI51FLkhlYxBI4UgxcqfOglS66ymvxwVhxo+1vYOEk5suscKXkXLgEUHHlIU2Bg"
+              }
+            },
+            "state_key": "",
+            "type": "m.room.join_rules"
+          }
+        }
+      ],
+      "name": "12:join_rule",
+      "room_id": "!U2le6NXYZCMClJy9SNC6odNWTstCt_Kk_XbKnY25aOg",
+      "states": [
+        [
+          [
+            "m.room.create",
+            "",
+            "$U2le6NXYZCMClJy9SNC6odNWTstCt_Kk_XbKnY25aOg"
+          ],
+          [
+            "m.room.join_rules",
+            "",
+            "$nNp6FHGL7RVxbVfigjBmgfcPtVKArY9N0LRf30rVtt0"
+          ],
+          [
+            "m.room.member",
+            "@alice:example.org",
+            "$1n3l9791i-qNBjeTdwODguqvOh8y8fJfHJtwzvsQwPA"
+          ],
+          [
+            "m.room.power_levels",
+            "",
+            "$AFdXNwjtq3qdUmF950kfh8xdNQfOS5g0o8CHbwydIRI"
+          ]
+        ],
+        [
+          [
+            "m.room.create",
+            "",
+            "$U2le6NXYZCMClJy9SNC6odNWTstCt_Kk_XbKnY25aOg"
+          ],
+          [
+            "m.room.join_rules",
+            "",
+            "$6f2Gh5cnTvszppq2UaC28LfKOFFHqv38xLbBGnyjDQM"
+          ],
+          [
+            "m.room.member",
+            "@alice:example.org",
+            "$1n3l9791i-qNBjeTdwODguqvOh8y8fJfHJtwzvsQwPA"
+          ],
+          [
+            "m.room.member",
+            "@bob:remote.org",
+            "$n9edUCHHja27ErCwde-mBR3707lCF0MzrVGpj4JHiYY"
+          ],
+          [
+            "m.room.power_levels",
+            "",
+            "$AFdXNwjtq3qdUmF950kfh8xdNQfOS5g0o8CHbwydIRI"
+          ]
+        ]
+      ],
+      "version": "12",
+      "expected_state": [
+        [
+          "m.room.create",
+          "",
+          "$U2le6NXYZCMClJy9SNC6odNWTstCt_Kk_XbKnY25aOg"
+        ],
+        [
+          "m.room.join_rules",
+          "",
+          "$nNp6FHGL7RVxbVfigjBmgfcPtVKArY9N0LRf30rVtt0"
+        ],
+        [
+          "m.room.member",
+          "@alice:example.org",
+          "$1n3l9791i-qNBjeTdwODguqvOh8y8fJfHJtwzvsQwPA"
+        ],
+        [
+          "m.room.power_levels",
+          "",
+          "$AFdXNwjtq3qdUmF950kfh8xdNQfOS5g0o8CHbwydIRI"
+        ]
+      ]
+    }
+  ]
+}
