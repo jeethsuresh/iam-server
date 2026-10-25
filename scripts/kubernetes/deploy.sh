@@ -80,7 +80,7 @@ if [[ -n "$reset_server" ]]; then
   "${kube[@]}" exec iam-db-0 -- sh -c '
     set -eu
     umask 077
-    backup=$(mktemp /var/lib/postgresql/data/iam-pre-matrix-reset-XXXXXXXX.dump)
+    backup=$(mktemp /var/lib/postgresql/data/iam-pre-matrix-reset-XXXXXX)
     pg_dump --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --format=custom --file "$backup"
     test -s "$backup"
     pg_restore --list "$backup" >/dev/null
