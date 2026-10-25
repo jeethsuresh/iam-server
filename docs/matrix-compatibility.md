@@ -127,6 +127,21 @@ clients does not mean River client E2EE is complete.
 - Matrix 1.19 policy-server requests and signature validation. Local operations
   retry outside database transactions; unapproved inbound events soft-fail.
 
+Account registration, password changes and recovery remain in IAM with account
+approval; Matrix registration is closed. The corresponding Matrix endpoints
+return explicit policy errors. `m.change_password` and `m.3pid_changes` stay
+false, and the Matrix 3PID list does not expose unrelated IAM contact data.
+No third-party network bridges are configured, so discovery returns an empty
+protocol inventory and unknown lookups return `M_NOT_FOUND`.
+
+Optional Matrix TURN credentials use the
+[coturn REST credential format](https://github.com/coturn/coturn/blob/master/README.turnserver#turn-rest-api).
+Set `MATRIX_TURN_URIS` (comma-separated `turn:`/`turns:` URIs),
+`MATRIX_TURN_SHARED_SECRET` (at least 32 bytes) and optionally `MATRIX_TURN_TTL`
+(60–86400 seconds, default 3600). Configure the same secret on the TURN service.
+Credentials bind the Matrix user and expiry; the shared secret is never returned.
+This API does not provision a TURN service or reuse LiveKit credentials.
+
 Native creation is controlled by `:native_event_graph`; background federation
 workers by `:federation_enabled`. Both default to false until rollout.
 `MATRIX_SIGNING_KEY` must contain a persistent dedicated Ed25519 seed. Do not

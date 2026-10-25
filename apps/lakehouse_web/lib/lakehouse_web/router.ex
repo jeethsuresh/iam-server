@@ -195,6 +195,13 @@ defmodule LakehouseWeb.Router do
     get "/v3/login", ProtocolController, :login_flows
     post "/v3/login", ProtocolController, :login
     post "/v3/refresh", ProtocolController, :refresh
+    post "/v3/register", AccountPolicyController, :registration
+    get "/v3/register/available", AccountPolicyController, :registration
+    post "/v3/register/email/requestToken", AccountPolicyController, :registration
+    post "/v3/register/msisdn/requestToken", AccountPolicyController, :registration
+    get "/v1/register/m.login.registration_token/validity", AccountPolicyController, :registration
+    post "/v3/account/password/email/requestToken", AccountPolicyController, :password
+    post "/v3/account/password/msisdn/requestToken", AccountPolicyController, :password
     get "/v3/profile/:userId", ProtocolController, :profile
     get "/v3/profile/:userId/:field", ProtocolController, :profile
   end
@@ -310,6 +317,22 @@ defmodule LakehouseWeb.Router do
     put "/v3/rooms/:roomId/state/:eventType", ProtocolController, :put_state
     get "/v3/rooms/:roomId/messages", ProtocolController, :messages
     post "/v3/search", ProtocolController, :search
+    post "/v3/account/password", AccountPolicyController, :password
+    get "/v3/account/3pid", AccountPolicyController, :threepids
+    post "/v3/account/3pid", AccountPolicyController, :threepids
+    post "/v3/account/3pid/add", AccountPolicyController, :threepids
+    post "/v3/account/3pid/bind", AccountPolicyController, :threepids
+    post "/v3/account/3pid/delete", AccountPolicyController, :threepids
+    post "/v3/account/3pid/unbind", AccountPolicyController, :threepids
+    post "/v3/account/3pid/email/requestToken", AccountPolicyController, :threepids
+    post "/v3/account/3pid/msisdn/requestToken", AccountPolicyController, :threepids
+    get "/v3/thirdparty/protocols", AccountPolicyController, :protocols
+    get "/v3/thirdparty/protocol/:protocol", AccountPolicyController, :thirdparty
+    get "/v3/thirdparty/location/:protocol", AccountPolicyController, :thirdparty
+    get "/v3/thirdparty/user/:protocol", AccountPolicyController, :thirdparty
+    get "/v3/thirdparty/location", AccountPolicyController, :thirdparty
+    get "/v3/thirdparty/user", AccountPolicyController, :thirdparty
+    get "/v3/voip/turnServer", AccountPolicyController, :turn
   end
 
   scope "/_matrix/media", LakehouseWeb.Matrix, as: :matrix_media do
