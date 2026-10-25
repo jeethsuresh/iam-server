@@ -200,6 +200,7 @@ defmodule LakehouseMatrix.LegacySync do
               end
           end
         end)
+        |> LakehouseMatrix.InvitePermission.filter(principal)
 
       presence =
         if ref, do: [], else: LakehouseMatrix.Ephemeral.presence_events(principal, from, finish)

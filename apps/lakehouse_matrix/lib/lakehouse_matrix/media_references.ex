@@ -106,6 +106,18 @@ defmodule LakehouseMatrix.MediaReferences do
         "m.room.member" ->
           [["avatar_url"]]
 
+        "m.room.image_pack" ->
+          images = if is_map(content["images"]), do: Map.keys(content["images"]), else: []
+
+          [["pack", "avatar_url"]] ++
+            Enum.flat_map(images, fn key ->
+              [
+                ["images", key, "url"],
+                ["images", key, "info", "thumbnail_url"],
+                ["images", key, "info", "thumbnail_file", "url"]
+              ]
+            end)
+
         _ ->
           []
       end

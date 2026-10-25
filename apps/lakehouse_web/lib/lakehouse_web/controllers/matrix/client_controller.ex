@@ -3,12 +3,13 @@ defmodule LakehouseWeb.Matrix.ClientController do
 
   alias LakehouseMatrix.{Identity, Matrix}
 
-  # API path versions (v3) are not Matrix specification versions. Keep the
-  # advertised baseline conservative until the full v1.19 conformance gate passes.
-  @versions ["v1.1"]
+  # API path versions (v3) are distinct from specification versions. The older
+  # local-only backend retains its baseline; the signed graph uses the audited API.
+  @native_versions Enum.map(1..19, &"v1.#{&1}")
 
   def versions(conn, _params) do
-    json(conn, %{"versions" => @versions, "unstable_features" => %{"org.matrix.msc4186" => true}})
+    versions = if LakehouseMatrix.Protocol.Rooms.enabled?(), do: @native_versions, else: ["v1.1"]
+    json(conn, %{"versions" => versions, "unstable_features" => %{"org.matrix.msc4186" => true}})
   end
 
   def login(conn, params) do
@@ -48,6 +49,10 @@ defmodule LakehouseWeb.Matrix.ClientController do
     json(conn, body)
   end
 
+  def invite(conn, %{"id_server" => _, "medium" => _, "address" => _}),
+    do:
+      matrix_error(conn, 403, "M_FORBIDDEN", "Invitations through identity services are disabled")
+
   def invite(conn, %{"roomId" => room_ref} = params) do
     user =
       Map.get(params, "user_id") ||
@@ -79,6 +84,9 @@ defmodule LakehouseWeb.Matrix.ClientController do
       {:error, :forbidden} ->
         matrix_error(conn, 403, "M_FORBIDDEN", "You cannot invite to this room")
 
+      {:error, :invite_blocked} ->
+        LakehouseWeb.Matrix.ProtocolController.respond(conn, {:error, :invite_blocked})
+
       {:error, _} ->
         matrix_error(conn, 400, "M_UNKNOWN", "Could not invite user")
     end
@@ -88,6 +96,9 @@ defmodule LakehouseWeb.Matrix.ClientController do
     case Matrix.create_room(conn.assigns.principal_id, params) do
       {:ok, body} ->
         json(conn, body)
+
+      {:error, :invite_blocked} ->
+        LakehouseWeb.Matrix.ProtocolController.respond(conn, {:error, :invite_blocked})
 
       {:error, :forbidden} ->
         matrix_error(conn, 403, "M_FORBIDDEN", "You are not allowed to create rooms")

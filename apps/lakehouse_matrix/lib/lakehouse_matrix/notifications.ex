@@ -64,7 +64,7 @@ defmodule LakehouseMatrix.Notifications do
     projected = Repo.get_by!(RoomEvent, event_id: id)
     event = Events.to_client_event(projected) |> Map.put("room_id", metadata.room_id)
 
-    if principal.active and event["sender"] not in ClientSync.ignored_users(principal.id),
+    if principal.active and not ignored?(principal.id, event),
       do:
         notify!(metadata, projected, event, principal, %{
           members: 0,
@@ -284,9 +284,10 @@ defmodule LakehouseMatrix.Notifications do
 
   defp ignored?(principal, event),
     do:
-      event["sender"] in ClientSync.ignored_users(principal) and
-        (not Map.has_key?(event, "state_key") or
-           (event["type"] == "m.room.member" and event["content"]["membership"] == "invite"))
+      LakehouseMatrix.InvitePermission.suppressed?(principal, event) or
+        (event["sender"] in ClientSync.ignored_users(principal) and
+           (not Map.has_key?(event, "state_key") or
+              (event["type"] == "m.room.member" and event["content"]["membership"] == "invite")))
 
   def read_states(principal, room, high) do
     # Keep each receipt's history because delivery can stop below the latest

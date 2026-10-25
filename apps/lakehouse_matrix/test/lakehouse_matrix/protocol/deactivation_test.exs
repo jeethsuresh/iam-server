@@ -117,6 +117,19 @@ defmodule LakehouseMatrix.DeactivationTest do
              LakehouseMatrix.Ephemeral.set_presence(c.user.id, %{"presence" => "online"})
 
     assert {:error, :user_deactivated} = ClientStore.create_filter(c.user.id, %{})
+    assert {:error, :user_deactivated} = LakehouseMatrix.CrossSigning.upload(c.user.id, %{})
+    assert {:error, :user_deactivated} = LakehouseMatrix.CrossSigning.signatures(c.user.id, %{})
+    assert {:error, :user_deactivated} = LakehouseMatrix.OpenId.issue(c.user.id)
+
+    assert {:error, :user_deactivated} =
+             ClientStore.send_to_device(
+               c.user.id,
+               "D",
+               c.user.username,
+               "m.test",
+               "late-envelope",
+               %{}
+             )
 
     assert {:error, :user_deactivated} =
              LakehouseMatrix.Reports.submit(

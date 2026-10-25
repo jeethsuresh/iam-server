@@ -579,6 +579,43 @@ defmodule LakehouseMatrix.ClientRooms do
 
   defp redact_event(_, _, _, _), do: {:error, :invalid_param}
 
+  def read_markers(principal, ref, params) do
+    keys = ~w(m.fully_read m.read m.read.private)
+
+    with {:ok, _} <- readable(principal, ref),
+         true <- Enum.all?(keys, &(not Map.has_key?(params, &1) or is_binary(params[&1]))) do
+      LakehouseMatrix.Protocol.Policy.transaction(fn ->
+        ClientStore.lock!()
+        LakehouseMatrix.AccountModeration.require!(principal, :read)
+
+        for key <- ~w(m.read m.read.private), id = params[key], not is_nil(id) do
+          case receipt(principal, ref, key, id, %{}) do
+            {:ok, _} -> :ok
+            {:error, reason} -> Repo.rollback(reason)
+          end
+        end
+
+        if id = params["m.fully_read"] do
+          case event(principal, ref, id) do
+            {:ok, _} ->
+              case ClientStore.put_data(principal, ref, "m.fully_read", %{"event_id" => id}) do
+                {:ok, _} -> :ok
+                {:error, reason} -> Repo.rollback(reason)
+              end
+
+            _ ->
+              Repo.rollback(:invalid_param)
+          end
+        end
+
+        %{}
+      end)
+    else
+      false -> {:error, :invalid_param}
+      _ -> {:error, :forbidden}
+    end
+  end
+
   def receipt(principal, ref, type, event, data) do
     with {:ok, room} <- readable(principal, ref),
          true <- type in ~w(m.read m.read.private),

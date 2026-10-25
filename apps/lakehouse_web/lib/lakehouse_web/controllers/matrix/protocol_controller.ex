@@ -453,7 +453,20 @@ defmodule LakehouseWeb.Matrix.ProtocolController do
   def put_data(conn, %{"userId" => user, "type" => type} = params) do
     room = params["roomId"] || ""
 
-    if type != "m.push_rules" and user == Identity.user_id(conn.assigns.username) and
+    cond do
+      user != Identity.user_id(conn.assigns.username) ->
+        respond(conn, {:error, :forbidden})
+
+      type in ["m.push_rules", "m.fully_read"] ->
+        error(conn, 405, "M_BAD_JSON", "This account data is managed by the server")
+
+      true ->
+        put_client_data(conn, user, room, type)
+    end
+  end
+
+  defp put_client_data(conn, user, room, type) do
+    if user == Identity.user_id(conn.assigns.username) and
          (room == "" or LakehouseMatrix.ClientRoomData.valid_room_ref?(room)) and
          byte_size(Jason.encode!(body(conn))) <= 65_536 do
       respond(conn, ClientStore.put_data(principal(conn), room, type, body(conn)))
@@ -514,29 +527,8 @@ defmodule LakehouseWeb.Matrix.ProtocolController do
   def receipt(conn, %{"roomId" => ref, "receiptType" => type, "eventId" => event}),
     do: respond(conn, ClientRooms.receipt(principal(conn), ref, type, event, body(conn)))
 
-  def read_markers(conn, %{"roomId" => ref} = p) do
-    with {:ok, _} <- ClientRooms.readable(principal(conn), ref) do
-      for key <- ~w(m.read m.read.private),
-          is_binary(p[key]),
-          do: ClientRooms.receipt(principal(conn), ref, key, p[key], %{})
-
-      if is_binary(p["m.fully_read"]) do
-        case ClientRooms.event(principal(conn), ref, p["m.fully_read"]) do
-          {:ok, _} ->
-            ClientStore.put_data(principal(conn), ref, "m.fully_read", %{
-              "event_id" => p["m.fully_read"]
-            })
-
-          _ ->
-            :ok
-        end
-      end
-
-      json(conn, %{})
-    else
-      _ -> respond(conn, {:error, :forbidden})
-    end
-  end
+  def read_markers(conn, %{"roomId" => ref}),
+    do: respond(conn, ClientRooms.read_markers(principal(conn), ref, body(conn)))
 
   def profile(conn, %{"userId" => user} = params) do
     case LakehouseMatrix.ClientProfiles.get(user) do
@@ -650,6 +642,9 @@ defmodule LakehouseWeb.Matrix.ProtocolController do
     do: error(conn, 404, "M_UNRECOGNIZED", "Unrecognized Matrix endpoint")
 
   def respond(conn, {:ok, body}), do: json(conn, body)
+
+  def respond(conn, {:error, :invite_blocked}),
+    do: error(conn, 403, "M_INVITE_BLOCKED", "This account blocks room invitations")
 
   def respond(conn, {:error, {:policy_error, status, body}}),
     do: conn |> put_status(status) |> json(body)

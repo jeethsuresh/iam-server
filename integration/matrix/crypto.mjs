@@ -41,13 +41,14 @@ async function start(base, session, secretKeys = new Map()) {
   return client;
 }
 try {
+  assert((await json(native, '/_matrix/client/versions')).versions.includes('v1.19'));
   const a = await json(native, '/_matrix/client/v3/login', {type: 'm.login.password', identifier: {type: 'm.id.user', user: 'cryptoalice'}, password: 'password123', device_id: 'CRYPTO_A_' + suffix, refresh_token: true});
   const refreshed = await json(native, '/_matrix/client/v3/refresh', {refresh_token: a.refresh_token});
   assert.ok(refreshed.expires_in_ms > 0);
   a.access_token = refreshed.access_token;
   const rules = await json(native, '/_matrix/client/v3/pushrules/', null, a.access_token);
   assert.ok(rules.global.override.some(rule => rule.rule_id === '.m.rule.is_user_mention'));
-  console.log('CRYPTO PASS refresh credentials and Matrix 1.19 default push rules');
+  console.log('CRYPTO PASS Matrix 1.19 negotiation, refresh credentials and default push rules');
   const b = await json(reference, '/_matrix/client/v3/register', {username: 'crypto' + suffix, password: 'test-password-123', auth: {type: 'm.login.dummy'}, device_id: 'CRYPTO_B_' + suffix});
   const alice = await start(native, a);
   const bob = await start(reference, b);

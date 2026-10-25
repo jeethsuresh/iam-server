@@ -146,7 +146,11 @@ defmodule LakehouseMatrix.Events do
 
   @spec to_client_event(RoomEvent.t() | map()) :: map()
   def to_client_event(event, principal),
-    do: event |> to_client_event() |> LakehouseMatrix.Erasure.client(principal)
+    do:
+      event
+      |> to_client_event()
+      |> LakehouseMatrix.Erasure.client(principal)
+      |> LakehouseMatrix.ClientEventMetadata.previous_content(principal)
 
   def to_client_event(%RoomEvent{} = e) do
     base = %{
@@ -165,6 +169,7 @@ defmodule LakehouseMatrix.Events do
         else: base
 
     base = redact_client_event(base, e)
+    base = LakehouseMatrix.ClientEventMetadata.replaces(base, e)
 
     if is_integer(e.sticky_duration_ms) and e.sticky_duration_ms > 0 do
       duration = min(e.sticky_duration_ms, 3_600_000)

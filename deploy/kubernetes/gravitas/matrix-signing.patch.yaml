@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: iam
+spec:
+  template:
+    spec:
+      containers:
+        - name: iam
+          env:
+            - name: MATRIX_NATIVE_EVENT_GRAPH
+              value: "true"
+            - name: MATRIX_FEDERATION_ENABLED
+              value: "true"
+          envFrom:
+            - configMapRef:
+                name: iam-config
+            - secretRef:
+                name: iam-secrets
+            - secretRef:
+                name: iam-matrix-signing
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: iam-migrate
+spec:
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: iam
+              env:
+                - name: MATRIX_NATIVE_EVENT_GRAPH
+                  value: "true"
+                - name: MATRIX_FEDERATION_ENABLED
+                  value: "true"
+              envFrom:
+                - configMapRef:
+                    name: iam-config
+                - secretRef:
+                    name: iam-secrets
+                - secretRef:
+                    name: iam-matrix-signing

@@ -10,6 +10,8 @@ defmodule LakehouseMatrix.ClientKeys do
       ClientStore.lock!()
       LakehouseMatrix.AccountModeration.require!(principal, :read)
 
+      if CrossSigning.reserved_device_id?(principal, device), do: Repo.rollback(:invalid_param)
+
       if keys = params["device_keys"] do
         unless is_map(keys) and keys["user_id"] == Identity.user_id(username) and
                  keys["device_id"] == device and
@@ -107,8 +109,7 @@ defmodule LakehouseMatrix.ClientKeys do
       Enum.reduce(users, %{}, fn {mxid, device_ids}, acc ->
         with true <- is_list(device_ids) and length(device_ids) <= 100,
              {:ok, name} <- Identity.parse_user_id(mxid),
-             {:ok, p} <- Accounts.fetch_user(name),
-             true <- visible?(requester, p.id) do
+             {:ok, p} <- Accounts.fetch_user(name) do
           devices =
             Repo.all(
               from d in "matrix_devices",
@@ -138,8 +139,7 @@ defmodule LakehouseMatrix.ClientKeys do
     cross =
       Enum.reduce(users, %{}, fn {user, _}, acc ->
         with {:ok, name} <- Identity.parse_user_id(user),
-             {:ok, p} <- Accounts.fetch_user(name),
-             true <- visible?(requester, p.id) do
+             {:ok, p} <- Accounts.fetch_user(name) do
           DeviceKeys.merge(acc, CrossSigning.query(p.id, user, requester))
         else
           _ -> acc
@@ -168,15 +168,14 @@ defmodule LakehouseMatrix.ClientKeys do
     end
   end
 
-  def local_claim(requester, users) when is_map(users) and map_size(users) <= 100 do
+  def local_claim(_requester, users) when is_map(users) and map_size(users) <= 100 do
     Repo.transaction(fn ->
       result =
         Enum.reduce(users, %{}, fn {mxid, devices}, acc ->
           unless is_map(devices) and map_size(devices) <= 100, do: Repo.rollback(:invalid_param)
 
           with {:ok, name} <- Identity.parse_user_id(mxid),
-               {:ok, p} <- Accounts.fetch_user(name),
-               true <- visible?(requester, p.id) do
+               {:ok, p} <- Accounts.fetch_user(name) do
             keys =
               Enum.reduce(devices, %{}, fn {device, algorithm}, inner ->
                 unless is_binary(algorithm), do: Repo.rollback(:invalid_param)
@@ -243,21 +242,6 @@ defmodule LakehouseMatrix.ClientKeys do
   end
 
   defp validate_selection(_, _), do: {:error, :invalid_param}
-
-  defp visible?(:public, _), do: true
-  defp visible?(a, a), do: true
-
-  defp visible?(a, b) do
-    Repo.exists?(
-      from m in LakehouseMatrix.Schema.RoomMembership,
-        join: n in LakehouseMatrix.Schema.RoomMembership,
-        on: m.room_id == n.room_id,
-        where:
-          m.principal_id == ^a and n.principal_id == ^b and
-            fragment("?->>'membership' IN ('join','invite')", m.membership_state) and
-            fragment("?->>'membership' IN ('join','invite')", n.membership_state)
-    )
-  end
 
   defp algorithm(id), do: id |> String.split(":", parts: 2) |> hd()
 end

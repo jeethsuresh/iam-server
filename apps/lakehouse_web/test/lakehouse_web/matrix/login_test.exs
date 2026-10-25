@@ -34,6 +34,22 @@ defmodule LakehouseWeb.Matrix.LoginTest do
       )
       |> json_response(200)
 
+  test "logging in again replaces only that device's access and refresh credentials", %{
+    user: user
+  } do
+    first = login(user)
+    other = login(user, %{"device_id" => "OTHER"})
+    fresh = login(user)
+    assert api(first, :get, "/_matrix/client/v3/account/whoami").status == 401
+
+    assert post(build_conn(), "/_matrix/client/v3/refresh", %{
+             "refresh_token" => first["refresh_token"]
+           }).status == 401
+
+    assert api(other, :get, "/_matrix/client/v3/account/whoami").status == 200
+    assert api(fresh, :get, "/_matrix/client/v3/account/whoami").status == 200
+  end
+
   test "expired access tokens soft log out, refresh responses can be retried and logout revokes refresh",
        %{user: user} do
     session = login(user)

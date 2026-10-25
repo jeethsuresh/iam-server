@@ -37,6 +37,13 @@ defmodule LakehouseMatrix.Federation.Invites do
 
       Repo.transaction(fn ->
         ClientStore.lock!()
+
+        unless Accounts.active?(Repo.get!(LakehouseIam.Schema.Principal, target.id)),
+          do: Repo.rollback(:not_found)
+
+        if LakehouseMatrix.InvitePermission.blocked?(target.id),
+          do: Repo.rollback(:invite_blocked)
+
         metadata = ensure_metadata!(ref, version, stripped)
 
         if metadata.extremities != [] do

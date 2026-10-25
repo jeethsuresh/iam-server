@@ -1,7 +1,7 @@
-> Native Elixir Matrix support now includes signed room graphs, federation and
+> Native Elixir Matrix 1.19 support includes signed room graphs, federation and
 > homeserver E2EE services, tested against Synapse and real Rust-backed clients.
-> Full Matrix 1.19 compatibility and River client encryption remain in progress;
-> see [the compatibility status and rollout notes](docs/matrix-compatibility.md).
+> River rooms share the graph; its client encryption UI is separate client work.
+> See [the compatibility status and rollout notes](docs/matrix-compatibility.md).
 
 ## Gravitas dashboard and Kubernetes
 

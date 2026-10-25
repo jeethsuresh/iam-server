@@ -122,6 +122,31 @@ defmodule LakehouseMatrix.PrivateMediaReferencesTest do
     assert {:ok, %{body: "old attachment"}} = Media.federation_download(private.media_id)
   end
 
+  test "image-pack assets retain room authorization and arbitrary fields cannot grant media access",
+       ctx do
+    {:ok, image} = Media.upload(ctx.alice.id, "private pack image")
+    {:ok, unrelated} = Media.upload(ctx.alice.id, "unrelated private bytes")
+
+    assert {:ok, pack} =
+             ClientRooms.put_state(ctx.alice.id, ctx.ref, "m.room.image_pack", "custom", %{
+               "images" => %{"wave" => %{"url" => image.content_uri, "body" => "Wave"}},
+               "pack" => %{"display_name" => unrelated.content_uri},
+               "unknown" => unrelated.content_uri
+             })
+
+    assert {:ok, %{body: "private pack image"}} =
+             Media.download(ctx.bob.id, ctx.server, image.media_id)
+
+    assert {:error, :forbidden} = Media.download(ctx.outsider.id, ctx.server, image.media_id)
+    assert {:error, :forbidden} = Media.download(ctx.bob.id, ctx.server, unrelated.media_id)
+    refute Media.get_record(image.media_id).matrix_public
+
+    assert {:ok, _} =
+             ClientRooms.redact(ctx.alice.id, "A", ctx.ref, pack["event_id"], "redact-pack", %{})
+
+    assert {:error, :forbidden} = Media.download(ctx.bob.id, ctx.server, image.media_id)
+  end
+
   test "only a reader can publish a legacy upload through their public profile", ctx do
     {:ok, private} = Media.upload(ctx.alice.id, "private avatar")
 

@@ -36,6 +36,12 @@ defmodule LakehouseWeb.Matrix.AccountPolicyController do
   def protocols(conn, _), do: json(conn, %{})
   def thirdparty(conn, _), do: ProtocolController.respond(conn, {:error, :not_found})
 
+  # No application services are registered. Ordinary Matrix and IAM tokens
+  # must never authorize operations reserved for an appservice's as_token.
+  def appservice(conn, _),
+    do:
+      matrix_error(conn, 403, "M_FORBIDDEN", "A registered application service token is required")
+
   def turn(conn, _) do
     conn = put_resp_header(conn, "cache-control", "no-store")
     ProtocolController.respond(conn, LakehouseMatrix.Turn.credentials(conn.assigns.username))

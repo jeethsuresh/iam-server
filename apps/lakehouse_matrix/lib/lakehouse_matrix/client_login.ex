@@ -22,6 +22,9 @@ defmodule LakehouseMatrix.ClientLogin do
         unless Accounts.active?(Repo.get!(LakehouseIam.Schema.Principal, principal.id)),
           do: Repo.rollback(:invalid_credentials)
 
+        if LakehouseMatrix.CrossSigning.reserved_device_id?(principal.id, device),
+          do: Repo.rollback(:invalid_param)
+
         {created, _} =
           Repo.insert_all(
             "matrix_devices",
@@ -44,6 +47,13 @@ defmodule LakehouseMatrix.ClientLogin do
         access = "mtx_" <> ClientStore.random()
         refresh = if refresh?, do: "mrt_" <> ClientStore.random()
         lifetime = if refresh?, do: @access_ms, else: @legacy_ms
+
+        # A fresh login for an existing device replaces its session authority,
+        # while retaining the client's device keys and pending key messages.
+        Repo.delete_all(
+          from s in "matrix_sessions",
+            where: s.principal_id == type(^principal.id, :binary_id) and s.device_id == ^device
+        )
 
         Repo.insert_all("matrix_sessions", [
           %{

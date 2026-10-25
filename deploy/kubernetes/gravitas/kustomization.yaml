@@ -8,6 +8,7 @@ resources:
   - ingress.yaml
 patches:
   - path: app-storage.yaml
+  - path: matrix-signing.patch.yaml
   - target:
       kind: ConfigMap
       name: iam-config

@@ -21,6 +21,15 @@
     },
     {
       "path": "/.well-known/iam-configuration"
+    },
+    {
+      "path": "/.well-known/matrix/server"
+    },
+    {
+      "path": "/_matrix/client/versions"
+    },
+    {
+      "path": "/_matrix/key/v2/server"
     }
   ]
 }

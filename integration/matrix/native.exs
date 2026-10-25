@@ -755,6 +755,92 @@ if System.get_env("INTEROP_SERVE_ONLY") != "1" do
     end
   )
 
+  Interop.check(
+    "Synapse joins River's restricted channel through its parent and shares the same timeline",
+    fn ->
+      scopes =
+        ~w(chats.list chats.read chats.write groups.create groups.manage groups.join spaces.channels)
+
+      {:ok, grant} =
+        LakehouseIam.Apps.Grants.upsert(alice.id, "https://chat.gravitas.cool", scopes, :all, [])
+
+      {:ok, space} =
+        LakehouseMatrix.DelegatedGroups.create(grant, %{
+          "name" => "River federation",
+          "kind" => "space",
+          "txn_id" => "river-interop"
+        })
+
+      {:ok, %{channels: [channel | _]}} =
+        LakehouseMatrix.DelegatedGroups.channels(grant, space.id)
+
+      assert_path =
+        "/_matrix/client/v3/join/" <> Interop.escape(channel.room_id) <> "?via=native.test%3A8448"
+
+      {:error, {:http, 403, _}} = Interop.http(:post, "reference.test:8448", assert_path, %{}, bt)
+
+      {:ok, _} =
+        Interop.http(
+          :post,
+          "native.test:8448",
+          "/_matrix/client/v3/rooms/" <> Interop.escape(space.room_id) <> "/invite",
+          %{"user_id" => b["user_id"]},
+          at
+        )
+
+      Interop.wait(fn ->
+        match?(
+          {:ok, %{"rooms" => %{"invite" => invites}}} when is_map_key(invites, space.room_id),
+          Interop.http(:get, "reference.test:8448", "/_matrix/client/v3/sync?timeout=0", nil, bt)
+        )
+      end)
+
+      {:ok, _} =
+        Interop.http(
+          :post,
+          "reference.test:8448",
+          "/_matrix/client/v3/join/" <>
+            Interop.escape(space.room_id) <> "?via=native.test%3A8448",
+          %{},
+          bt
+        )
+
+      {:ok, _} = Interop.http(:post, "reference.test:8448", assert_path, %{}, bt)
+
+      {:ok, sent} =
+        LakehouseMatrix.DelegatedGroups.send(
+          grant,
+          channel.id,
+          "m.room.message",
+          "river-message",
+          %{"msgtype" => "m.text", "body" => "River to Synapse"}
+        )
+
+      Interop.wait(fn ->
+        Interop.contains("reference.test:8448", bt, channel.room_id, sent["event_id"])
+      end)
+
+      {:ok, reply} =
+        Interop.send_event(
+          "reference.test:8448",
+          bt,
+          channel.room_id,
+          "reply-to-river",
+          "Synapse to River"
+        )
+
+      Interop.wait(fn ->
+        {:ok, %{events: events}} =
+          LakehouseMatrix.DelegatedGroups.timeline(grant, channel.id, %{})
+
+        Enum.any?(
+          events,
+          &(&1["event_id"] == reply["event_id"] and &1["content"]["body"] == "Synapse to River")
+        )
+      end)
+    end
+  )
+
   IO.puts("INTEROP COMPLETE")
 end
 

@@ -18,6 +18,7 @@ defmodule LakehouseMatrix.CrossSigning do
   def upload(principal, params, authenticated \\ false) do
     Repo.transaction(fn ->
       ClientStore.lock!()
+      LakehouseMatrix.AccountModeration.require!(principal, :read)
       user = mxid(principal)
       old = keys(principal)
 
@@ -30,6 +31,14 @@ defmodule LakehouseMatrix.CrossSigning do
 
       unless Enum.all?(supplied, fn {usage, key} -> valid?(key, user, usage) end),
         do: Repo.rollback(:invalid_param)
+
+      identifiers = Enum.map(supplied, fn {_, key} -> key_id(key) end)
+
+      if Repo.exists?(
+           from d in "matrix_devices",
+             where: d.principal_id == type(^principal, :binary_id) and d.device_id in ^identifiers
+         ),
+         do: Repo.rollback(:invalid_param)
 
       changed = Enum.any?(supplied, fn {usage, key} -> bare(key) != bare(old[usage]) end)
       if old["master"] && changed && not authenticated, do: Repo.rollback(:reauth_required)
@@ -100,6 +109,7 @@ defmodule LakehouseMatrix.CrossSigning do
   def signatures(principal, params) when is_map(params) and map_size(params) <= 100 do
     Repo.transaction(fn ->
       ClientStore.lock!()
+      LakehouseMatrix.AccountModeration.require!(principal, :read)
       signer = mxid(principal)
       own = keys(principal)
 
@@ -246,6 +256,10 @@ defmodule LakehouseMatrix.CrossSigning do
 
   def key_id(key) when is_map(key), do: key["keys"] |> Map.values() |> List.first()
   def key_id(_), do: nil
+
+  def reserved_device_id?(principal, device),
+    do: Enum.any?(keys(principal), fn {_, key} -> key_id(key) == device end)
+
   defp bare(value) when is_map(value), do: Map.drop(value, ["signatures", "unsigned"])
   defp bare(_), do: nil
 

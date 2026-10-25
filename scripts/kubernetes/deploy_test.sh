@@ -68,6 +68,21 @@ if grep -q 'apply \|scale \|create job' "$IAM_TEST_LOG"; then echo 'Unexpected c
 IAM_KUSTOMIZE_OVERLAY=gravitas IAM_MAINTENANCE_RELEASE=1 "$root/scripts/kubernetes/deploy.sh" "$image"
 if grep -q 'get secret' "$IAM_TEST_LOG"; then echo 'Release tried to read application Secrets'; exit 1; fi
 echo 'Gravitas cluster guard and Secret isolation: OK'
+IAM_KUSTOMIZE_OVERLAY=gravitas "$root/scripts/kubernetes/deploy.sh" --render "$image" > "$work/gravitas-rendered"
+python3 - "$work/gravitas-rendered" <<'PY'
+from pathlib import Path
+import sys
+text = Path(sys.argv[1]).read_text()
+assert text.count('name: iam-matrix-signing') == 2
+assert text.count('name: MATRIX_NATIVE_EVENT_GRAPH') == 2
+assert text.count('name: MATRIX_FEDERATION_ENABLED') == 2
+# The shared ConfigMap is applied before backup/reset. Native activation belongs
+# to the new pod templates so a failed release can still restart the old writer.
+assert 'MATRIX_NATIVE_EVENT_GRAPH: ' not in text
+assert 'MATRIX_FEDERATION_ENABLED: ' not in text
+assert 'kind: Secret' not in text
+PY
+python3 "$root/scripts/kubernetes/test_matrix_signing_key.py"
 
 # Destructive room resets require a fresh validated archive and a one-use job.
 export IAM_TEST_IMAGE="registry.example.com/iam@sha256:$(printf 'a%.0s' {1..64})"

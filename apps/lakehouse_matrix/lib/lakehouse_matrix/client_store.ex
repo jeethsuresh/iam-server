@@ -230,6 +230,7 @@ defmodule LakehouseMatrix.ClientStore do
       when is_binary(txn) and byte_size(txn) in 1..255 do
     LakehouseMatrix.Protocol.Policy.transaction(fn ->
       lock!()
+      LakehouseMatrix.AccountModeration.require!(principal, :read)
 
       existing =
         Repo.one(

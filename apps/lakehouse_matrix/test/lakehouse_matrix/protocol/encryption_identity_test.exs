@@ -58,6 +58,52 @@ defmodule LakehouseMatrix.Protocol.EncryptionIdentityTest do
     assert CrossSigning.keys(ctx.alice.id)["self_signing"] == nil
   end
 
+  test "device and cross-signing identifiers cannot collide in either creation order", ctx do
+    initial = identity(ctx.mxid)
+    id = CrossSigning.key_id(initial["master_key"])
+    assert {:ok, %{}} = CrossSigning.upload(ctx.alice.id, initial)
+
+    assert {:error, :invalid_param} =
+             ClientStore.login(ctx.alice.username, "password123", %{"device_id" => id})
+
+    assert {:error, :invalid_param} = ClientKeys.upload(ctx.alice.id, id, ctx.alice.username, %{})
+    replacement = %{"master_key" => key(<<14::256>>, "master", ctx.mxid)}
+    collision = CrossSigning.key_id(replacement["master_key"])
+
+    assert {:ok, _} =
+             ClientStore.login(ctx.alice.username, "password123", %{"device_id" => collision})
+
+    assert {:error, :invalid_param} = CrossSigning.upload(ctx.alice.id, replacement, true)
+    assert CrossSigning.keys(ctx.alice.id)["master"] == initial["master_key"]
+  end
+
+  test "local public key discovery works before sharing a room without exposing user-signing keys",
+       ctx do
+    other = Fixtures.user_fixture("unrelated")
+    assert {:ok, _} = CrossSigning.upload(ctx.alice.id, identity(ctx.mxid))
+
+    assert {:ok, _} =
+             ClientKeys.upload(ctx.alice.id, "A", ctx.alice.username, %{
+               "device_keys" => device(ctx.mxid),
+               "one_time_keys" => %{
+                 "signed_curve25519:discovery" => %{"key" => "public one-time key"}
+               }
+             })
+
+    assert {:ok, result} = ClientKeys.query(other.id, %{ctx.mxid => []})
+    assert result["device_keys"][ctx.mxid]["A"]["device_id"] == "A"
+    assert result["master_keys"][ctx.mxid]
+    assert result["self_signing_keys"][ctx.mxid]
+    refute result["user_signing_keys"][ctx.mxid]
+
+    assert {:ok, claimed} =
+             ClientKeys.claim(other.id, %{ctx.mxid => %{"A" => "signed_curve25519"}})
+
+    assert claimed["one_time_keys"][ctx.mxid]["A"]["signed_curve25519:discovery"] == %{
+             "key" => "public one-time key"
+           }
+  end
+
   test "a self-signing key must be signed by the uploaded master", ctx do
     params = identity(ctx.mxid) |> put_in(["self_signing_key", "signatures", ctx.mxid], %{})
     assert {:error, :invalid_signature} = CrossSigning.upload(ctx.alice.id, params)

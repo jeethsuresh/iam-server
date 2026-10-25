@@ -2,9 +2,10 @@
 
 Gravitas implements Matrix in Elixir. This branch adds native room versions 11
 and 12, signed event graphs, state resolution, room federation, and homeserver
-E2EE services. It is still **not a complete Matrix 1.19 implementation**. The
-client versions endpoint remains conservative until the remaining conformance
-work and release checks pass.
+E2EE services. The native backend targets Matrix 1.19 and advertises it when
+`MATRIX_NATIVE_EVENT_GRAPH=true`. The older local backend retains its v1.1
+advertisement. The native release must pass the API/browser and independent
+version-negotiated federation/crypto gates before production rollout.
 
 ## Verified interoperability
 
@@ -87,6 +88,21 @@ E2EE is complete.
   invitations, late history and federation retrieval/delivery. A real redaction
   removes the preserved original. Erasure is not broadcast to other servers,
   which may retain their existing copies, as specified by Matrix.
+- `m.invite_permission_config` blocks local, raw-state and incoming federation
+  invitations with `M_INVITE_BLOCKED`. Existing invitations are suppressed in
+  classic, sliding and legacy sync; removing the setting restores them. Public
+  device/master/self-signing keys can be discovered before users share a room;
+  user-signing keys remain owner-only. Device IDs cannot collide with any of the
+  account's cross-signing key IDs, and a new login replaces that device's old
+  access and refresh credentials.
+- State events expose `unsigned.replaces_state`; `prev_content` is included only
+  when the prior event is visible, with erasure and redaction applied. Managed
+  `m.push_rules` and `m.fully_read` account data reject direct writes with HTTP
+  405. The dedicated read-marker API updates receipts and account data atomically.
+- Image-pack state, global pack references, recent emoji, key-backup metadata,
+  moderation lists, stickers and VoIP signalling use the common state/event and
+  private account-data APIs. Typed image-pack media references preserve River's
+  private-media authorization and redaction boundaries.
 - Atomic v11/v12 room upgrades, tombstones, predecessor links and moved local
   aliases. Replacement rooms transfer standard settings and invite members
   without impersonating joins; tags, direct-room links and room push rules are
@@ -218,19 +234,23 @@ Signing-key provisioning, final conformance and production deployment are still
 pending. These release tasks have been tested against disposable databases and
 mocked Kubernetes calls; the production reset has not run.
 
-## Remaining release and conformance work
+## Deployment policies and remaining release work
 
-- Complete remaining account-management, third-party,
-  media and administration work. Audit every Matrix 1.19 module and required
-  behavior, document server policies and optional operations, and return honest
-  Matrix errors for unsupported endpoints.
-- Integrate maintained crypto and recovery into River without widening its
-  existing delegated grant silently. Test web and native clients.
-- Finish signing-key provisioning and release rehearsal, then the fresh
-  production backup, final CI/review, merge and immutable deployment.
+- Matrix registration and recovery remain governed by IAM approval and password
+  management. Guest registration and identity-service invitations/bindings are
+  disabled. There are no registered application services: service-only client
+  operations reject ordinary tokens. Matrix authentication uses the legacy
+  password/token/SSO API; OAuth metadata returns `404 M_UNRECOGNIZED`. No hosted
+  policy server or support-contact document is configured. These discovery
+  endpoints also return 404. Policy-server participation uses external servers.
+- Run the final version-negotiated SDK/federation gate and exact-commit CI/review,
+  provision the persistent signing identity, merge, take the fresh production
+  backup and deploy the immutable release.
+- River client encryption and recovery UI is separate client work. Its delegated
+  grant must never be widened silently; homeserver E2EE is verified with standard
+  Matrix clients.
 
-Do not advertise full v1.19 compliance, enable production federation, or claim
-this branch has deployed until these checks are complete.
+Do not claim this branch has deployed until the release checks are complete.
 
 References: [Matrix 1.19](https://spec.matrix.org/v1.19/),
 [client API](https://spec.matrix.org/v1.19/client-server-api/),

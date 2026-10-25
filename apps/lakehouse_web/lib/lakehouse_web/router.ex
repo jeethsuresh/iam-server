@@ -116,6 +116,8 @@ defmodule LakehouseWeb.Router do
     get "/.well-known/iam-configuration", DiscoveryController, :configuration
     get "/.well-known/matrix/client", DiscoveryController, :matrix_client
     get "/.well-known/matrix/server", DiscoveryController, :matrix_server
+    get "/.well-known/matrix/support", Matrix.ProtocolController, :unrecognized
+    get "/.well-known/matrix/policy_server", Matrix.ProtocolController, :unrecognized
 
     post "/backend/register", IamBackendController, :create
     post "/login", IamSessionController, :create
@@ -193,6 +195,9 @@ defmodule LakehouseWeb.Router do
     pipe_through [:api, :matrix_optional]
 
     get "/versions", ClientController, :versions
+    get "/v1/auth_metadata", ProtocolController, :unrecognized
+    post "/v1/appservice/:appserviceId/ping", AccountPolicyController, :appservice
+    put "/v3/directory/list/appservice/:networkId/:roomId", AccountPolicyController, :appservice
     get "/v3/directory/room/:roomAlias", ProtocolController, :resolve_alias
     get "/v3/directory/list/room/:roomId", ProtocolController, :directory_visibility
     get "/v3/publicRooms", ProtocolController, :public_rooms

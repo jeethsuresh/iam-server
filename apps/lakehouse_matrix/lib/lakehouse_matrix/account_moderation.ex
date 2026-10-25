@@ -11,6 +11,7 @@ defmodule LakehouseMatrix.AccountModeration do
     case status(id) do
       %Principal{matrix_deactivated: true} when mode == :leave -> :ok
       %Principal{matrix_deactivated: true} when mode != :leave -> {:error, :user_deactivated}
+      %Principal{active: false} -> {:error, :user_deactivated}
       %Principal{matrix_locked: true} -> {:error, :user_locked}
       %Principal{matrix_suspended: true} when mode == :write -> {:error, :user_suspended}
       _ -> :ok
@@ -84,6 +85,11 @@ defmodule LakehouseMatrix.AccountModeration do
   # Only locally originated operations call this. Receiving historical, signed
   # federation PDUs must not be affected by later account moderation.
   def event(sender, room, type, content, key) do
+    with :ok <- moderated_event(sender, room, type, content, key),
+         do: LakehouseMatrix.InvitePermission.check(type, content, key)
+  end
+
+  defp moderated_event(sender, room, type, content, key) do
     account =
       with {:ok, name} <- Identity.parse_user_id(sender),
            {:ok, p} <- Accounts.fetch_user(name),
@@ -94,6 +100,9 @@ defmodule LakehouseMatrix.AccountModeration do
         if type == "m.room.member" and key == sender and content["membership"] == "leave",
           do: :ok,
           else: {:error, :user_deactivated}
+
+      %Principal{active: false} ->
+        {:error, :user_deactivated}
 
       %Principal{matrix_locked: true} ->
         {:error, :user_locked}

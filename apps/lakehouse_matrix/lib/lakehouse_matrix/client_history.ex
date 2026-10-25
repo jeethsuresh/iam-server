@@ -422,7 +422,11 @@ defmodule LakehouseMatrix.ClientHistory do
   end
 
   def client_event(record, principal),
-    do: record |> client_event() |> LakehouseMatrix.Erasure.client(principal)
+    do:
+      record
+      |> client_event()
+      |> LakehouseMatrix.Erasure.client(principal)
+      |> LakehouseMatrix.ClientEventMetadata.previous_content(principal)
 
   def client_event(record) do
     case Repo.get_by(RoomEvent, event_id: record.event_id) do
@@ -431,6 +435,7 @@ defmodule LakehouseMatrix.ClientHistory do
           Map.take(record.pdu, ~w(type state_key sender content origin_server_ts room_id))
           |> Map.put("event_id", record.event_id)
           |> Map.put("room_id", Identity.room_id(record.local_room_id))
+          |> LakehouseMatrix.ClientEventMetadata.replaces(record)
 
         if record.redacted_by do
           redaction = Graph.event(record.redacted_by)

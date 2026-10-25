@@ -220,10 +220,12 @@ defmodule LakehouseMatrix.ClientSync do
         get_in(filter, ["room", "state"]) || %{},
         Identity.room_id(room)
       )
+      |> LakehouseMatrix.InvitePermission.filter(principal)
 
     events =
       rows
       |> Enum.map(&Events.to_client_event(&1, principal))
+      |> LakehouseMatrix.InvitePermission.filter(principal)
       |> ClientFilters.events(timeline_filter, Identity.room_id(room))
 
     events =
@@ -427,7 +429,12 @@ defmodule LakehouseMatrix.ClientSync do
   end
 
   def state_at(room, high, principal),
-    do: Enum.map(state_at(room, high), &LakehouseMatrix.Erasure.client(&1, principal))
+    do:
+      Enum.map(state_at(room, high), fn event ->
+        event
+        |> LakehouseMatrix.Erasure.client(principal)
+        |> LakehouseMatrix.ClientEventMetadata.previous_content(principal)
+      end)
 
   def state_at(room, high) do
     if LakehouseMatrix.Protocol.Graph.room(room) do
@@ -648,6 +655,7 @@ defmodule LakehouseMatrix.ClientSync do
   def memberships_at(principal, high) do
     user = mxid(principal)
     ignored = ignored_users(principal)
+    blocked_invites = LakehouseMatrix.InvitePermission.blocked?(principal)
 
     candidates =
       Repo.all(
@@ -673,7 +681,7 @@ defmodule LakehouseMatrix.ClientSync do
               end
 
             allowed =
-              (bucket != :invite or sender not in ignored) and
+              (bucket != :invite or (not blocked_invites and sender not in ignored)) and
                 (bucket != :join or
                    reader_allowed?(room, principal))
 

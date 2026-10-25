@@ -296,6 +296,7 @@ defmodule LakehouseMatrix.SlidingSync do
                 limited = length(rows) > limit
                 rows = rows |> Enum.take(limit) |> Enum.reverse()
                 timeline = Enum.map(rows, &LakehouseMatrix.Events.to_client_event(&1, principal))
+                timeline = LakehouseMatrix.InvitePermission.filter(timeline, principal)
 
                 timeline =
                   if limited,
@@ -304,6 +305,7 @@ defmodule LakehouseMatrix.SlidingSync do
                     else: timeline
 
                 state = ClientSync.state_at(id, room_high, principal)
+                state = LakehouseMatrix.InvitePermission.filter(state, principal)
 
                 required =
                   Enum.filter(state, fn event ->

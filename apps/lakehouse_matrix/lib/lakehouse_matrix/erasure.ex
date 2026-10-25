@@ -168,12 +168,17 @@ defmodule LakehouseMatrix.Erasure do
         _ ->
           event
           |> Map.put("content", Event.redact(event, "11")["content"])
-          |> Map.delete("unsigned")
+          |> pruned_unsigned()
       end
     end
   end
 
   def client(event, _), do: event
+
+  defp pruned_unsigned(event) do
+    safe = Map.take(event["unsigned"] || %{}, ["replaces_state"])
+    if safe == %{}, do: Map.delete(event, "unsigned"), else: Map.put(event, "unsigned", safe)
+  end
 
   def record(%RoomEvent{} = record, principal) do
     case client_snapshot(record.event_id, principal) do

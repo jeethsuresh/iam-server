@@ -8,6 +8,8 @@ defmodule LakehouseMatrix.OpenId do
     token = "oid_" <> ClientStore.random()
 
     Repo.transaction(fn ->
+      ClientStore.lock!()
+      LakehouseMatrix.AccountModeration.require!(principal, :read)
       Repo.delete_all(from t in "matrix_openid_tokens", where: t.expires_at <= ^ClientStore.now())
 
       Repo.insert_all("matrix_openid_tokens", [

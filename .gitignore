@@ -23,3 +23,4 @@ erl_crash.dump
 
 /.local/
 .gravitas-runtime/
+__pycache__/
