@@ -68,12 +68,36 @@ defmodule LakehouseWeb.Matrix.ProtocolCompatibilityTest do
     end)
 
     {:ok, %{"room_id" => ref}} = LakehouseMatrix.Protocol.Rooms.create(alice.id, %{})
+    summary = api(a, :get, "/_matrix/client/v1/room_summary/#{ref}") |> json_response(200)
+
+    assert summary["room_id"] == ref and summary["room_version"] == "12" and
+             summary["membership"] == "join"
+
+    hierarchy = api(a, :get, "/_matrix/client/v1/rooms/#{ref}/hierarchy") |> json_response(200)
+    assert [%{"room_id" => ^ref, "children_state" => []}] = hierarchy["rooms"]
 
     original =
       api(a, :put, "/_matrix/client/v3/rooms/#{ref}/send/m.room.message/original", %{
         "body" => "original"
       })
       |> json_response(200)
+
+    event =
+      api(a, :get, "/_matrix/client/v3/rooms/#{ref}/event/#{original["event_id"]}")
+      |> json_response(200)
+
+    timestamp =
+      api(
+        a,
+        :get,
+        "/_matrix/client/v1/rooms/#{ref}/timestamp_to_event?dir=f&ts=#{event["origin_server_ts"]}"
+      )
+      |> json_response(200)
+
+    assert timestamp["origin_server_ts"] >= event["origin_server_ts"]
+
+    assert api(a, :get, "/_matrix/client/v1/rooms/#{ref}/timestamp_to_event?dir=b")
+           |> json_response(400)
 
     relation = %{
       "m.relates_to" => %{

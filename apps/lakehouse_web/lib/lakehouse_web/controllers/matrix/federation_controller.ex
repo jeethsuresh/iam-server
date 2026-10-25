@@ -138,6 +138,20 @@ defmodule LakehouseWeb.Matrix.FederationController do
         LakehouseMatrix.Federation.RoomProtocol.event(conn.assigns.matrix_origin, id)
       )
 
+  def space_hierarchy(conn, %{"roomId" => ref} = params),
+    do:
+      ProtocolController.respond(
+        conn,
+        LakehouseMatrix.ClientSpaces.federation(conn.assigns.matrix_origin, ref, params)
+      )
+
+  def timestamp_to_event(conn, %{"roomId" => ref} = params),
+    do:
+      ProtocolController.respond(
+        conn,
+        LakehouseMatrix.EventSearch.federation(conn.assigns.matrix_origin, ref, params)
+      )
+
   def invite(conn, %{"roomId" => room, "eventId" => event}),
     do:
       ProtocolController.respond(

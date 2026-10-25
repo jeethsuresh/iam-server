@@ -32,6 +32,22 @@ defmodule LakehouseWeb.Matrix.ProtocolController do
   def public_rooms(conn, params),
     do: respond(conn, LakehouseMatrix.Directory.client_public_rooms(params))
 
+  def room_summary(conn, %{"roomIdOrAlias" => ref}),
+    do: respond(conn, LakehouseMatrix.ClientSpaces.summary(principal(conn), ref, via(conn)))
+
+  def space_hierarchy(conn, %{"roomId" => ref} = params),
+    do:
+      respond(
+        conn,
+        LakehouseMatrix.ClientSpaces.hierarchy(
+          principal(conn),
+          device(conn),
+          ref,
+          params,
+          via(conn)
+        )
+      )
+
   def moderate(conn, %{"roomId" => ref} = params) do
     action = conn.request_path |> String.split("/") |> List.last()
 
@@ -294,6 +310,9 @@ defmodule LakehouseWeb.Matrix.ProtocolController do
         LakehouseMatrix.ClientRelations.threads(principal(conn), device(conn), ref, params)
       )
 
+  def timestamp_to_event(conn, %{"roomId" => ref} = params),
+    do: respond(conn, LakehouseMatrix.EventSearch.timestamp(principal(conn), ref, params))
+
   def messages(conn, %{"roomId" => ref} = params) do
     with {:ok, room, _} <- ClientRooms.history_access(principal(conn), ref) do
       respond(conn, ClientSync.history(principal(conn), device(conn), room.id, params))
@@ -545,6 +564,14 @@ defmodule LakehouseWeb.Matrix.ProtocolController do
     do: conn |> put_status(status) |> json(%{"errcode" => code, "error" => message})
 
   defp principal(conn), do: conn.assigns.principal_id
+
+  defp via(conn),
+    do:
+      URI.query_decoder(conn.query_string)
+      |> Enum.filter(fn {key, _} -> key in ["via", "via[]"] end)
+      |> Enum.map(&elem(&1, 1))
+      |> Enum.take(10)
+
   defp device(conn), do: conn.assigns.matrix_device_id
   defp body(conn), do: if(is_map(conn.body_params), do: conn.body_params, else: %{})
 end

@@ -91,6 +91,16 @@ defmodule LakehouseWeb.Matrix.FederationTest do
 
     assert %{"knock_room_state" => state} = response
     assert is_list(state)
+    hierarchy = "/_matrix/federation/v1/hierarchy/" <> metadata.room_id
+
+    preview =
+      build_conn()
+      |> put_req_header("authorization", header(ctx, "GET", hierarchy))
+      |> get(hierarchy)
+      |> json_response(200)
+
+    assert preview["room"]["room_id"] == metadata.room_id
+    assert preview["room"]["children_state"] == []
   end
 
   test "canonical JSON orders keys, preserves Unicode and rejects floats or oversized integers" do

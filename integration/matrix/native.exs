@@ -298,6 +298,43 @@ if System.get_env("INTEROP_SERVE_ONLY") != "1" do
       })
   end)
 
+  Interop.check("both servers locate native history by timestamp", fn ->
+    {:ok, event} =
+      Interop.http(
+        :get,
+        "native.test:8448",
+        "/_matrix/client/v3/rooms/" <>
+          Interop.escape(rid) <> "/event/" <> Interop.escape(message["event_id"]),
+        nil,
+        at
+      )
+
+    query = URI.encode_query(%{"ts" => event["origin_server_ts"], "dir" => "f"})
+
+    for {server, token} <- [{"native.test:8448", at}, {"reference.test:8448", bt}] do
+      {:ok, found} =
+        Interop.http(
+          :get,
+          server,
+          "/_matrix/client/v1/rooms/" <> Interop.escape(rid) <> "/timestamp_to_event?" <> query,
+          nil,
+          token
+        )
+
+      true = found["origin_server_ts"] == event["origin_server_ts"]
+    end
+
+    {:ok, found} =
+      Interop.federation(
+        :get,
+        "reference.test:8448",
+        "/_matrix/federation/v1/timestamp_to_event/" <> Interop.escape(rid) <> "?" <> query,
+        nil
+      )
+
+    true = found["origin_server_ts"] == event["origin_server_ts"]
+  end)
+
   Interop.check(
     "federated threads appear in native relations and both servers' bundled aggregates",
     fn ->
@@ -545,6 +582,96 @@ if System.get_env("INTEROP_SERVE_ONLY") != "1" do
         %{},
         bt
       )
+  end)
+
+  Interop.check("native and Synapse browse a shared space with an unknown remote child", fn ->
+    {:ok, %{"room_id" => space}} =
+      Interop.http(
+        :post,
+        "native.test:8448",
+        "/_matrix/client/v3/createRoom",
+        %{
+          "name" => "Shared space",
+          "preset" => "public_chat",
+          "room_version" => "12",
+          "creation_content" => %{"type" => "m.space"}
+        },
+        at
+      )
+
+    {:ok, %{"room_id" => unknown}} =
+      Interop.http(
+        :post,
+        "reference.test:8448",
+        "/_matrix/client/v3/createRoom",
+        %{
+          "name" => "Unknown remote child",
+          "preset" => "public_chat",
+          "room_version" => "12"
+        },
+        bt
+      )
+
+    for {child, via, order} <- [
+          {rid, "native.test:8448", "a"},
+          {unknown, "reference.test:8448", "b"}
+        ] do
+      {:ok, _} =
+        Interop.http(
+          :put,
+          "native.test:8448",
+          "/_matrix/client/v3/rooms/" <>
+            Interop.escape(space) <> "/state/m.space.child/" <> Interop.escape(child),
+          %{"via" => [via], "order" => order, "suggested" => true},
+          at
+        )
+    end
+
+    nil = Graph.room_by_id(unknown)
+
+    {:ok, hierarchy} =
+      Interop.http(
+        :get,
+        "native.test:8448",
+        "/_matrix/client/v1/rooms/" <> Interop.escape(space) <> "/hierarchy",
+        nil,
+        at
+      )
+
+    true = Enum.map(hierarchy["rooms"], & &1["room_id"]) == [space, rid, unknown]
+    nil = Graph.room_by_id(unknown)
+
+    {:ok, summary} =
+      Interop.http(
+        :get,
+        "native.test:8448",
+        "/_matrix/client/v1/room_summary/" <>
+          Interop.escape(unknown) <> "?via=reference.test%3A8448",
+        nil,
+        at
+      )
+
+    true = summary["name"] == "Unknown remote child" and summary["room_version"] == "12"
+
+    {:ok, %{"room_id" => ^space}} =
+      Interop.http(
+        :post,
+        "reference.test:8448",
+        "/_matrix/client/v3/join/" <> Interop.escape(space) <> "?via=native.test%3A8448",
+        %{},
+        bt
+      )
+
+    {:ok, remote_view} =
+      Interop.http(
+        :get,
+        "reference.test:8448",
+        "/_matrix/client/v1/rooms/" <> Interop.escape(space) <> "/hierarchy",
+        nil,
+        bt
+      )
+
+    true = Enum.map(remote_view["rooms"], & &1["room_id"]) == [space, rid, unknown]
   end)
 
   IO.puts("INTEROP COMPLETE")

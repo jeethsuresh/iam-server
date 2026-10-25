@@ -163,7 +163,7 @@ defmodule LakehouseMatrix.ClientStore do
             )
 
           for table <-
-                ~w(matrix_sessions matrix_to_device matrix_one_time_keys matrix_sync_connections matrix_transactions) do
+                ~w(matrix_sessions matrix_to_device matrix_one_time_keys matrix_sync_connections matrix_hierarchy_cursors matrix_transactions) do
             Repo.delete_all(
               from row in table,
                 where:

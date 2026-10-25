@@ -308,7 +308,7 @@ defmodule LakehouseMatrix.ClientHistory do
     end)
   end
 
-  defp snapshot(metadata, peer, wire, request, lookup) do
+  def snapshot(metadata, peer, wire, request, lookup) do
     with {:ok, event} <- Event.verify(wire, metadata.version, lookup),
          known <- Graph.event(event["event_id"]),
          true <- is_nil(known) or known.outlier,

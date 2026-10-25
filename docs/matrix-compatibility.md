@@ -67,6 +67,11 @@ clients does not mean River client E2EE is complete.
   Aggregates exclude hidden history, ignored senders and redacted relations.
   Sliding positions work in history/relations; current proposal requests use
   non-sticky parameters and include knocks, departures and removed-state stubs.
+- Permission-filtered room summaries and space hierarchy across federation,
+  ordered depth-first pagination, restricted-room eligibility and cycle handling.
+  Remote previews stay in a bounded-lifetime metadata cache, never in verified
+  room state. Timestamp lookup applies visibility rules and can import a closer
+  event only after checking its signature, state and auth chain.
 - Local aliases, explicitly published room directories with filtering and
   pagination, native membership moderation, profile updates, a shared-room user
   directory, typing and presence with expiry. Declining a remote invitation
@@ -84,7 +89,7 @@ reuse the IAM JWT key or rotate a seed under an existing key ID.
 
 ## Remaining release and conformance work
 
-- Complete remaining room lifecycle/upgrade, space hierarchy, summary,
+- Complete remaining room lifecycle/upgrade,
   notification/push-rule and account/login APIs and audit the
   remaining Matrix 1.19 required behavior. Optional modules must be documented
   explicitly and unsupported endpoints must return honest Matrix errors.

@@ -226,6 +226,9 @@ defmodule LakehouseWeb.Router do
     get "/v3/rooms/:roomId/state/:eventType/:stateKey", ProtocolController, :get_state
     put "/v3/rooms/:roomId/state/:eventType/:stateKey", ProtocolController, :put_state
     get "/v3/rooms/:roomId/event/:eventId", ProtocolController, :event
+    get "/v1/rooms/:roomId/hierarchy", ProtocolController, :space_hierarchy
+    get "/v1/rooms/:roomId/timestamp_to_event", ProtocolController, :timestamp_to_event
+    get "/v1/room_summary/:roomIdOrAlias", ProtocolController, :room_summary
     get "/v1/rooms/:roomId/relations/:eventId", ProtocolController, :relations
     get "/v1/rooms/:roomId/relations/:eventId/:relType", ProtocolController, :relations
     get "/v1/rooms/:roomId/relations/:eventId/:relType/:eventType", ProtocolController, :relations
@@ -309,6 +312,8 @@ defmodule LakehouseWeb.Router do
     get "/v1/query/profile", FederationController, :profile
     get "/v1/query/directory", FederationController, :directory
     get "/v1/publicRooms", FederationController, :public_rooms
+    get "/v1/hierarchy/:roomId", FederationController, :space_hierarchy
+    get "/v1/timestamp_to_event/:roomId", FederationController, :timestamp_to_event
     post "/v1/publicRooms", FederationController, :public_rooms
     get "/v1/user/devices/:userId", FederationController, :user_devices
     post "/v1/user/keys/query", FederationController, :keys_query

@@ -58,6 +58,113 @@ defmodule LakehouseMatrix.ClientHistoryTest do
 
   defp wire(event), do: Map.drop(event, ["event_id", :auth_rejected])
 
+  test "timestamp lookup discovers a closer signed historical event without changing live room state",
+       ctx do
+    alias LakehouseMatrix.EventSearch
+    target = Enum.find(Map.values(ctx.remote.graph), &(&1["content"]["body"] == "old 3"))
+    timestamp = target["origin_server_ts"]
+
+    request = fn :get, "example.org" = peer, path, nil ->
+      refute Repo.in_transaction?()
+
+      cond do
+        String.contains?(path, "/timestamp_to_event/") ->
+          {:ok, %{"event_id" => target["event_id"], "origin_server_ts" => timestamp}}
+
+        String.contains?(path, "/event/") ->
+          {:ok, %{"pdus" => [%{"bad" => 1.2}, wire(target)]}}
+
+        true ->
+          requester(ctx.remote).(:get, peer, path, nil)
+      end
+    end
+
+    before = Graph.room(ctx.room.id)
+
+    assert {:ok, result} =
+             EventSearch.timestamp(
+               ctx.user.id,
+               ctx.remote.room,
+               %{"ts" => timestamp, "dir" => "b"},
+               request,
+               &F.lookup/3
+             )
+
+    assert result == %{"event_id" => target["event_id"], "origin_server_ts" => timestamp}
+    assert Graph.room(ctx.room.id).current_state == before.current_state
+    assert Graph.room(ctx.room.id).extremities == before.extremities
+    assert {:ok, event} = ClientRooms.event(ctx.user.id, ctx.remote.room, result["event_id"])
+    assert event["content"]["body"] == "old 3"
+  end
+
+  test "timestamp searches are directional, visibility-filtered and honor ignored senders", ctx do
+    alias LakehouseMatrix.{ClientStore, EventSearch}
+
+    {:ok, _} =
+      ClientHistory.page(
+        ctx.user.id,
+        "A",
+        ctx.room.id,
+        %{"limit" => 100},
+        requester(ctx.remote),
+        &F.lookup/3
+      )
+
+    target = Enum.find(Map.values(ctx.remote.graph), &(&1["content"]["body"] == "old 3"))
+    timestamp = target["origin_server_ts"]
+    unavailable = fn _, _, _, _ -> {:error, :unavailable} end
+
+    for direction <- ["b", "f"] do
+      assert {:ok, result} =
+               EventSearch.timestamp(
+                 ctx.user.id,
+                 ctx.remote.room,
+                 %{"ts" => timestamp, "dir" => direction},
+                 unavailable
+               )
+
+      assert result["event_id"] == target["event_id"]
+
+      assert {:ok, ^result} =
+               EventSearch.federation("example.org", ctx.remote.room, %{
+                 "ts" => timestamp,
+                 "dir" => direction
+               })
+    end
+
+    assert {:error, :not_found} =
+             EventSearch.federation("outsider.org", ctx.remote.room, %{
+               "ts" => timestamp,
+               "dir" => "b"
+             })
+
+    assert {:error, :invalid_param} =
+             EventSearch.timestamp(ctx.user.id, ctx.remote.room, %{"dir" => "b"}, unavailable)
+
+    assert {:error, :invalid_param} =
+             EventSearch.timestamp(
+               ctx.user.id,
+               ctx.remote.room,
+               %{"ts" => timestamp, "dir" => "wrong"},
+               unavailable
+             )
+
+    {:ok, _} =
+      ClientStore.put_data(ctx.user.id, "", "m.ignored_user_list", %{
+        "ignored_users" => %{F.alice() => %{}}
+      })
+
+    assert {:ok, result} =
+             EventSearch.timestamp(
+               ctx.user.id,
+               ctx.remote.room,
+               %{"ts" => timestamp, "dir" => "f"},
+               unavailable
+             )
+
+    assert result["event_id"] == ctx.join["event_id"]
+  end
+
   defp requester(remote) do
     fn :get, "example.org", path, nil ->
       query = URI.decode_query(URI.parse(path).query || "")
