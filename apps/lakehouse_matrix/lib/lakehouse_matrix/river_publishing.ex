@@ -111,18 +111,25 @@ defmodule LakehouseMatrix.RiverPublishing do
                   author_id: g.principal_id
                 }
 
-            publication =
+            prepared =
               if p["visibility"] == "public" and is_nil(publication.thread_id),
                 do: create_thread!(g, publication, original),
                 else: publication
 
-            attrs = %{visibility: p["visibility"], comments_policy: p["comments_policy"]}
+            # Track newly created room IDs in the changeset of the loaded record.
+            attrs = %{
+              visibility: p["visibility"],
+              comments_policy: p["comments_policy"],
+              thread_id: prepared.thread_id,
+              anchor_id: prepared.anchor_id
+            }
 
-            if Ecto.get_meta(publication, :state) == :built do
-              Ecto.Changeset.change(publication, attrs) |> Repo.insert!()
-            else
-              Ecto.Changeset.change(publication, attrs) |> Repo.update!()
-            end
+            publication =
+              if Ecto.get_meta(publication, :state) == :built do
+                Ecto.Changeset.change(publication, attrs) |> Repo.insert!()
+              else
+                Ecto.Changeset.change(publication, attrs) |> Repo.update!()
+              end
 
             if publication.thread_id do
               public = p["visibility"] == "public"
