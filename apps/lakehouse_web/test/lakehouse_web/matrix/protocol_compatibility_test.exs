@@ -76,6 +76,21 @@ defmodule LakehouseWeb.Matrix.ProtocolCompatibilityTest do
     hierarchy = api(a, :get, "/_matrix/client/v1/rooms/#{ref}/hierarchy") |> json_response(200)
     assert [%{"room_id" => ^ref, "children_state" => []}] = hierarchy["rooms"]
 
+    pushrules = api(a, :get, "/_matrix/client/v3/pushrules/") |> json_response(200)
+    assert hd(pushrules["global"]["override"])["rule_id"] == ".m.rule.master"
+
+    assert api(a, :put, "/_matrix/client/v3/pushrules/global/room/#{ref}", %{"actions" => []})
+           |> json_response(200) == %{}
+
+    assert api(a, :get, "/_matrix/client/v3/pushrules/global/room/#{ref}/actions")
+           |> json_response(200) == %{"actions" => []}
+
+    assert api(a, :get, "/_matrix/client/v3/notifications") |> json_response(200) == %{
+             "notifications" => []
+           }
+
+    assert api(a, :get, "/_matrix/client/v3/pushers") |> json_response(200) == %{"pushers" => []}
+
     original =
       api(a, :put, "/_matrix/client/v3/rooms/#{ref}/send/m.room.message/original", %{
         "body" => "original"
@@ -144,6 +159,21 @@ defmodule LakehouseWeb.Matrix.ProtocolCompatibilityTest do
       |> json_response(200)
 
     assert page["chunk"] == []
+
+    replacement =
+      api(a, :post, "/_matrix/client/v3/rooms/#{ref}/upgrade", %{"new_version" => "12"})
+      |> json_response(200)
+      |> Map.fetch!("replacement_room")
+
+    create =
+      api(a, :get, "/_matrix/client/v3/rooms/#{replacement}/state/m.room.create")
+      |> json_response(200)
+
+    assert create["predecessor"]["room_id"] == ref
+
+    assert api(a, :post, "/_matrix/client/v3/rooms/#{ref}/upgrade", %{"new_version" => "unknown"})
+           |> json_response(400)
+           |> Map.fetch!("errcode") == "M_UNSUPPORTED_ROOM_VERSION"
   end
 
   test "sessions are device-specific, whoami works, and logout revokes only one device", %{

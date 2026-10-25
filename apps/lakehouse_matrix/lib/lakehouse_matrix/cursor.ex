@@ -32,6 +32,11 @@ defmodule LakehouseMatrix.Cursor do
       is_integer(depth) and depth in -1..9_007_199_254_740_992 and is_binary(id) and
         byte_size(id) <= 255
 
+  defp valid_position?("notifications", [id, high]),
+    do:
+      is_integer(id) and id in 0..9_007_199_254_740_991 and is_integer(high) and high >= 0 and
+        high <= LakehouseMatrix.ClientStore.position()
+
   defp valid_position?(kind, _) when kind in ["topology", "threads"], do: false
 
   defp valid_position?(kind, position),

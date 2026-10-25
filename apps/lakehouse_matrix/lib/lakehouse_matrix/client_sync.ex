@@ -61,7 +61,15 @@ defmodule LakehouseMatrix.ClientSync do
           end
 
         join =
-          if full, do: join, else: Map.reject(join, fn {_, payload} -> room_empty?(payload) end)
+          if full,
+            do: join,
+            else:
+              Map.reject(join, fn {ref, payload} ->
+                {:ok, id} = Identity.parse_room_id(ref)
+
+                room_empty?(payload) and
+                  not LakehouseMatrix.Notifications.changed?(principal, id, since, high)
+              end)
 
         invite =
           for room <- invited,
@@ -215,6 +223,7 @@ defmodule LakehouseMatrix.ClientSync do
           )
       },
       "account_data" => %{"events" => account},
+      "unread_notifications" => LakehouseMatrix.Notifications.counts(principal, room, high),
       "ephemeral" => %{
         "events" => ephemeral
       },

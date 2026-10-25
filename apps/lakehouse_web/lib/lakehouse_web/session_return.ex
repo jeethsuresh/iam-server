@@ -2,7 +2,7 @@ defmodule LakehouseWeb.SessionReturn do
   @moduledoc "One-use local navigation after browser authentication; mutations are never replayed."
   import Plug.Conn
 
-  @pages ~w(/dashboard /groups /rooms /settings /profile /profile/password /admin /services/manage /oauth/consent)
+  @pages ~w(/dashboard /groups /rooms /settings /profile /profile/password /admin /services/manage /oauth/consent /matrix/sso/consent)
 
   def remember(conn) do
     target =

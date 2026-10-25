@@ -56,25 +56,28 @@ defmodule LakehouseMatrix.Protocol.Graph do
         content
         |> Map.put("room_version", version)
         |> Map.delete("creator")
-        |> Map.put("cool.gravitas.create_nonce", ClientStore.random())
-
-      event = %{
-        "type" => "m.room.create",
-        "sender" => sender,
-        "state_key" => "",
-        "content" => content,
-        "depth" => 0,
-        "origin_server_ts" => System.system_time(:millisecond),
-        "prev_events" => [],
-        "auth_events" => []
-      }
 
       event =
-        if version == "11",
-          do: Map.put(event, "room_id", "!#{local_id}:#{Identity.homeserver_domain()}"),
-          else: event
+        Policy.draft({:create, local_id, sender, version, content}, fn ->
+          event = %{
+            "type" => "m.room.create",
+            "sender" => sender,
+            "state_key" => "",
+            "content" => Map.put(content, "cool.gravitas.create_nonce", ClientStore.random()),
+            "depth" => 0,
+            "origin_server_ts" => System.system_time(:millisecond),
+            "prev_events" => [],
+            "auth_events" => []
+          }
 
-      event = seal!(event, version)
+          event =
+            if version == "11",
+              do: Map.put(event, "room_id", "!#{local_id}:#{Identity.homeserver_domain()}"),
+              else: event
+
+          seal!(event, version)
+        end)
+
       require_ok!(Event.validate(event, version))
       require_ok!(Authorization.check(event, %{}, version))
       id = Event.id(event, version)
@@ -599,6 +602,9 @@ defmodule LakehouseMatrix.Protocol.Graph do
     resolved = resolved || decode_state(record.state_after)
     project_state!(metadata, previous, resolved)
     LakehouseMatrix.Protocol.Redactions.apply!(metadata, record.event_id)
+
+    if record.pdu["type"] != "m.room.redaction" and is_nil(event(record.event_id).redacted_by),
+      do: LakehouseMatrix.Notifications.record!(metadata, record)
   end
 
   defp project_state!(metadata, previous, resolved) do

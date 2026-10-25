@@ -74,6 +74,8 @@ defmodule LakehouseMatrix.ClientProfiles do
           end
         end
 
+        LakehouseMatrix.Ephemeral.profile_changed!(principal)
+
         %{}
       end)
     else

@@ -143,4 +143,61 @@ defmodule LakehouseMatrix.EphemeralTest do
              &(&1["sender"] == user and &1["content"]["presence"] == "offline")
            )
   end
+
+  test "profile presence preserves inactivity, advances last-active age and expires exactly once",
+       ctx do
+    user = Identity.user_id("bob")
+
+    {:ok, _} =
+      Ephemeral.set_presence(ctx.bob.id, %{"presence" => "unavailable", "status_msg" => "Reading"})
+
+    earlier = DateTime.add(ClientStore.now(), -60, :second)
+
+    Repo.update_all(
+      from(p in "matrix_user_presence", where: p.principal_id == type(^ctx.bob.id, :binary_id)),
+      set: [updated_at: earlier]
+    )
+
+    Repo.update_all(
+      from(p in "matrix_ephemeral_events", where: p.user_id == ^user and p.type == "m.presence"),
+      set: [received_at: earlier]
+    )
+
+    {:ok, before} = Ephemeral.get_presence(ctx.alice.id, user)
+    assert before["last_active_ago"] >= 60_000
+    low = ClientStore.position()
+
+    assert {:ok, _} =
+             LakehouseMatrix.ClientProfiles.put(ctx.bob.id, user, "displayname", "Robert")
+
+    [event] = Ephemeral.presence_events(ctx.alice.id, low, ClientStore.position())
+    assert event["content"]["displayname"] == "Robert"
+    assert event["content"]["presence"] == "unavailable"
+    assert event["content"]["status_msg"] == "Reading"
+    assert event["content"]["last_active_ago"] >= before["last_active_ago"]
+
+    assert Repo.one(
+             from p in "matrix_user_presence",
+               where: p.principal_id == type(^ctx.bob.id, :binary_id),
+               select: type(p.updated_at, :utc_datetime_usec)
+           ) == earlier
+
+    later = DateTime.add(ClientStore.now(), 181, :second)
+    assert {:ok, 1} = Ephemeral.expire(later)
+    {:ok, offline} = Ephemeral.get_presence(ctx.alice.id, user)
+    assert offline["presence"] == "offline" and offline["currently_active"] == false
+    assert offline["last_active_ago"] >= 240_000
+    assert {:ok, 0} = Ephemeral.expire(later)
+
+    assert {:ok, _} =
+             LakehouseMatrix.ClientProfiles.put(
+               ctx.outsider.id,
+               Identity.user_id("outsider"),
+               "displayname",
+               "Outside"
+             )
+
+    assert {:ok, %{"presence" => "offline", "displayname" => "Outside"}} =
+             Ephemeral.get_presence(ctx.outsider.id, Identity.user_id("outsider"))
+  end
 end

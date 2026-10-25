@@ -10,7 +10,18 @@ defmodule LakehouseWeb.Plugs.MatrixAuth do
   def init(opts), do: opts
 
   def call(conn, _opts) do
-    case get_req_header(conn, "authorization") do
+    authorization =
+      case get_req_header(conn, "authorization") do
+        [] ->
+          if is_binary(conn.params["access_token"]),
+            do: ["Bearer " <> conn.params["access_token"]],
+            else: []
+
+        headers ->
+          headers
+      end
+
+    case authorization do
       ["Bearer " <> token] ->
         case LakehouseMatrix.ClientStore.authenticate(token) do
           {:ok, principal, device, session} ->
@@ -20,6 +31,19 @@ defmodule LakehouseWeb.Plugs.MatrixAuth do
             |> assign(:current_principal, principal)
             |> assign(:matrix_device_id, device)
             |> assign(:matrix_session_id, session)
+
+          :expired ->
+            conn
+            |> put_resp_content_type("application/json")
+            |> send_resp(
+              401,
+              Jason.encode!(%{
+                "errcode" => "M_UNKNOWN_TOKEN",
+                "error" => "Access token expired",
+                "soft_logout" => true
+              })
+            )
+            |> halt()
 
           :error ->
             legacy(conn, token)

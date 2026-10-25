@@ -73,56 +73,25 @@ defmodule LakehouseMatrix.Ephemeral do
         # Ordinary sync keeps an explicitly supplied status message intact.
         status = if from_sync and current, do: current.content["status_msg"], else: status
 
-        content = %{
-          "presence" => presence,
-          "status_msg" => status,
-          "currently_active" => presence == "online",
-          "last_active_ago" => 0
-        }
+        content =
+          %{
+            "presence" => presence,
+            "status_msg" => status,
+            "currently_active" => presence == "online",
+            "last_active_ago" =>
+              if(presence == "online" or is_nil(current),
+                do: 0,
+                else: age(current.content, current.updated_at)["last_active_ago"] || 0
+              )
+          }
+          |> Map.merge(profile(principal))
 
         fresh =
           not is_nil(current) and current.content == content and
             DateTime.diff(now, current.updated_at, :second) < 30
 
         unless fresh do
-          Repo.insert_all(
-            "matrix_user_presence",
-            [%{principal_id: ClientStore.dump_id(principal), content: content, updated_at: now}],
-            on_conflict: [set: [content: content, updated_at: now]],
-            conflict_target: [:principal_id]
-          )
-
-          user = mxid(principal)
-
-          for room <- Memberships.joined_room_ids(principal) do
-            put!(
-              room,
-              user,
-              "m.presence",
-              content,
-              DateTime.add(now, if(presence == "offline", do: 31_536_000, else: 180), :second)
-            )
-          end
-
-          rooms = Edus.shared_rooms(user)
-
-          servers =
-            rooms
-            |> Enum.flat_map(fn metadata ->
-              for {{"m.room.member", member}, e} <- RoomAccess.state(metadata),
-                  e["content"]["membership"] == "join",
-                  {:ok, server} <- [LakehouseMatrix.Protocol.Event.user_domain(member)],
-                  server != Identity.homeserver_domain() and
-                    RoomAccess.allowed?(metadata, server),
-                  do: server
-            end)
-            |> Enum.uniq()
-
-          for server <- servers,
-              do:
-                Edus.outgoing!(server, "m.presence", %{
-                  "push" => [Map.put(content, "user_id", user)]
-                })
+          publish_presence!(principal, content, now)
         end
 
         %{}
@@ -130,6 +99,109 @@ defmodule LakehouseMatrix.Ephemeral do
     else
       {:error, :invalid_param}
     end
+  end
+
+  def profile_changed!(principal) do
+    current =
+      Repo.one(
+        from p in "matrix_user_presence",
+          where: p.principal_id == type(^principal, :binary_id),
+          select: %{content: p.content, updated_at: type(p.updated_at, :utc_datetime_usec)}
+      )
+
+    expired? =
+      current && current.content["presence"] != "offline" &&
+        DateTime.diff(ClientStore.now(), current.updated_at, :second) >= 180
+
+    content =
+      cond do
+        expired? ->
+          current.content
+          |> Map.merge(%{"presence" => "offline", "currently_active" => false})
+          |> age(current.updated_at)
+
+        current ->
+          current.content
+
+        true ->
+          %{"presence" => "offline", "currently_active" => false, "last_active_ago" => 0}
+      end
+
+    received_at = if current && !expired?, do: current.updated_at, else: ClientStore.now()
+    publish_presence!(principal, Map.merge(content, profile(principal)), received_at)
+    :ok
+  end
+
+  defp profile(principal),
+    do:
+      Repo.get!(LakehouseIam.Schema.Principal, principal)
+      |> LakehouseMatrix.ClientProfiles.local()
+
+  defp publish_presence!(principal, content, received_at) do
+    Repo.insert_all(
+      "matrix_user_presence",
+      [
+        %{principal_id: ClientStore.dump_id(principal), content: content, updated_at: received_at}
+      ],
+      on_conflict: [set: [content: content, updated_at: received_at]],
+      conflict_target: [:principal_id]
+    )
+
+    user = mxid(principal)
+
+    for room <- Memberships.joined_room_ids(principal) do
+      put!(
+        room,
+        user,
+        "m.presence",
+        content,
+        DateTime.add(
+          received_at,
+          if(content["presence"] == "offline", do: 31_536_000, else: 180),
+          :second
+        ),
+        received_at
+      )
+    end
+
+    servers =
+      Edus.shared_rooms(user)
+      |> Enum.flat_map(fn metadata ->
+        for {{"m.room.member", member}, e} <- RoomAccess.state(metadata),
+            e["content"]["membership"] == "join",
+            {:ok, server} <- [LakehouseMatrix.Protocol.Event.user_domain(member)],
+            server != Identity.homeserver_domain() and RoomAccess.allowed?(metadata, server),
+            do: server
+      end)
+      |> Enum.uniq()
+
+    for server <- servers,
+        do:
+          Edus.outgoing!(server, "m.presence", %{
+            "push" => [Map.put(age(content, received_at), "user_id", user)]
+          })
+  end
+
+  defp age(content, received_at, now \\ ClientStore.now()) do
+    if content["currently_active"] == true or not is_integer(content["last_active_ago"]) or
+         is_nil(received_at),
+       do: content,
+       else:
+         Map.update!(
+           content,
+           "last_active_ago",
+           &min(9_007_199_254_740_991, &1 + max(0, DateTime.diff(now, received_at, :millisecond)))
+         )
+  end
+
+  defp presence_content(row) do
+    content =
+      if row.content["presence"] != "offline" and
+           DateTime.compare(row.expiry, ClientStore.now()) != :gt,
+         do: Map.merge(row.content, %{"presence" => "offline", "currently_active" => false}),
+         else: row.content
+
+    age(content, row.received_at)
   end
 
   def get_presence(principal, user) do
@@ -146,7 +218,11 @@ defmodule LakehouseMatrix.Ephemeral do
                 e.local_room_id in type(^rooms, {:array, :binary_id}),
             order_by: [desc: e.stream_id],
             limit: 1,
-            select: %{content: e.content, expires_at: type(e.expires_at, :utc_datetime_usec)}
+            select: %{
+              content: e.content,
+              expires_at: type(e.expires_at, :utc_datetime_usec),
+              received_at: type(e.received_at, :utc_datetime_usec)
+            }
         )
 
       own_content =
@@ -160,19 +236,22 @@ defmodule LakehouseMatrix.Ephemeral do
 
       data =
         cond do
-          content &&
-              (content.content["presence"] == "offline" or
-                 DateTime.compare(content.expires_at, ClientStore.now()) == :gt) ->
-            content.content
+          content ->
+            presence_content(%{
+              content: content.content,
+              received_at: content.received_at,
+              expiry: content.expires_at
+            })
 
           own_content ->
             if DateTime.diff(ClientStore.now(), own_content.updated_at, :second) < 180,
-              do: own_content.content,
+              do: age(own_content.content, own_content.updated_at),
               else:
                 Map.merge(own_content.content, %{
                   "presence" => "offline",
                   "currently_active" => false
                 })
+                |> age(own_content.updated_at)
 
           true ->
             %{"presence" => "offline"}
@@ -223,7 +302,13 @@ defmodule LakehouseMatrix.Ephemeral do
             e.local_room_id in type(^rooms, {:array, :binary_id}) and e.type == "m.presence" and
               e.stream_id > ^since and e.stream_id <= ^high,
           order_by: [asc: e.stream_id],
-          select: %{user: e.user_id, content: e.content, room: type(e.local_room_id, :binary_id)}
+          select: %{
+            user: e.user_id,
+            content: e.content,
+            room: type(e.local_room_id, :binary_id),
+            received_at: type(e.received_at, :utc_datetime_usec),
+            expiry: type(e.expires_at, :utc_datetime_usec)
+          }
       )
 
     users = Map.new(rooms, &{&1, joined_users(&1, high)})
@@ -231,7 +316,8 @@ defmodule LakehouseMatrix.Ephemeral do
     rows
     |> Enum.filter(&(&1.user in users[&1.room]))
     |> Map.new(
-      &{&1.user, %{"type" => "m.presence", "sender" => &1.user, "content" => &1.content}}
+      &{&1.user,
+       %{"type" => "m.presence", "sender" => &1.user, "content" => presence_content(&1)}}
     )
     |> Map.values()
   end
@@ -257,7 +343,8 @@ defmodule LakehouseMatrix.Ephemeral do
               room: type(e.local_room_id, :binary_id),
               user: e.user_id,
               type: e.type,
-              content: e.content
+              content: e.content,
+              received_at: type(e.received_at, :utc_datetime_usec)
             }
         )
 
@@ -282,6 +369,29 @@ defmodule LakehouseMatrix.Ephemeral do
         end
       end
 
+      # Remote offline transitions are inferred locally. Send local transitions
+      # to each joined peer once even when the user shares several rooms.
+      for user <-
+            rows |> Enum.filter(&(&1.type == "m.presence")) |> Enum.map(& &1.user) |> Enum.uniq(),
+          {:ok, name} <- [Identity.parse_user_id(user)],
+          {:ok, principal} <- [LakehouseIam.Accounts.fetch_user(name)] do
+        current =
+          Repo.one(
+            from p in "matrix_user_presence",
+              where: p.principal_id == type(^principal.id, :binary_id),
+              select: %{content: p.content, updated_at: type(p.updated_at, :utc_datetime_usec)}
+          )
+
+        if not is_nil(current) and DateTime.diff(now, current.updated_at, :second) >= 180 do
+          content =
+            current.content
+            |> Map.merge(%{"presence" => "offline", "currently_active" => false})
+            |> age(current.updated_at, now)
+
+          publish_presence!(principal.id, content, now)
+        end
+      end
+
       length(rows)
     end)
   end
@@ -295,7 +405,7 @@ defmodule LakehouseMatrix.Ephemeral do
   defp mxid(principal),
     do: Repo.get!(LakehouseIam.Schema.Principal, principal).username |> Identity.user_id()
 
-  defp put!(room, user, type, content, expiry) do
+  defp put!(room, user, type, content, expiry, received_at \\ ClientStore.now()) do
     Repo.insert_all(
       "matrix_ephemeral_events",
       [
@@ -304,10 +414,11 @@ defmodule LakehouseMatrix.Ephemeral do
           user_id: user,
           type: type,
           content: content,
-          expires_at: expiry
+          expires_at: expiry,
+          received_at: received_at
         }
       ],
-      on_conflict: [set: [content: content, expires_at: expiry]],
+      on_conflict: [set: [content: content, expires_at: expiry, received_at: received_at]],
       conflict_target: [:local_room_id, :type, :user_id]
     )
   end

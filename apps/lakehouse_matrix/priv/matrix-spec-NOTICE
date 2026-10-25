@@ -1,0 +1,5 @@
+The default push-rule definitions in matrix-1.19-push-rules.json are from
+Matrix Specification v1.19, https://spec.matrix.org/v1.19/client-server-api/#predefined-rules
+Copyright The Matrix.org Foundation C.I.C. and the Matrix specification contributors.
+Licensed under the Apache License, Version 2.0. See matrix-spec-LICENSE.
+The definitions are grouped by kind; the user-ID placeholder is substituted at runtime.

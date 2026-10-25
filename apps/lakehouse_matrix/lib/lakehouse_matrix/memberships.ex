@@ -149,24 +149,34 @@ defmodule LakehouseMatrix.Memberships do
       "origin_server_ts" => ctx.origin_server_ts
     }
 
-    case Repo.one(
-           from m in RoomMembership,
-             where: m.room_id == ^room_id and m.principal_id == ^principal_id
-         ) do
-      nil ->
-        %RoomMembership{}
-        |> RoomMembership.changeset(%{
-          room_id: room_id,
-          principal_id: principal_id,
-          membership_state: state
-        })
-        |> Repo.insert()
+    existing =
+      Repo.one(
+        from m in RoomMembership,
+          where: m.room_id == ^room_id and m.principal_id == ^principal_id
+      )
 
-      existing ->
-        existing
-        |> RoomMembership.changeset(%{membership_state: state})
-        |> Repo.update()
-    end
+    result =
+      case existing do
+        nil ->
+          %RoomMembership{}
+          |> RoomMembership.changeset(%{
+            room_id: room_id,
+            principal_id: principal_id,
+            membership_state: state
+          })
+          |> Repo.insert()
+
+        existing ->
+          existing
+          |> RoomMembership.changeset(%{membership_state: state})
+          |> Repo.update()
+      end
+
+    if match?({:ok, _}, result) and membership == "join" and
+         (is_nil(existing) or existing.membership_state["membership"] != "join"),
+       do: LakehouseMatrix.RoomUpgrades.copy_settings!(principal_id, room_id)
+
+    result
   end
 
   @spec member_count(Ecto.UUID.t()) :: integer()

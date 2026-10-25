@@ -240,12 +240,19 @@ defmodule LakehouseMatrix.Federation.Edus do
         value["presence"] in ~w(online offline unavailable),
         metadata <- shared_rooms(value["user_id"]),
         RoomAccess.allowed?(metadata, origin) do
-      data = Map.take(value, ~w(presence status_msg currently_active last_active_ago))
+      data =
+        Map.take(
+          value,
+          ~w(presence status_msg currently_active last_active_ago displayname avatar_url)
+        )
 
-      unless (is_nil(data["status_msg"]) or is_binary(data["status_msg"])) and
+      unless Enum.all?(~w(status_msg displayname avatar_url), fn key ->
+               is_nil(data[key]) or (is_binary(data[key]) and byte_size(data[key]) <= 4096)
+             end) and
                (is_nil(data["currently_active"]) or is_boolean(data["currently_active"])) and
                (is_nil(data["last_active_ago"]) or
-                  (is_integer(data["last_active_ago"]) and data["last_active_ago"] >= 0)),
+                  (is_integer(data["last_active_ago"]) and
+                     data["last_active_ago"] in 0..9_007_199_254_740_991)),
              do: Repo.rollback(:invalid_param)
 
       ephemeral!(metadata.local_room_id, value["user_id"], "m.presence", data, 180)
@@ -312,7 +319,8 @@ defmodule LakehouseMatrix.Federation.Edus do
   defp changed!(user), do: Repo.insert_all("matrix_device_changes", [%{user_id: user}])
 
   defp ephemeral!(room, user, type, content, seconds) do
-    expiry = DateTime.add(ClientStore.now(), seconds, :second)
+    received = ClientStore.now()
+    expiry = DateTime.add(received, seconds, :second)
 
     Repo.insert_all(
       "matrix_ephemeral_events",
@@ -322,10 +330,11 @@ defmodule LakehouseMatrix.Federation.Edus do
           user_id: user,
           type: type,
           content: content,
-          expires_at: expiry
+          expires_at: expiry,
+          received_at: received
         }
       ],
-      on_conflict: [set: [content: content, expires_at: expiry]],
+      on_conflict: [set: [content: content, expires_at: expiry, received_at: received]],
       conflict_target: [:local_room_id, :type, :user_id]
     )
   end

@@ -12,11 +12,13 @@ work and release checks pass.
 Synapse 1.163.2 and real Matrix JavaScript SDK 44 clients backed by Rust crypto.
 Images, dependencies and test peers are pinned. The suite verifies signed joins
 in both directions, two-way message delivery and leave, knocks in both directions,
-private invitation decline, federated thread relations and aggregates, federated encrypted-room
+private invitation decline, room upgrades through tombstones and moved aliases,
+federated thread relations and aggregates, federated encrypted-room
 invites, Olm key sharing, Megolm decryption in both directions, cross-signing,
 encrypted secret storage, client-encrypted key backups and fresh-device recovery.
 The suite also transfers and decrypts client-encrypted attachments in both
-directions. The native event API exposes ciphertext only. Synapse is a test peer
+directions. It also verifies refresh credentials, encrypted notifications and
+private read receipts. The native event API exposes ciphertext only. Synapse is a test peer
 and is not part of the production deployment.
 
 CI runs this suite after the existing unit, API and real-browser test gate.
@@ -57,6 +59,20 @@ clients does not mean River client E2EE is complete.
   cross-signing signatures and password-based user-interactive authorization.
 - Opaque encrypted room-key backups and secret storage. Private signing,
   recovery and room keys are generated and held by clients.
+- Renewable device sessions, one-use two-minute login tokens with fresh UIA,
+  and browser-bound SSO with explicit full-account consent. Refresh credentials
+  retain their identity until device revocation, so lost responses can be retried.
+  Neither login flow changes existing delegated application grants.
+- Atomic v11/v12 room upgrades, tombstones, predecessor links and moved local
+  aliases. Replacement rooms transfer standard settings and invite members
+  without impersonating joins; tags, direct-room links and room push rules are
+  copied when the user joins. Additional creators are explicitly selected.
+- Matrix 1.19 default push rules and ordered user rules, typed conditions,
+  escaped paths, bounded glob matching, notification pagination and unread counts
+  in ordinary and sliding sync. Receipt history preserves counts at delivery
+  boundaries; public/private and thread receipts cannot move backwards.
+  Device-bound HTTP pushers use leased retries, verified HTTPS and public-address
+  DNS pinning. Event-ID-only payloads and read/device revocation are enforced.
 - Ordinary sync with state-after support and native MSC4186 sliding sync,
   scoped cursors, device/account data, resolved-state updates and receipts.
   Native history uses DAG order and verified backfill, retaining eligible history
@@ -77,6 +93,8 @@ clients does not mean River client E2EE is complete.
   directory, typing and presence with expiry. Declining a remote invitation
   queues a stable signed leave without promoting stripped state. Forgetting
   hides a departed room for that user and rejoining restores it.
+  Profile changes also produce presence updates without resetting activity;
+  inactive ages advance and local expiry reaches joined federation peers.
 - Authenticated local/remote media and multipart federation downloads, with
   separate visibility for private River uploads and standard Matrix media.
 - Matrix 1.19 policy-server requests and signature validation. Local operations
@@ -89,9 +107,8 @@ reuse the IAM JWT key or rotate a seed under an existing key ID.
 
 ## Remaining release and conformance work
 
-- Complete remaining room lifecycle/upgrade,
-  notification/push-rule and account/login APIs and audit the
-  remaining Matrix 1.19 required behavior. Optional modules must be documented
+- Complete the remaining account-management APIs and audit the
+  Matrix 1.19 required behavior. Optional modules must be documented
   explicitly and unsupported endpoints must return honest Matrix errors.
 - Integrate maintained crypto and recovery into River without widening its
   existing delegated grant silently. Test web and native clients.

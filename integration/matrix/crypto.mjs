@@ -41,7 +41,13 @@ async function start(base, session, secretKeys = new Map()) {
   return client;
 }
 try {
-  const a = await json(native, '/_matrix/client/v3/login', {type: 'm.login.password', identifier: {type: 'm.id.user', user: 'cryptoalice'}, password: 'password123', device_id: 'CRYPTO_A_' + suffix});
+  const a = await json(native, '/_matrix/client/v3/login', {type: 'm.login.password', identifier: {type: 'm.id.user', user: 'cryptoalice'}, password: 'password123', device_id: 'CRYPTO_A_' + suffix, refresh_token: true});
+  const refreshed = await json(native, '/_matrix/client/v3/refresh', {refresh_token: a.refresh_token});
+  assert.ok(refreshed.expires_in_ms > 0);
+  a.access_token = refreshed.access_token;
+  const rules = await json(native, '/_matrix/client/v3/pushrules/', null, a.access_token);
+  assert.ok(rules.global.override.some(rule => rule.rule_id === '.m.rule.is_user_mention'));
+  console.log('CRYPTO PASS refresh credentials and Matrix 1.19 default push rules');
   const b = await json(reference, '/_matrix/client/v3/register', {username: 'crypto' + suffix, password: 'test-password-123', auth: {type: 'm.login.dummy'}, device_id: 'CRYPTO_B_' + suffix});
   const alice = await start(native, a);
   const bob = await start(reference, b);
@@ -92,6 +98,15 @@ try {
     assert(!JSON.stringify(wire).includes(plainB));
   }
   console.log('CRYPTO PASS homeserver event API exposes ciphertext only');
+  const noticePage = await json(native, '/_matrix/client/v3/notifications', null, a.access_token);
+  const encryptedNotice = noticePage.notifications.find(item => item.event.event_id === sentB.event_id);
+  assert.ok(encryptedNotice && encryptedNotice.event.type === 'm.room.encrypted');
+  assert.equal(encryptedNotice.event.content.body, undefined);
+  await json(native, `/_matrix/client/v3/rooms/${encodeURIComponent(room)}/receipt/m.read.private/${encodeURIComponent(sentB.event_id)}`, {}, a.access_token);
+  const readNotices = await json(native, '/_matrix/client/v3/notifications', null, a.access_token);
+  assert.equal(readNotices.notifications.find(item => item.event.event_id === sentB.event_id).read, true);
+  console.log('CRYPTO PASS federated encrypted notifications and private read receipts');
+
   for (const [sender, receiver, source, target, session] of [[alice, bob, native, reference, b], [bob, alice, reference, native, a]]) {
     const plain = new TextEncoder().encode('private attachment from ' + source + ' ' + suffix);
     const encrypted = Attachment.encrypt(plain);

@@ -53,82 +53,13 @@ defmodule LakehouseMatrix.ClientStore do
          {:ok, p} <- Accounts.fetch_user(username),
          true <- Accounts.password_valid?(username, password),
          true <- Accounts.active?(p) do
-      device = params["device_id"] || String.slice(random(), 0, 12)
-
-      if is_binary(device) and byte_size(device) in 1..255 and
-           (is_nil(params["initial_device_display_name"]) or
-              is_binary(params["initial_device_display_name"])) do
-        token = "mtx_" <> random()
-
-        LakehouseMatrix.Protocol.Policy.transaction(fn ->
-          lock!()
-
-          existing =
-            Repo.one(
-              from d in "matrix_devices",
-                where: d.principal_id == type(^p.id, :binary_id) and d.device_id == ^device,
-                select: d.id
-            )
-
-          if is_nil(existing) do
-            Repo.insert_all("matrix_devices", [
-              %{
-                principal_id: dump_id(p.id),
-                device_id: device,
-                display_name: params["initial_device_display_name"],
-                keys: %{},
-                inserted_at: now(),
-                updated_at: now()
-              }
-            ])
-          end
-
-          if is_nil(existing), do: LakehouseMatrix.Federation.DeviceKeys.changed!(p.id, device)
-
-          Repo.insert_all("matrix_sessions", [
-            %{
-              principal_id: dump_id(p.id),
-              device_id: device,
-              token_hash: hash(token),
-              expires_at: DateTime.add(now(), 90, :day),
-              inserted_at: now()
-            }
-          ])
-
-          %{
-            "user_id" => Identity.user_id(p.username),
-            "device_id" => device,
-            "access_token" => token,
-            "home_server" => Identity.homeserver_domain(),
-            "well_known" => %{
-              "m.homeserver" => %{"base_url" => LakehouseIam.Discovery.public_url()}
-            }
-          }
-        end)
-      else
-        {:error, :invalid_param}
-      end
+      LakehouseMatrix.ClientLogin.open(p, params)
     else
       _ -> {:error, :invalid_credentials}
     end
   end
 
-  def authenticate("mtx_" <> _ = token) do
-    digest = hash(token)
-
-    case Repo.one(
-           from s in "matrix_sessions",
-             join: p in LakehouseIam.Schema.Principal,
-             on: s.principal_id == p.id,
-             where: s.token_hash == ^digest and s.expires_at > ^now() and p.active == true,
-             select: {p, s.device_id, s.id}
-         ) do
-      {p, device, id} -> {:ok, p, device, id}
-      _ -> :error
-    end
-  end
-
-  def authenticate(_), do: :error
+  def authenticate(token), do: LakehouseMatrix.ClientLogin.authenticate(token)
 
   def logout(principal, device, all \\ false) do
     devices = if all, do: Enum.map(devices(principal), & &1.device_id), else: [device]
@@ -156,6 +87,16 @@ defmodule LakehouseMatrix.ClientStore do
         lock!()
 
         for device <- Enum.uniq(devices) do
+          Repo.delete_all(
+            from p in "matrix_pushers",
+              where: p.principal_id == type(^principal, :binary_id) and p.device_id == ^device
+          )
+
+          Repo.delete_all(
+            from t in "matrix_login_tokens",
+              where: t.principal_id == type(^principal, :binary_id) and t.source_device == ^device
+          )
+
           {removed, _} =
             Repo.delete_all(
               from d in "matrix_devices",
@@ -218,13 +159,20 @@ defmodule LakehouseMatrix.ClientStore do
   def account_data(principal, room \\ "", since \\ 0, upto \\ nil) do
     upto = upto || position()
 
-    Repo.all(
-      from a in "matrix_account_data",
-        where:
-          a.principal_id == type(^principal, :binary_id) and
-            a.room_id == ^room and a.stream_id > ^since and a.stream_id <= ^upto,
-        select: %{"type" => a.type, "content" => a.content}
-    )
+    events =
+      Repo.all(
+        from a in "matrix_account_data",
+          where:
+            a.principal_id == type(^principal, :binary_id) and
+              a.room_id == ^room and a.stream_id > ^since and a.stream_id <= ^upto,
+          select: %{"type" => a.type, "content" => a.content}
+      )
+
+    if room == "" and since == 0 and not Enum.any?(events, &(&1["type"] == "m.push_rules")),
+      do:
+        events ++
+          [%{"type" => "m.push_rules", "content" => LakehouseMatrix.PushRules.get(principal)}],
+      else: events
   end
 
   def get_data(principal, room, type) do

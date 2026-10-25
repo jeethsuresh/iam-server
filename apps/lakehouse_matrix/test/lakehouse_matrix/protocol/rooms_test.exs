@@ -51,6 +51,52 @@ defmodule LakehouseMatrix.Protocol.RoomsTest do
              ClientSync.sync(ctx.alice.id, "A", %{"use_state_after" => "invalid"})
   end
 
+  test "creation preserves initial event order, v12 upgrade power and trusted creator semantics",
+       ctx do
+    bob = Identity.user_id("bob")
+
+    {:ok, %{"room_id" => ref}} =
+      ClientRooms.create(ctx.alice.id, %{
+        "name" => "Final name",
+        "preset" => "trusted_private_chat",
+        "invite" => [bob],
+        "power_level_content_override" => %{
+          "state_default" => 200,
+          "events" => %{"m.room.tombstone" => 100}
+        },
+        "initial_state" => [
+          %{"type" => "m.example.initial", "state_key" => "", "content" => %{"step" => 1}},
+          %{"type" => "m.example.initial", "state_key" => "", "content" => %{"step" => 2}},
+          %{"type" => "m.room.name", "state_key" => "", "content" => %{"name" => "Initial name"}}
+        ]
+      })
+
+    {:ok, local} = Identity.parse_room_id(ref)
+
+    rows =
+      Repo.all(
+        from e in LakehouseMatrix.Schema.RoomEvent,
+          where: e.room_id == ^local,
+          order_by: e.stream_id
+      )
+
+    assert Enum.map(Enum.filter(rows, &(&1.type == "m.example.initial")), & &1.content["step"]) ==
+             [1, 2]
+
+    assert Enum.find_index(rows, &(&1.type == "m.room.join_rules")) <
+             Enum.find_index(rows, &(&1.type == "m.example.initial"))
+
+    assert List.last(Enum.filter(rows, &(&1.type == "m.room.name"))).content["name"] ==
+             "Final name"
+
+    state = LakehouseMatrix.Federation.RoomAccess.state(Graph.room(local))
+    assert bob in LakehouseMatrix.Protocol.Authorization.creators(state)
+    levels = state[{"m.room.power_levels", ""}]["content"]
+    assert levels["events"]["m.room.tombstone"] > levels["state_default"]
+    refute Map.has_key?(levels["users"], bob)
+    assert state[{"m.room.guest_access", ""}]["content"]["guest_access"] == "can_join"
+  end
+
   test "native invitations and acceptance project the same memberships to Matrix and River",
        ctx do
     assert {:ok, %{"room_id" => ref}} =

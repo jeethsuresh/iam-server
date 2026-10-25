@@ -1,12 +1,14 @@
 defmodule LakehouseMatrix.Protocol.Rooms do
   @moduledoc "Native Matrix room creation and local membership operations over signed PDUs."
   alias LakehouseIam.{Accounts, IAM, Repo}
-  alias LakehouseMatrix.{ClientStore, Identity, Rooms}
+  alias LakehouseMatrix.{ClientStore, Identity}
   alias LakehouseMatrix.Protocol.{Graph, Event}
 
   def enabled?, do: Application.get_env(:lakehouse_matrix, :native_event_graph, false)
 
-  def create(principal_id, params) do
+  def create(principal_id, params, options \\ []) do
+    id = Keyword.get(options, :id) || Ecto.UUID.generate()
+
     LakehouseMatrix.Protocol.Policy.transaction(fn ->
       ClientStore.lock!()
       unless IAM.can?(principal_id, "matrix.room.create", nil), do: Repo.rollback(:forbidden)
@@ -29,6 +31,15 @@ defmodule LakehouseMatrix.Protocol.Rooms do
                is_map(creation) and is_map(override),
              do: Repo.rollback(:invalid_param)
 
+      creation =
+        if version == "12" and preset == "trusted_private_chat" do
+          additional = creation["additional_creators"] || []
+          unless is_list(additional), do: Repo.rollback(:invalid_param)
+          Map.put(creation, "additional_creators", Enum.uniq(additional ++ invites))
+        else
+          creation
+        end
+
       name = params["name"] || params["room_alias_name"] || "Room"
       visibility = params["visibility"] || "private"
       alias_name = params["room_alias_name"]
@@ -46,12 +57,14 @@ defmodule LakehouseMatrix.Protocol.Rooms do
         do: Repo.rollback(:invalid_param)
 
       room =
-        case Rooms.create_room_record(%{
+        case %LakehouseMatrix.Schema.Room{id: id}
+             |> LakehouseMatrix.Schema.Room.changeset(%{
                name: if(String.trim(name) == "", do: "Room", else: name),
                topic: params["topic"],
                alias: alias_name,
                visibility: visibility
-             }) do
+             })
+             |> Repo.insert() do
           {:ok, room} -> room
           _ -> Repo.rollback(:invalid_param)
         end
@@ -75,7 +88,7 @@ defmodule LakehouseMatrix.Protocol.Rooms do
       users = if version == "12", do: %{}, else: %{sender => 100}
 
       users =
-        if preset == "trusted_private_chat",
+        if preset == "trusted_private_chat" and version != "12",
           do: Enum.reduce(invites, users, &Map.put(&2, &1, 100)),
           else: users
 
@@ -84,35 +97,61 @@ defmodule LakehouseMatrix.Protocol.Rooms do
         "users_default" => 0,
         "events_default" => 0,
         "state_default" => 50,
+        "events" => %{
+          "m.room.power_levels" => 100,
+          "m.room.encryption" => 100,
+          "m.room.server_acl" => 100,
+          "m.room.history_visibility" => 100,
+          "m.room.tombstone" => 100
+        },
         "invite" => 0,
         "kick" => 50,
         "ban" => 50,
         "redact" => 50
       }
 
-      levels = Map.merge(levels, override)
+      creators = [sender | creation["additional_creators"] || []]
+      levels = initial_levels(Map.merge(levels, override), version, creators)
+
+      require_ok!(Graph.send(room.id, sender, "m.room.power_levels", levels, ""))
+
+      if alias_name,
+        do:
+          require_ok!(
+            Graph.send(
+              room.id,
+              sender,
+              "m.room.canonical_alias",
+              %{"alias" => Identity.room_alias(alias_name)},
+              ""
+            )
+          )
 
       defaults = [
-        {"m.room.power_levels", "", levels},
         {"m.room.join_rules", "",
          %{"join_rule" => if(preset == "public_chat", do: "public", else: "invite")}},
         {"m.room.history_visibility", "", %{"history_visibility" => "shared"}},
-        {"m.room.guest_access", "", %{"guest_access" => "forbidden"}}
+        {"m.room.guest_access", "",
+         %{"guest_access" => if(preset == "public_chat", do: "forbidden", else: "can_join")}}
       ]
 
-      state =
-        Enum.reduce(initial, Map.new(defaults, fn {t, k, c} -> {{t, k}, c} end), fn event, acc ->
-          unless is_map(event) and is_binary(event["type"]) and
-                   is_binary(event["state_key"] || "") and
-                   is_map(event["content"]) and
-                   event["type"] not in ~w(m.room.create m.room.member),
-                 do: Repo.rollback(:invalid_param)
-
-          Map.put(acc, {event["type"], event["state_key"] || ""}, event["content"])
-        end)
-
-      for {{type, key}, content} <- Enum.sort(state),
+      for {type, key, content} <- defaults,
           do: require_ok!(Graph.send(room.id, sender, type, content, key))
+
+      for event <- initial do
+        unless is_map(event) and is_binary(event["type"]) and
+                 is_binary(event["state_key"] || "") and
+                 is_map(event["content"]) and
+                 event["type"] not in ~w(m.room.create m.room.member),
+               do: Repo.rollback(:invalid_param)
+
+        content =
+          if event["type"] == "m.room.power_levels",
+            do: initial_levels(event["content"], version, creators),
+            else: event["content"]
+
+        require_ok!(Graph.send(room.id, sender, event["type"], content, event["state_key"] || ""))
+      end
 
       if params["name"],
         do: require_ok!(Graph.send(room.id, sender, "m.room.name", %{"name" => name}, ""))
@@ -123,22 +162,31 @@ defmodule LakehouseMatrix.Protocol.Rooms do
             Graph.send(room.id, sender, "m.room.topic", %{"topic" => params["topic"]}, "")
           )
 
-      if params["room_alias_name"],
-        do:
-          require_ok!(
-            Graph.send(
-              room.id,
-              sender,
-              "m.room.canonical_alias",
-              %{"alias" => Identity.room_alias(params["room_alias_name"])},
-              ""
-            )
-          )
-
       for user <- invites, do: require_ok!(invite(principal_id, room.id, user))
       %{"room_id" => Identity.room_id(room.id)}
     end)
   end
+
+  def initial_levels(levels, version, creators \\ [])
+
+  def initial_levels(levels, "12", creators) do
+    state = Map.get(levels, "state_default", 50)
+    events = levels["events"] || %{}
+    users = levels["users"] || %{}
+
+    unless is_integer(state) and state in -9_007_199_254_740_991..9_007_199_254_740_990 and
+             is_map(events) and is_map(users),
+           do: Repo.rollback(:invalid_param)
+
+    tombstone = Map.get(events, "m.room.tombstone", max(100, state + 1))
+    unless is_integer(tombstone), do: Repo.rollback(:invalid_param)
+
+    levels
+    |> Map.put("users", Map.drop(users, creators))
+    |> Map.put("events", Map.put(events, "m.room.tombstone", max(tombstone, state + 1)))
+  end
+
+  def initial_levels(levels, _, _), do: levels
 
   def membership(principal, local_id, membership, content \\ %{}) do
     user = Repo.get!(LakehouseIam.Schema.Principal, principal).username |> Identity.user_id()

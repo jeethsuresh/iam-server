@@ -58,23 +58,64 @@ defmodule LakehouseWeb.Matrix.ProtocolController do
   end
 
   def create_room(conn, params), do: respond(conn, ClientRooms.create(principal(conn), params))
-  def login_flows(conn, _), do: json(conn, %{"flows" => [%{"type" => "m.login.password"}]})
+
+  def upgrade_room(conn, %{"roomId" => ref} = params),
+    do: respond(conn, LakehouseMatrix.RoomUpgrades.upgrade(principal(conn), ref, params))
+
+  def login_flows(conn, _),
+    do:
+      json(conn, %{
+        "flows" => [
+          %{"type" => "m.login.password"},
+          %{"type" => "m.login.token", "get_login_token" => true},
+          %{
+            "type" => "m.login.sso",
+            "identity_providers" => [%{"id" => "gravitas", "name" => "Gravitas"}]
+          }
+        ]
+      })
 
   def login(conn, params) do
+    conn = put_resp_header(conn, "cache-control", "no-store")
     identifier = if is_map(params["identifier"]), do: params["identifier"], else: %{}
     user = identifier["user"] || params["user"]
 
-    if params["type"] in [nil, "m.login.password"] and is_binary(user) and
-         is_binary(params["password"]) do
-      respond(conn, ClientStore.login(user, params["password"], params))
-    else
-      error(
-        conn,
-        400,
-        "M_INVALID_PARAM",
-        "A supported login type, user and password are required"
-      )
+    cond do
+      params["type"] == "m.login.token" ->
+        respond(conn, LakehouseMatrix.ClientLogin.redeem(params["token"], params))
+
+      params["type"] in [nil, "m.login.password"] and identifier["type"] in [nil, "m.id.user"] and
+        is_binary(user) and is_binary(params["password"]) ->
+        respond(conn, ClientStore.login(user, params["password"], params))
+
+      true ->
+        error(
+          conn,
+          400,
+          "M_INVALID_PARAM",
+          "A supported login type, user and password are required"
+        )
     end
+  end
+
+  def refresh(conn, params),
+    do:
+      conn
+      |> put_resp_header("cache-control", "no-store")
+      |> respond(LakehouseMatrix.ClientLogin.refresh(params["refresh_token"]))
+
+  def login_token(conn, _) do
+    conn
+    |> put_resp_header("cache-control", "no-store")
+    |> respond(
+      LakehouseMatrix.ClientUia.perform(
+        principal(conn),
+        device(conn),
+        "login_token",
+        body(conn),
+        fn -> LakehouseMatrix.ClientLogin.generate(principal(conn), true, device(conn)) end
+      )
+    )
   end
 
   def typing(conn, %{"roomId" => room, "userId" => user} = params),
@@ -231,6 +272,7 @@ defmodule LakehouseWeb.Matrix.ProtocolController do
               )
           },
           "m.change_password" => %{"enabled" => false},
+          "m.get_login_token" => %{"enabled" => true},
           "m.set_displayname" => %{"enabled" => true},
           "m.set_avatar_url" => %{"enabled" => true},
           "m.3pid_changes" => %{"enabled" => false}
@@ -355,7 +397,12 @@ defmodule LakehouseWeb.Matrix.ProtocolController do
 
   def get_data(conn, %{"userId" => user, "type" => type} = params) do
     if user == Identity.user_id(conn.assigns.username) do
-      case ClientStore.get_data(principal(conn), params["roomId"] || "", type) do
+      data =
+        if type == "m.push_rules" and is_nil(params["roomId"]),
+          do: LakehouseMatrix.PushRules.get(principal(conn)),
+          else: ClientStore.get_data(principal(conn), params["roomId"] || "", type)
+
+      case data do
         nil -> respond(conn, {:error, :not_found})
         content -> json(conn, content)
       end
@@ -367,7 +414,7 @@ defmodule LakehouseWeb.Matrix.ProtocolController do
   def put_data(conn, %{"userId" => user, "type" => type} = params) do
     room = params["roomId"] || ""
 
-    if user == Identity.user_id(conn.assigns.username) and
+    if type != "m.push_rules" and user == Identity.user_id(conn.assigns.username) and
          (room == "" or match?({:ok, _}, ClientRooms.readable(principal(conn), room))) and
          byte_size(Jason.encode!(body(conn))) <= 65_536 do
       respond(conn, ClientStore.put_data(principal(conn), room, type, body(conn)))
@@ -481,8 +528,49 @@ defmodule LakehouseWeb.Matrix.ProtocolController do
 
   def media_config(conn, _), do: json(conn, %{"m.upload.size" => 10 * 1024 * 1024})
 
-  def pushrules(conn, _),
-    do: json(conn, %{"global" => Map.new(~w(override content room sender underride), &{&1, []})})
+  def pushrules(conn, params) do
+    result =
+      cond do
+        params["scope"] not in [nil, "global"] ->
+          {:error, :not_found}
+
+        is_nil(params["kind"]) ->
+          {:ok, LakehouseMatrix.PushRules.get(principal(conn))}
+
+        conn.method == "GET" ->
+          LakehouseMatrix.PushRules.fetch(
+            principal(conn),
+            params["kind"],
+            params["ruleId"],
+            params["field"]
+          )
+
+        true ->
+          LakehouseMatrix.PushRules.mutate(
+            principal(conn),
+            params["kind"],
+            params["ruleId"],
+            conn.method,
+            Map.merge(body(conn), Map.take(conn.query_params, ~w(before after))),
+            params["field"]
+          )
+      end
+
+    respond(conn, result)
+  end
+
+  def notifications(conn, params),
+    do: respond(conn, LakehouseMatrix.Notifications.page(principal(conn), device(conn), params))
+
+  def pushers(conn, params),
+    do:
+      respond(
+        conn,
+        if(conn.method == "GET",
+          do: {:ok, LakehouseMatrix.Pushers.list(principal(conn))},
+          else: LakehouseMatrix.Pushers.set(principal(conn), device(conn), params)
+        )
+      )
 
   def unrecognized(conn, _),
     do: error(conn, 404, "M_UNRECOGNIZED", "Unrecognized Matrix endpoint")
@@ -493,6 +581,27 @@ defmodule LakehouseWeb.Matrix.ProtocolController do
     do: conn |> put_status(status) |> json(body)
 
   def respond(conn, {:error, {:uia, body}}), do: conn |> put_status(401) |> json(body)
+
+  def respond(conn, {:error, :unknown_token}),
+    do:
+      conn
+      |> put_status(401)
+      |> json(%{
+        "errcode" => "M_UNKNOWN_TOKEN",
+        "error" => "Unknown refresh token",
+        "soft_logout" => true
+      })
+
+  def respond(conn, {:error, :rate_limited}),
+    do:
+      conn
+      |> put_status(429)
+      |> put_resp_header("retry-after", "60")
+      |> json(%{
+        "errcode" => "M_LIMIT_EXCEEDED",
+        "error" => "Please wait before requesting another login token",
+        "retry_after_ms" => 60_000
+      })
 
   def respond(conn, {:error, {:wrong_backup_version, version}}),
     do:
@@ -522,6 +631,9 @@ defmodule LakehouseWeb.Matrix.ProtocolController do
 
         :unsupported_room_version ->
           {400, "M_UNSUPPORTED_ROOM_VERSION", "This room version is not supported"}
+
+        :already_upgraded ->
+          {400, "M_BAD_STATE", "This room already has a replacement in a different version"}
 
         :unable_to_authorise_join ->
           {403, "M_UNABLE_TO_AUTHORISE_JOIN", "This server cannot authorize the restricted join"}

@@ -583,10 +583,20 @@ defmodule LakehouseMatrix.ClientRooms do
     with {:ok, room} <- readable(principal, ref),
          true <- type in ~w(m.read m.read.private),
          %{} = target <- receipt_event(principal, room.id, event),
-         true <- is_nil(data["thread_id"]) or is_binary(data["thread_id"]) do
+         true <- valid_receipt_thread?(principal, room.id, target, data["thread_id"]) do
       LakehouseMatrix.Protocol.Policy.transaction(fn ->
         ClientStore.lock!()
         thread = data["thread_id"] || ""
+
+        unless LakehouseMatrix.Notifications.receipt_forward?(
+                 principal,
+                 room.id,
+                 type,
+                 thread,
+                 target.event_id
+               ),
+               do: Repo.rollback(:receipt_unchanged)
+
         receipt = Map.put(Map.take(data, ["thread_id"]), "ts", System.system_time(:millisecond))
 
         Repo.insert_all(
@@ -617,7 +627,13 @@ defmodule LakehouseMatrix.ClientRooms do
           end
         end
 
+        LakehouseMatrix.Pushers.queue!(principal)
+
         %{}
+      end)
+      |> then(fn
+        {:error, :receipt_unchanged} -> {:ok, %{}}
+        result -> result
       end)
     else
       _ -> {:error, :forbidden}
@@ -627,7 +643,7 @@ defmodule LakehouseMatrix.ClientRooms do
   defp receipt_event(principal, room, event) when is_binary(event) do
     if LakehouseMatrix.Protocol.Graph.room(room) do
       case LakehouseMatrix.ClientHistory.event(principal, room, event) do
-        {:ok, found} -> %{event_id: found["event_id"]}
+        {:ok, found} -> %{event_id: found["event_id"], content: found["content"]}
         _ -> nil
       end
     else
@@ -636,6 +652,22 @@ defmodule LakehouseMatrix.ClientRooms do
   end
 
   defp receipt_event(_, _, _), do: nil
+
+  defp valid_receipt_thread?(_, _, _, nil), do: true
+
+  defp valid_receipt_thread?(principal, room, event, thread)
+       when is_binary(thread) and byte_size(thread) in 1..255 do
+    relation = event.content["m.relates_to"] || %{}
+    in_thread = is_map(relation) and relation["rel_type"] == "m.thread"
+
+    if thread == "main",
+      do: not in_thread,
+      else:
+        (event.event_id == thread or (in_thread and relation["event_id"] == thread)) and
+          not is_nil(receipt_event(principal, room, thread))
+  end
+
+  defp valid_receipt_thread?(_, _, _, _), do: false
 
   def allowed_event?(principal, room, type, state),
     do:

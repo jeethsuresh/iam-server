@@ -86,6 +86,8 @@ defmodule LakehouseMatrix.Federation.Invites do
 
             {:ok, _} =
               Memberships.upsert_membership(metadata.local_room_id, target.id, "invite", ctx)
+
+            LakehouseMatrix.Notifications.invite!(metadata, target, id)
           end
 
           own = Map.take(signed, ~w(type state_key sender content))

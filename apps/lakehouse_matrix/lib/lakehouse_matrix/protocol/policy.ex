@@ -7,6 +7,24 @@ defmodule LakehouseMatrix.Protocol.Policy do
 
   def transaction(callback), do: run(fn -> Repo.transaction(callback) end)
 
+  def draft(key, callback) do
+    case Process.get(@cache) do
+      nil ->
+        callback.()
+
+      cache ->
+        case Map.fetch(cache, key) do
+          {:ok, event} ->
+            event
+
+          :error ->
+            event = callback.()
+            Process.put(@cache, Map.put(cache, key, event))
+            event
+        end
+    end
+  end
+
   def run(callback) do
     if Repo.in_transaction?() or not is_nil(Process.get(@cache)) do
       callback.()

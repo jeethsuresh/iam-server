@@ -98,6 +98,57 @@ defmodule LakehouseMatrix.Protocol.PolicyTest do
     refute_receive {:policy_request, _, _}
   end
 
+  test "a replacement room's create hash and predecessor references survive an outer policy retry",
+       ctx do
+    Application.put_env(:lakehouse_matrix, :federation_requester, signer())
+    id = Ecto.UUID.generate()
+    parent = self()
+
+    assert {:ok, {replacement, message}} =
+             Policy.transaction(fn ->
+               {:ok, created} =
+                 LakehouseMatrix.Protocol.Rooms.create(ctx.alice.id, %{"name" => "Replacement"},
+                   id: id
+                 )
+
+               send(parent, {:replacement, created["room_id"]})
+
+               case Graph.send(ctx.room.id, F.alice(), "m.room.message", %{
+                      "replacement_room" => created["room_id"]
+                    }) do
+                 {:ok, message} -> {created, message}
+                 {:error, reason} -> Repo.rollback(reason)
+               end
+             end)
+
+    ref = replacement["room_id"]
+    assert_receive {:replacement, ^ref}
+    assert_receive {:replacement, ^ref}
+    assert_receive {:policy_request, false, wire}
+    refute_receive {:policy_request, _, _}
+    assert wire["content"]["replacement_room"] == ref
+    assert message["content"]["replacement_room"] == ref
+    assert Identity.room_id(id) == ref
+  end
+
+  test "a policy-moderated upgrade retains one replacement across tombstone and freeze approvals",
+       ctx do
+    Application.put_env(:lakehouse_matrix, :federation_requester, signer())
+
+    assert {:ok, %{"replacement_room" => ref}} =
+             LakehouseMatrix.RoomUpgrades.upgrade(ctx.alice.id, ctx.ref, %{"new_version" => "12"})
+
+    assert_receive {:policy_request, false, tombstone}
+    assert tombstone["type"] == "m.room.tombstone"
+    assert tombstone["content"]["replacement_room"] == ref
+    assert_receive {:policy_request, false, freeze}
+    assert freeze["type"] == "m.room.power_levels"
+    refute_receive {:policy_request, _, _}
+    assert Graph.room_by_id(ref).version == "12"
+    assert Repo.aggregate(LakehouseMatrix.Schema.Room, :count) == 2
+    assert Repo.aggregate("matrix_room_upgrades", :count) == 1
+  end
+
   test "policy refusal rolls back the event and transaction ledger; disabling the policy stays possible",
        ctx do
     error = %{"errcode" => "M_FORBIDDEN", "error" => "Policy declined"}

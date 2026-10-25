@@ -41,6 +41,8 @@ defmodule LakehouseWeb.Router do
 
     get "/", PageController, :home
     get "/register", PageController, :register
+    get "/_matrix/client/v3/login/sso/redirect", Matrix.SsoController, :start
+    get "/_matrix/client/v3/login/sso/redirect/:idpId", Matrix.SsoController, :start
     post "/web/login", WebAuthController, :login
     post "/web/register", WebAuthController, :register
     post "/web/logout", IamSessionController, :delete
@@ -90,6 +92,8 @@ defmodule LakehouseWeb.Router do
 
     get "/oauth/consent", OAuthController, :consent_form
     post "/oauth/consent", OAuthController, :consent_submit
+    get "/matrix/sso/consent", Matrix.SsoController, :consent
+    post "/matrix/sso/consent", Matrix.SsoController, :approve
 
     get "/profile/password", SettingsController, :redirect_legacy
     get "/admin", SettingsController, :redirect_legacy
@@ -190,6 +194,7 @@ defmodule LakehouseWeb.Router do
     get "/v3/publicRooms", ProtocolController, :public_rooms
     get "/v3/login", ProtocolController, :login_flows
     post "/v3/login", ProtocolController, :login
+    post "/v3/refresh", ProtocolController, :refresh
     get "/v3/profile/:userId", ProtocolController, :profile
     get "/v3/profile/:userId/:field", ProtocolController, :profile
   end
@@ -208,6 +213,7 @@ defmodule LakehouseWeb.Router do
     get "/v3/account/whoami", ProtocolController, :whoami
     post "/v3/logout", ProtocolController, :logout
     post "/v3/logout/all", ProtocolController, :logout_all
+    post "/v1/login/get_token", ProtocolController, :login_token
     get "/v3/capabilities", ProtocolController, :capabilities
     get "/v3/devices", ProtocolController, :devices
     get "/v3/devices/:device", ProtocolController, :get_device
@@ -229,6 +235,7 @@ defmodule LakehouseWeb.Router do
     get "/v1/rooms/:roomId/hierarchy", ProtocolController, :space_hierarchy
     get "/v1/rooms/:roomId/timestamp_to_event", ProtocolController, :timestamp_to_event
     get "/v1/room_summary/:roomIdOrAlias", ProtocolController, :room_summary
+    post "/v3/rooms/:roomId/upgrade", ProtocolController, :upgrade_room
     get "/v1/rooms/:roomId/relations/:eventId", ProtocolController, :relations
     get "/v1/rooms/:roomId/relations/:eventId/:relType", ProtocolController, :relations
     get "/v1/rooms/:roomId/relations/:eventId/:relType/:eventType", ProtocolController, :relations
@@ -267,6 +274,15 @@ defmodule LakehouseWeb.Router do
     put "/v3/room_keys/keys/:roomId/:sessionId", ProtocolController, :backup_keys
     delete "/v3/room_keys/keys/:roomId/:sessionId", ProtocolController, :backup_keys
     get "/v3/pushrules/", ProtocolController, :pushrules
+    get "/v3/pushrules/:scope/", ProtocolController, :pushrules
+    get "/v3/pushrules/:scope/:kind/:ruleId", ProtocolController, :pushrules
+    put "/v3/pushrules/:scope/:kind/:ruleId", ProtocolController, :pushrules
+    delete "/v3/pushrules/:scope/:kind/:ruleId", ProtocolController, :pushrules
+    get "/v3/pushrules/:scope/:kind/:ruleId/:field", ProtocolController, :pushrules
+    put "/v3/pushrules/:scope/:kind/:ruleId/:field", ProtocolController, :pushrules
+    get "/v3/notifications", ProtocolController, :notifications
+    get "/v3/pushers", ProtocolController, :pushers
+    post "/v3/pushers/set", ProtocolController, :pushers
     get "/v1/media/config", ProtocolController, :media_config
     get "/v1/media/download/:serverName/:mediaId", MediaController, :download
     get "/v1/media/download/:serverName/:mediaId/:fileName", MediaController, :download

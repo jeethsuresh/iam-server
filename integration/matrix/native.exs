@@ -674,6 +674,86 @@ if System.get_env("INTEROP_SERVE_ONLY") != "1" do
     true = Enum.map(remote_view["rooms"], & &1["room_id"]) == [space, rid, unknown]
   end)
 
+  Interop.check(
+    "a v11 room upgrades to v12 and Synapse follows its tombstone and moved alias",
+    fn ->
+      name = "upgrade-" <> run_id
+      alias_ref = Identity.room_alias(name)
+
+      {:ok, %{"room_id" => old}} =
+        Interop.http(
+          :post,
+          "native.test:8448",
+          "/_matrix/client/v3/createRoom",
+          %{
+            "name" => "Upgrade",
+            "room_version" => "11",
+            "room_alias_name" => name,
+            "preset" => "public_chat"
+          },
+          at
+        )
+
+      {:ok, %{"room_id" => ^old}} =
+        Interop.http(
+          :post,
+          "reference.test:8448",
+          "/_matrix/client/v3/join/" <> Interop.escape(alias_ref),
+          %{},
+          bt
+        )
+
+      {:ok, %{"replacement_room" => replacement}} =
+        Interop.http(
+          :post,
+          "native.test:8448",
+          "/_matrix/client/v3/rooms/" <> Interop.escape(old) <> "/upgrade",
+          %{"new_version" => "12"},
+          at
+        )
+
+      tombstone =
+        Graph.room_by_id(old).current_state
+        |> Graph.decode_state()
+        |> Map.fetch!({"m.room.tombstone", ""})
+
+      Interop.wait(fn -> Interop.contains("reference.test:8448", bt, old, tombstone) end)
+
+      {:ok, %{"room_id" => ^replacement}} =
+        Interop.http(
+          :post,
+          "reference.test:8448",
+          "/_matrix/client/v3/join/" <> Interop.escape(alias_ref),
+          %{},
+          bt
+        )
+
+      {:ok, create} =
+        Interop.http(
+          :get,
+          "reference.test:8448",
+          "/_matrix/client/v3/rooms/" <> Interop.escape(replacement) <> "/state/m.room.create",
+          nil,
+          bt
+        )
+
+      true = create["room_version"] == "12" and create["predecessor"]["room_id"] == old
+
+      {:ok, message} =
+        Interop.send_event(
+          "reference.test:8448",
+          bt,
+          replacement,
+          "upgraded-message",
+          "after upgrade"
+        )
+
+      Interop.wait(fn ->
+        Interop.contains("native.test:8448", at, replacement, message["event_id"])
+      end)
+    end
+  )
+
   IO.puts("INTEROP COMPLETE")
 end
 

@@ -256,7 +256,8 @@ defmodule LakehouseMatrix.SlidingSync do
         last = if old, do: old["position"], else: 0
         data_changed = ClientStore.account_data(principal, "", since, high) != []
 
-        if initial or expanded or changed_config or (activity[id] || 0) > last or data_changed do
+        if initial or expanded or changed_config or (activity[id] || 0) > last or data_changed or
+             LakehouseMatrix.Notifications.changed?(principal, id, last, high) do
           payload =
             if membership in ["invite", "knock"] or
                  not ClientSync.ever_joined?(principal, id, high) do
@@ -314,6 +315,14 @@ defmodule LakehouseMatrix.SlidingSync do
 
               %{
                 "initial" => initial,
+                "notification_count" =>
+                  LakehouseMatrix.Notifications.counts(principal, id, room_high)[
+                    "notification_count"
+                  ],
+                "highlight_count" =>
+                  LakehouseMatrix.Notifications.counts(principal, id, room_high)[
+                    "highlight_count"
+                  ],
                 "membership" => membership,
                 "name" => state_content(state, "m.room.name")["name"],
                 "avatar" => state_content(state, "m.room.avatar")["url"],
