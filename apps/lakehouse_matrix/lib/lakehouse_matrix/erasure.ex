@@ -231,12 +231,19 @@ defmodule LakehouseMatrix.Erasure do
     |> Map.update!("event", &federation(item.event_id, item.destination, &1))
     |> Map.update!(
       "invite_room_state",
-      &stripped(
-        &1,
-        record.local_room_id,
-        {:server, item.destination},
-        Graph.room(record.local_room_id).version
-      )
+      fn events ->
+        version = Graph.room(record.local_room_id).version
+
+        Enum.map(events, fn event ->
+          if Event.validate(event, version) == :ok do
+            federation(Event.id(event, version), item.destination, event)
+          else
+            # Read older queued previews defensively; new invitations always
+            # contain full room-version PDUs, including the create event.
+            hd(stripped([event], record.local_room_id, {:server, item.destination}, version))
+          end
+        end)
+      end
     )
   end
 

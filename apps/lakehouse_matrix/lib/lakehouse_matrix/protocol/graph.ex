@@ -616,7 +616,11 @@ defmodule LakehouseMatrix.Protocol.Graph do
 
       existing ->
         unless existing.room_id == metadata.local_room_id, do: Repo.rollback(:wrong_room)
-        existing |> Ecto.Changeset.change(content: event["content"]) |> Repo.update!()
+
+        existing
+        |> Ecto.Changeset.change(content: event["content"])
+        |> Repo.update!()
+        |> LakehouseMatrix.Erasure.capture_projection()
     end
 
     resolved = resolved || decode_state(record.state_after)
@@ -701,6 +705,11 @@ defmodule LakehouseMatrix.Protocol.Graph do
   defp project_member!(_, _), do: :ok
 
   defp project_room!(room, event) do
+    event =
+      if event["type"] in ~w(m.room.name m.room.topic m.room.avatar),
+        do: LakehouseMatrix.Erasure.client(event, nil),
+        else: event
+
     attrs =
       case {event["type"], event["state_key"]} do
         {"m.room.name", ""} ->
@@ -797,17 +806,19 @@ defmodule LakehouseMatrix.Protocol.Graph do
 
       if event["type"] == "m.room.member" and get_in(event, ["content", "membership"]) == "invite" do
         with {:ok, server} <- Event.user_domain(event["state_key"]), true <- server != local do
-          stripped =
+          invite_state =
             Enum.map(resolved, fn {_, id} -> graph[id] end)
             |> Enum.filter(
-              &(&1["type"] in ~w(m.room.create m.room.name m.room.avatar m.room.topic m.room.join_rules m.room.encryption m.room.canonical_alias))
+              &(&1["type"] in ~w(m.room.create m.room.name m.room.avatar m.room.topic m.room.join_rules m.room.encryption m.room.canonical_alias) or
+                  (&1["type"] == "m.room.member" and
+                     &1["state_key"] in [event["sender"], event["state_key"]]))
             )
-            |> Enum.map(&Map.take(&1, ~w(type state_key sender content)))
+            |> Enum.map(&(event(&1["event_id"]).pdu |> Map.delete("event_id")))
 
           payload = %{
             "room_version" => metadata.version,
             "event" => Map.drop(event, ["event_id", :auth_rejected]),
-            "invite_room_state" => stripped
+            "invite_room_state" => invite_state
           }
 
           Repo.insert_all(

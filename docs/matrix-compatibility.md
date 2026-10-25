@@ -56,6 +56,9 @@ E2EE is complete.
 - Signed server discovery and requests, historical signing-key cache with
   immutable key-ID bindings, public-address validation, DNS-pinned verified TLS,
   bounded responses and no implicit redirects.
+- Federation invitations carry complete signed room-version PDUs, including
+  the create event. Incoming previews require signatures and the same room;
+  they become stripped client previews without being trusted as resolved state.
 - Inbound replay-protected transactions, durable dependency recovery and leased
   outbound delivery, ACLs, room-state/auth-chain retrieval, make/send join, leave
   and knock, restricted-join co-signing and verified remote room snapshots.

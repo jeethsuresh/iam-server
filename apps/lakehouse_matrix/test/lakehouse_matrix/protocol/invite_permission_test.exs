@@ -117,7 +117,8 @@ defmodule LakehouseMatrix.Protocol.InvitePermissionTest do
     params = %{
       "room_version" => "12",
       "event" => Map.drop(invite, ["event_id", :auth_rejected]),
-      "invite_room_state" => []
+      "invite_room_state" =>
+        Enum.map(remote.state, fn {_, event} -> Map.drop(event, ["event_id", :auth_rejected]) end)
     }
 
     {:ok, _} = block(c.bob)

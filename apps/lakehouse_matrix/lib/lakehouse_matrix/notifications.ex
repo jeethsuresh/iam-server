@@ -76,6 +76,7 @@ defmodule LakehouseMatrix.Notifications do
   end
 
   defp notify!(metadata, projected, event, principal, context) do
+    event = LakehouseMatrix.Erasure.client(event, principal.id)
     actions = PushRules.evaluate(PushRules.get(principal.id), event, context)
 
     if "notify" in actions do

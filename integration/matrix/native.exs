@@ -777,7 +777,11 @@ if System.get_env("INTEROP_SERVE_ONLY") != "1" do
       assert_path =
         "/_matrix/client/v3/join/" <> Interop.escape(channel.room_id) <> "?via=native.test%3A8448"
 
-      {:error, {:http, 403, _}} = Interop.http(:post, "reference.test:8448", assert_path, %{}, bt)
+      {:error, {:http, denied_status, _}} =
+        Interop.http(:post, "reference.test:8448", assert_path, %{}, bt)
+
+      # Synapse wraps a resident server's 403 make_join denial as a client 502.
+      true = denied_status in [403, 502]
 
       {:ok, _} =
         Interop.http(

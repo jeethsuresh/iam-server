@@ -178,7 +178,11 @@ defmodule LakehouseMatrix.Protocol.ImportTest do
         "example.org",
         ctx.remote.room,
         invite["event_id"],
-        %{"room_version" => "12", "event" => wire(invite), "invite_room_state" => []},
+        %{
+          "room_version" => "12",
+          "event" => wire(invite),
+          "invite_room_state" => Enum.map(ctx.remote.state, fn {_, event} -> wire(event) end)
+        },
         &F.lookup/3
       )
 
@@ -219,6 +223,75 @@ defmodule LakehouseMatrix.Protocol.ImportTest do
     assert :idle = Outbox.deliver_once(fn _, _, _, _ -> flunk("delivered leave retried") end)
   end
 
+  for version <- ["11", "12"] do
+    test "#{version}: invitation previews require the create PDU, signatures and the same room",
+         ctx do
+      version = unquote(version)
+      remote = F.public_room(version)
+      {invite, _} = F.append(remote, "m.room.member", %{"membership" => "invite"}, key: ctx.mxid)
+      preview = Enum.map(remote.state, fn {_, event} -> wire(event) end)
+      {name, _} = F.append(remote, "m.room.name", %{"name" => "Another room"}, key: "")
+
+      foreign =
+        wire(name)
+        |> Map.put(
+          "room_id",
+          if(version == "12", do: "!" <> String.duplicate("A", 43), else: "!other:example.org")
+        )
+        |> Event.sign(version, F.seed(), "ed25519:test", "example.org")
+
+      invalid_signature =
+        put_in(
+          wire(remote.create),
+          ["signatures", "example.org", "ed25519:test"],
+          Base.encode64(<<0::512>>, padding: false)
+        )
+
+      for bad <- [
+            [],
+            Enum.map(preview, &Map.take(&1, ~w(type sender state_key content))),
+            Enum.reject(preview, &(&1["type"] == "m.room.create")),
+            [invalid_signature],
+            preview ++ [foreign]
+          ] do
+        assert {:error, :invalid_param} =
+                 Invites.receive(
+                   "example.org",
+                   remote.room,
+                   invite["event_id"],
+                   %{
+                     "room_version" => version,
+                     "event" => wire(invite),
+                     "invite_room_state" => bad
+                   },
+                   &F.lookup/3
+                 )
+
+        assert Graph.room_by_id(remote.room) == nil
+      end
+
+      assert {:ok, _} =
+               Invites.receive(
+                 "example.org",
+                 remote.room,
+                 invite["event_id"],
+                 %{
+                   "room_version" => version,
+                   "event" => wire(invite),
+                   "invite_room_state" => preview
+                 },
+                 &F.lookup/3
+               )
+
+      metadata = Graph.room_by_id(remote.room)
+      assert metadata.current_state == %{}
+      assert Graph.event(remote.create["event_id"]) == nil
+      pending = Invites.pending(metadata.local_room_id, ctx.mxid)
+      assert Enum.any?(pending.state["events"], &(&1["type"] == "m.room.create"))
+      refute Enum.any?(pending.state["events"], &Map.has_key?(&1, "auth_events"))
+    end
+  end
+
   test "an incoming invite is an outlier until the subsequent verified remote join", ctx do
     {:ok, before} = ClientSync.sync(ctx.user.id, "A", %{})
 
@@ -227,7 +300,7 @@ defmodule LakehouseMatrix.Protocol.ImportTest do
 
     stripped =
       Enum.map(ctx.remote.state, fn {_, event} ->
-        Map.take(event, ~w(type state_key sender content))
+        wire(event)
       end)
 
     assert {:ok, _} =

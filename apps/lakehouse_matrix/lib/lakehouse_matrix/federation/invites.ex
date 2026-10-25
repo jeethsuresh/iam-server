@@ -25,6 +25,7 @@ defmodule LakehouseMatrix.Federation.Invites do
          :ok <- Event.verify_sender(event, version, lookup),
          {:ok, verified} <- Event.verify(event, version, lookup),
          true <- verified["event_id"] == id,
+         {:ok, preview} <- verify_preview(ref, version, stripped, lookup),
          {:ok, seed, key} <- Signing.config() do
       signed =
         Event.add_signature(
@@ -44,7 +45,7 @@ defmodule LakehouseMatrix.Federation.Invites do
         if LakehouseMatrix.InvitePermission.blocked?(target.id),
           do: Repo.rollback(:invite_blocked)
 
-        metadata = ensure_metadata!(ref, version, stripped)
+        metadata = ensure_metadata!(ref, version, preview)
 
         if metadata.extremities != [] do
           case Graph.receive_pdu(metadata.local_room_id, signed, lookup) do
@@ -80,8 +81,8 @@ defmodule LakehouseMatrix.Federation.Invites do
 
             {:ok, _} = Events.persist(ctx, %{"content" => signed["content"]})
             # Publish only the authenticated recipient's invitation into the
-            # client membership stream. Unverified stripped room state remains
-            # outside the protocol graph's resolved authorization state.
+            # client membership stream. Preview signatures do not prove room
+            # authorization: that state remains outside the resolved graph.
             Repo.insert_all("matrix_state_changes", [
               %{
                 local_room_id: ClientStore.dump_id(metadata.local_room_id),
@@ -100,7 +101,7 @@ defmodule LakehouseMatrix.Federation.Invites do
           own = Map.take(signed, ~w(type state_key sender content))
 
           stripped =
-            Enum.filter(stripped, fn e ->
+            Enum.filter(preview, fn e ->
               is_map(e) and is_binary(e["type"]) and is_binary(e["state_key"]) and
                 is_map(e["content"])
             end)
@@ -136,6 +137,29 @@ defmodule LakehouseMatrix.Federation.Invites do
     else
       {:error, _} = error -> error
       _ -> {:error, :forbidden}
+    end
+  end
+
+  defp verify_preview(ref, version, events, lookup) do
+    result =
+      Enum.reduce_while(events, {:ok, []}, fn event, {:ok, accepted} ->
+        with true <- is_map(event) and is_binary(event["state_key"]),
+             :ok <- Event.verify_sender(event, version, lookup),
+             {:ok, checked} <- Event.verify(event, version, lookup),
+             ^ref <- Event.room_id(checked, version) do
+          {:cont, {:ok, [checked | accepted]}}
+        else
+          _ -> {:halt, {:error, :invalid_param}}
+        end
+      end)
+
+    with {:ok, accepted} <- result,
+         [create] <-
+           Enum.filter(accepted, &(&1["type"] == "m.room.create" and &1["state_key"] == "")),
+         true <- create["content"]["room_version"] == version do
+      {:ok, Enum.reverse(accepted)}
+    else
+      _ -> {:error, :invalid_param}
     end
   end
 

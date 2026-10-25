@@ -15,5 +15,8 @@ data:
   DATABASE_CA_FILE: /etc/postgres-ca/ca.crt
   IAM_EPHEMERAL_DISK: "true"
   ERL_FLAGS: "+S 1:1 +SDcpu 1 +SDio 1 +A 2"
+  # Native activation belongs to the new pod templates after the room reset.
+  MATRIX_NATIVE_EVENT_GRAPH: "false"
+  MATRIX_FEDERATION_ENABLED: "false"
   # Add S3_ENDPOINT, S3_BUCKET and S3_REGION for private Spaces media storage.
   # Without S3 configuration uploads fail explicitly; nothing is stored on pod disk.

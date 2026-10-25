@@ -311,6 +311,15 @@ defmodule LakehouseMatrix.ErasureTest do
     assert original["content"]["body"] == "Late history"
     assert {:ok, pruned} = ClientRooms.event(c.later.id, c.ref, late["event_id"])
     assert pruned["content"] == %{}
+
+    {:ok, late_name} =
+      Graph.send(c.local, c.sender, "m.room.name", %{"name" => "Late private name"}, "")
+
+    assert Repo.get!(LakehouseMatrix.Schema.Room, c.local).name == ""
+    assert {:ok, prior_name} = ClientRooms.event(c.before.id, c.ref, late_name["event_id"])
+    assert prior_name["content"] == %{"name" => "Late private name"}
+    assert {:ok, later_name} = ClientRooms.event(c.later.id, c.ref, late_name["event_id"])
+    assert later_name["content"] == %{}
     metadata = Graph.room(c.local)
     graph = Graph.load_graph(c.local)
 

@@ -343,6 +343,53 @@ defmodule LakehouseMatrix.Protocol.RoomsTest do
            )
   end
 
+  test "outbound invitation previews retain full signed PDUs after erasure", ctx do
+    for version <- ["11", "12"] do
+      {:ok, %{"room_id" => ref}} =
+        ClientRooms.create(ctx.alice.id, %{
+          "room_version" => version,
+          "name" => "Private room name",
+          "invite" => ["@peer:remote.org"]
+        })
+
+      item =
+        Repo.one(
+          from o in "matrix_federation_outbox",
+            where: o.kind == "invite" and fragment("?->'event'->>'room_id'", o.payload) == ^ref,
+            select: %{
+              kind: o.kind,
+              payload: o.payload,
+              event_id: o.event_id,
+              destination: o.destination
+            }
+        )
+
+      assert Enum.any?(item.payload["invite_room_state"], &(&1["type"] == "m.room.create"))
+
+      assert Enum.all?(
+               item.payload["invite_room_state"],
+               &(LakehouseMatrix.Protocol.Event.validate(&1, version) == :ok)
+             )
+
+      assert {:ok, :ok} = Repo.transaction(fn -> LakehouseMatrix.Erasure.erase!(ctx.alice.id) end)
+      preview = LakehouseMatrix.Erasure.outbox(item)["invite_room_state"]
+      assert Enum.all?(preview, &(LakehouseMatrix.Protocol.Event.validate(&1, version) == :ok))
+
+      assert Enum.all?(preview, fn event ->
+               match?(
+                 {:ok, _},
+                 LakehouseMatrix.Protocol.Event.verify(
+                   event,
+                   version,
+                   &LakehouseMatrix.ProtocolFixtures.lookup/3
+                 )
+               )
+             end)
+
+      assert Enum.find(preview, &(&1["type"] == "m.room.name"))["content"] == %{}
+    end
+  end
+
   test "River spaces and channels share signed events, stable retries and restricted membership with Matrix clients",
        ctx do
     alias LakehouseMatrix.{DelegatedGroups, Memberships, State}

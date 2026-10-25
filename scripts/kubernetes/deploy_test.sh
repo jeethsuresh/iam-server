@@ -78,8 +78,8 @@ assert text.count('name: MATRIX_NATIVE_EVENT_GRAPH') == 2
 assert text.count('name: MATRIX_FEDERATION_ENABLED') == 2
 # The shared ConfigMap is applied before backup/reset. Native activation belongs
 # to the new pod templates so a failed release can still restart the old writer.
-assert 'MATRIX_NATIVE_EVENT_GRAPH: ' not in text
-assert 'MATRIX_FEDERATION_ENABLED: ' not in text
+assert 'MATRIX_NATIVE_EVENT_GRAPH: "false"' in text
+assert 'MATRIX_FEDERATION_ENABLED: "false"' in text
 assert 'kind: Secret' not in text
 PY
 python3 "$root/scripts/kubernetes/test_matrix_signing_key.py"
