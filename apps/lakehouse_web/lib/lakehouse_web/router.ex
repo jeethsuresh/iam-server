@@ -217,6 +217,10 @@ defmodule LakehouseWeb.Router do
     put "/v3/presence/:userId/status", ProtocolController, :presence
     get "/v3/presence/:userId/status", ProtocolController, :presence
     get "/v3/sync", ProtocolController, :sync
+    get "/v3/initialSync", LegacySyncController, :initial
+    get "/v3/rooms/:roomId/initialSync", LegacySyncController, :room
+    get "/v3/events", LegacySyncController, :stream
+    get "/v3/events/:eventId", LegacySyncController, :event
     post "/unstable/org.matrix.msc4186/sync", ProtocolController, :sliding_sync
     post "/v4/sync", ProtocolController, :sliding_sync
     put "/v3/profile/:userId/:field", ProtocolController, :set_profile

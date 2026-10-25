@@ -90,6 +90,12 @@ E2EE is complete.
   scoped cursors, device/account data, resolved-state updates and receipts.
   Native history uses DAG order and verified backfill, retaining eligible history
   after leaving without exposing later private events.
+- Legacy initial snapshots, event lookup and event streams remain available for
+  older clients and room previews. Peeking requires world-readable history;
+  private invitations expose stripped state, and archived snapshots stop at
+  the user's leave. Streams merge timeline and resolved-state changes and page
+  bursts without dropping events. Tokens remain bound to the user and device,
+  and every polling iteration rechecks access and account locks.
 - Relations with three-level recursive pagination, edit/reference/thread
   aggregates, thread lists and participation filters, duplicate reaction
   prevention, ignored-user filtering and redactions through the send endpoint.
