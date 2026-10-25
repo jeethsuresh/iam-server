@@ -30,6 +30,8 @@ defmodule LakehouseMatrix.MixProject do
     [
       {:lakehouse_iam, in_umbrella: true},
       {:req, "~> 0.5"},
+      {:floki, "== 0.38.4"},
+      {:plug_crypto, ">= 2.2.1 and < 3.0.0"},
       {:phoenix_pubsub, "~> 2.1"}
     ]
   end
