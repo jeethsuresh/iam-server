@@ -309,6 +309,7 @@ defmodule LakehouseWeb.Router do
     put "/v3/rooms/:roomId/send/:eventType/:txnId", ProtocolController, :send_event
     put "/v3/rooms/:roomId/state/:eventType", ProtocolController, :put_state
     get "/v3/rooms/:roomId/messages", ProtocolController, :messages
+    post "/v3/search", ProtocolController, :search
   end
 
   scope "/_matrix/media", LakehouseWeb.Matrix, as: :matrix_media do

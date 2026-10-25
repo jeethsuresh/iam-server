@@ -49,6 +49,40 @@ defmodule LakehouseWeb.Matrix.ProtocolCompatibilityTest do
       }
     }
 
+  test "search follows plaintext room visibility through the standard client endpoint", %{
+    a: a,
+    b: b
+  } do
+    ref = room(a)
+
+    assert api(a, :put, "/_matrix/client/v3/rooms/#{ref}/send/m.room.message/search", %{
+             "msgtype" => "m.text",
+             "body" => "searchable meteorite"
+           }).status == 200
+
+    request = %{
+      "search_categories" => %{
+        "room_events" => %{
+          "search_term" => "meteorite",
+          "event_context" => %{},
+          "include_state" => true
+        }
+      }
+    }
+
+    response = api(a, :post, "/_matrix/client/v3/search", request) |> json_response(200)
+
+    assert [%{"result" => %{"room_id" => ^ref, "content" => %{"body" => "searchable meteorite"}}}] =
+             response["search_categories"]["room_events"]["results"]
+
+    response = api(b, :post, "/_matrix/client/v3/search", request) |> json_response(200)
+    assert [] = response["search_categories"]["room_events"]["results"]
+
+    assert api(a, :post, "/_matrix/client/v3/search", %{
+             "search_categories" => %{"room_events" => %{}}
+           }).status == 400
+  end
+
   test "namespaced profile fields, deletion, tags and mutual-room discovery use their standard endpoints",
        %{a: a, alice: alice, bob: bob} do
     user = Identity.user_id(alice.username)

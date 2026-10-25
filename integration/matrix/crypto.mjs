@@ -90,6 +90,17 @@ try {
   }
   console.log('CRYPTO PASS pending uploads wait across federation and concurrent PUTs cannot overwrite the winning bytes');
 
+  const {room_id: plaintextRoom} = await alice.createRoom({name: 'Search interoperability', preset: 'private_chat'});
+  const {event_id: plaintextEvent} = await alice.sendTextMessage(plaintextRoom, 'Meteorites in searchable plaintext');
+  const searched = await json(native, '/_matrix/client/v3/search', {search_categories: {room_events: {
+    search_term: 'meteorite', event_context: {before_limit: 1, after_limit: 1, include_profile: true},
+    include_state: true, groupings: {group_by: [{key: 'room_id'}]}
+  }}}, a.access_token);
+  assert.equal(searched.search_categories.room_events.results[0].result.event_id, plaintextEvent);
+  assert.ok(searched.search_categories.room_events.state[plaintextRoom]);
+  assert.deepEqual(searched.search_categories.room_events.groups.room_id[plaintextRoom].results, [plaintextEvent]);
+  console.log('CRYPTO PASS SDK-created plaintext room is searchable with context, state and grouping');
+
   for (const client of [alice, bob]) {
     await client.getCrypto().userHasCrossSigningKeys(client.getUserId(), true);
     await client.getCrypto().bootstrapSecretStorage({setupNewSecretStorage: true,

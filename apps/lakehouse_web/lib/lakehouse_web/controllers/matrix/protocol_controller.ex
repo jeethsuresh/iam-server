@@ -59,6 +59,9 @@ defmodule LakehouseWeb.Matrix.ProtocolController do
 
   def create_room(conn, params), do: respond(conn, ClientRooms.create(principal(conn), params))
 
+  def search(conn, params),
+    do: respond(conn, LakehouseMatrix.ClientSearch.search(principal(conn), device(conn), params))
+
   def upgrade_room(conn, %{"roomId" => ref} = params),
     do: respond(conn, LakehouseMatrix.RoomUpgrades.upgrade(principal(conn), ref, params))
 

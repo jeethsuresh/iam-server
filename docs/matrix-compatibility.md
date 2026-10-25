@@ -118,6 +118,12 @@ clients does not mean River client E2EE is complete.
   Matrix requests accept JSON without a mandatory Content-Type and
   return JSON-object/parse errors with CORS; browser SSO and legacy uploads retain
   their existing request handling.
+- Indexed plaintext search supports body/name/topic keys, including the plain
+  text representation in `m.topic`, ranking and recent ordering, filters,
+  per-event context and historical profiles, state and room/sender groups.
+  Encrypted rooms, redactions, forgotten rooms and inaccessible history are
+  excluded. Results are bounded to 100 with approximate counts; search does not
+  issue pagination tokens, as permitted by the search specification.
 - Matrix 1.19 policy-server requests and signature validation. Local operations
   retry outside database transactions; unapproved inbound events soft-fail.
 
@@ -128,7 +134,7 @@ reuse the IAM JWT key or rotate a seed under an existing key ID.
 
 ## Remaining release and conformance work
 
-- Complete remaining account-management, search, third-party,
+- Complete remaining account-management, third-party,
   media and administration work. Audit every Matrix 1.19 module and required
   behavior, document server policies and optional operations, and return honest
   Matrix errors for unsupported endpoints.
