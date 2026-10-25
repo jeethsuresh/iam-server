@@ -3,6 +3,15 @@ defmodule LakehouseWeb.Matrix.MediaController do
 
   alias LakehouseMatrix.Media
 
+  def preview(conn, params) do
+    conn = put_resp_header(conn, "cache-control", "no-store")
+
+    case LakehouseMatrix.UrlPreviews.preview(conn.assigns.principal_id, params) do
+      {:error, :unavailable} -> matrix_error(conn, 502, "M_UNKNOWN", "URL preview is unavailable")
+      result -> LakehouseWeb.Matrix.ProtocolController.respond(conn, result)
+    end
+  end
+
   def create(conn, _),
     do:
       LakehouseWeb.Matrix.ProtocolController.respond(

@@ -75,7 +75,7 @@ defmodule LakehouseMatrix.Federation.Transport do
     end
   end
 
-  def get_raw_url(url) do
+  def get_raw_url(url, opts \\ []) do
     uri = URI.parse(url)
 
     with true <- uri.scheme == "https" and is_nil(uri.userinfo) and is_nil(uri.fragment),
@@ -86,7 +86,7 @@ defmodule LakehouseMatrix.Federation.Transport do
 
       fetch(%{host: uri.host, port: uri.port, tls_name: uri.host, authority: authority}, path,
         raw: true,
-        max_bytes: 10_551_296
+        max_bytes: Keyword.get(opts, :max_bytes, 10_551_296)
       )
     else
       _ -> {:error, :blocked_address}

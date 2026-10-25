@@ -133,6 +133,12 @@ E2EE is complete.
   Unsupported vectors/documents remain downloadable as original uploads;
   their bytes never enter preview conversion. See the
   [ImageMagick policy documentation](https://imagemagick.org/security-policy/).
+- Authenticated URL previews fetch only public HTTPS endpoints with verified,
+  DNS-pinned TLS, no redirects, a 1 MiB response limit, a ten-second deadline,
+  four concurrent fetches and per-account request limits. Summaries cache for
+  at most five minutes and honor private/no-store responses. Only bounded text
+  metadata is returned; remote images and active content are omitted. No room
+  messages or encrypted URLs are automatically inspected or fetched.
 - Matrix 1.19 policy-server requests and signature validation. Local operations
   retry outside database transactions; unapproved inbound events soft-fail.
 

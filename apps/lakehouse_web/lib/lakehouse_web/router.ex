@@ -333,12 +333,14 @@ defmodule LakehouseWeb.Router do
     get "/v3/thirdparty/location", AccountPolicyController, :thirdparty
     get "/v3/thirdparty/user", AccountPolicyController, :thirdparty
     get "/v3/voip/turnServer", AccountPolicyController, :turn
+    get "/v1/media/preview_url", MediaController, :preview
   end
 
   scope "/_matrix/media", LakehouseWeb.Matrix, as: :matrix_media do
     pipe_through [:api, LakehouseWeb.Plugs.MatrixAuth]
 
     post "/v3/upload", MediaController, :upload
+    get "/v3/preview_url", MediaController, :preview
     post "/v1/create", MediaController, :create
     put "/v3/upload/:serverName/:mediaId", MediaController, :upload_reserved
     get "/v3/download/:serverName/:mediaId", MediaController, :download
