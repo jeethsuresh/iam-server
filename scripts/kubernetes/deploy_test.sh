@@ -118,3 +118,22 @@ if grep -q 'scale deployment/iam --replicas=1\|apply .*component=server' "$IAM_T
 grep -q 'Writers remain stopped' "$work/error"
 if IAM_ROOM_RESET_SERVER=gravitas.cool "$root/scripts/kubernetes/deploy.sh" "$IAM_TEST_IMAGE" 2>/dev/null; then echo 'Non-maintenance reset accepted'; exit 1; fi
 echo 'Matrix reset backup, one-use job and stopped-writer failure gate: OK'
+
+# Exercise the actual template with the database image's BusyBox, rather than
+# relying on the developer host's more permissive GNU mktemp.
+backup_template=$(python3 - "$root/scripts/kubernetes/deploy.sh" <<'PY'
+import re,sys
+from pathlib import Path
+source=Path(sys.argv[1]).read_text()
+print(re.search(r'backup=\$\(mktemp (\S+)\)', source).group(1))
+PY
+)
+docker run --rm -i --network none --read-only --tmpfs /tmp:rw \
+  --entrypoint sh docker.io/library/postgres@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea \
+  -s -- "$backup_template" <<'PORTABLE'
+set -eu
+backup=$(mktemp "/tmp/${1##*/}")
+test -f "$backup"
+rm "$backup"
+PORTABLE
+echo 'Database-image backup filename portability: OK'
