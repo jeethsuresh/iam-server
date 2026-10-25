@@ -9,7 +9,14 @@ defmodule LakehouseWeb.Matrix.ClientController do
 
   def versions(conn, _params) do
     versions = if LakehouseMatrix.Protocol.Rooms.enabled?(), do: @native_versions, else: ["v1.1"]
-    json(conn, %{"versions" => versions, "unstable_features" => %{"org.matrix.msc4186" => true}})
+
+    json(conn, %{
+      "versions" => versions,
+      "unstable_features" => %{
+        "org.matrix.msc4186" => true,
+        "org.matrix.simplified_msc3575" => true
+      }
+    })
   end
 
   def login(conn, params) do

@@ -44,6 +44,12 @@ defmodule LakehouseMatrix.Federation.RoomProtocol do
              do: RoomAccess.restricted_join(metadata, user, event),
              else: {:ok, event}
            ),
+         event <-
+           Map.put(
+             event,
+             "auth_events",
+             Authorization.select_auth(event, RoomAccess.state(metadata), metadata.version)
+           ),
          :ok <- Authorization.check(event, RoomAccess.state(metadata), metadata.version) do
       {:ok, %{"room_version" => metadata.version, "event" => event}}
     else
@@ -93,7 +99,7 @@ defmodule LakehouseMatrix.Federation.RoomProtocol do
               |> Enum.filter(
                 &(&1["type"] in ~w(m.room.create m.room.name m.room.avatar m.room.topic m.room.join_rules m.room.encryption))
               )
-              |> Enum.map(&Map.take(&1, ~w(type state_key content sender)))
+              |> Enum.map(&Map.drop(&1, ["event_id", :auth_rejected]))
 
             %{"knock_room_state" => stripped}
 

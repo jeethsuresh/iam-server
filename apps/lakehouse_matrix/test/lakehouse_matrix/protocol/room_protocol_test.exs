@@ -60,6 +60,118 @@ defmodule LakehouseMatrix.Federation.RoomProtocolTest do
     {id, response}
   end
 
+  test "restricted remote joins include the local authorizer in the signed auth graph", ctx do
+    {:ok, parent} = Rooms.create_room_record(%{name: "Parent"})
+    {:ok, _} = Graph.create(parent.id, ctx.alice)
+
+    {:ok, _} =
+      Graph.send(parent.id, ctx.alice, "m.room.member", %{"membership" => "join"}, ctx.alice)
+
+    parent_ref = Graph.room(parent.id).room_id
+
+    {:ok, _} =
+      Graph.send(
+        ctx.room.id,
+        ctx.alice,
+        "m.room.join_rules",
+        %{
+          "join_rule" => "restricted",
+          "allow" => [%{"type" => "m.room_membership", "room_id" => parent_ref}]
+        },
+        ""
+      )
+
+    assert {:error, :unable_to_authorise_join} =
+             RoomProtocol.make_membership("remote.org", ctx.ref, @remote, "join", ["12"])
+
+    join_remote(parent, parent_ref, ctx.alice)
+
+    assert {:ok, template} =
+             RoomProtocol.make_membership("remote.org", ctx.ref, @remote, "join", ["12"])
+
+    state = RoomAccess.state(Graph.room(ctx.room.id))
+    authorizer = state[{"m.room.member", ctx.alice}]["event_id"]
+    assert template["event"]["content"]["join_authorised_via_users_server"] == ctx.alice
+    assert authorizer in template["event"]["auth_events"]
+    signed = Event.sign(template["event"], "12", @remote_seed, "ed25519:test", "remote.org")
+
+    assert {:ok, response} =
+             RoomProtocol.send_membership(
+               "remote.org",
+               ctx.ref,
+               Event.id(signed, "12"),
+               "join",
+               signed,
+               &lookup/3
+             )
+
+    assert {:ok, _} = Event.verify(response["event"], "12", &lookup/3)
+
+    malformed =
+      template["event"]
+      |> Map.update!("auth_events", &List.delete(&1, authorizer))
+      |> Event.sign("12", @remote_seed, "ed25519:test", "remote.org")
+
+    assert {:error, _} =
+             RoomProtocol.send_membership(
+               "remote.org",
+               ctx.ref,
+               Event.id(malformed, "12"),
+               "join",
+               malformed,
+               &lookup/3
+             )
+
+    {:ok, other} =
+      RoomProtocol.make_membership("remote.org", parent_ref, "@charlie:remote.org", "join", ["12"])
+
+    signed_other = Event.sign(other["event"], "12", @remote_seed, "ed25519:test", "remote.org")
+
+    assert {:ok, _} =
+             RoomProtocol.send_membership(
+               "remote.org",
+               parent_ref,
+               Event.id(signed_other, "12"),
+               "join",
+               signed_other,
+               &lookup/3
+             )
+
+    {:ok, _} =
+      Graph.send(parent.id, ctx.alice, "m.room.member", %{"membership" => "leave"}, ctx.alice)
+
+    assert {:error, :unable_to_authorise_join} =
+             RoomProtocol.make_membership("remote.org", ctx.ref, "@charlie:remote.org", "join", [
+               "12"
+             ])
+  end
+
+  test "knock previews contain the full signed create PDU and room-version state", ctx do
+    {:ok, _} =
+      Graph.send(ctx.room.id, ctx.alice, "m.room.join_rules", %{"join_rule" => "knock"}, "")
+
+    {:ok, template} =
+      RoomProtocol.make_membership("remote.org", ctx.ref, @remote, "knock", ["12"])
+
+    signed = Event.sign(template["event"], "12", @remote_seed, "ed25519:test", "remote.org")
+
+    assert {:ok, response} =
+             RoomProtocol.send_membership(
+               "remote.org",
+               ctx.ref,
+               Event.id(signed, "12"),
+               "knock",
+               signed,
+               &lookup/3
+             )
+
+    assert Enum.any?(response["knock_room_state"], &(&1["type"] == "m.room.create"))
+
+    assert Enum.all?(response["knock_room_state"], fn event ->
+             match?({:ok, _}, Event.verify(event, "12", &lookup/3))
+           end)
+  end
+
   test "join returns signed full state and auth chain, then supports retrieval and leave", ctx do
     {id, response} = join_remote(ctx.room, ctx.ref, ctx.alice)
 

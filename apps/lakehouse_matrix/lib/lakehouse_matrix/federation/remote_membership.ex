@@ -113,7 +113,14 @@ defmodule LakehouseMatrix.Federation.RemoteMembership do
     _ -> {:error, :unavailable}
   end
 
-  def knock(principal, ref, servers, params, request \\ &Transport.request/4) do
+  def knock(
+        principal,
+        ref,
+        servers,
+        params,
+        request \\ &Transport.request/4,
+        lookup \\ &LakehouseMatrix.Federation.Keyring.key/3
+      ) do
     user = Repo.get!(LakehouseIam.Schema.Principal, principal).username |> Identity.user_id()
 
     peers =
@@ -171,7 +178,8 @@ defmodule LakehouseMatrix.Federation.RemoteMembership do
                  "/_matrix/federation/v1/send_knock/" <> escape(ref) <> "/" <> escape(id),
                  event
                ),
-             true <- is_list(stripped) and length(stripped) <= 100 do
+             true <- is_list(stripped) and length(stripped) <= 100,
+             stripped <- Invites.filter_preview(ref, version, stripped, lookup) do
           Repo.transaction(fn ->
             ClientStore.lock!()
             LakehouseMatrix.AccountModeration.require!(principal)

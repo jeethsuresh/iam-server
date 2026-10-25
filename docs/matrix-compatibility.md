@@ -56,9 +56,11 @@ E2EE is complete.
 - Signed server discovery and requests, historical signing-key cache with
   immutable key-ID bindings, public-address validation, DNS-pinned verified TLS,
   bounded responses and no implicit redirects.
-- Federation invitations carry complete signed room-version PDUs, including
+- Federation invitations and knock responses carry complete signed room-version PDUs, including
   the create event. Incoming previews require signatures and the same room;
   they become stripped client previews without being trusted as resolved state.
+  Restricted-join templates include the selected authorizer in their auth graph;
+  parent eligibility requires a room in which this server still participates.
 - Inbound replay-protected transactions, durable dependency recovery and leased
   outbound delivery, ACLs, room-state/auth-chain retrieval, make/send join, leave
   and knock, restricted-join co-signing and verified remote room snapshots.
@@ -130,6 +132,8 @@ E2EE is complete.
   aggregates, thread lists and participation filters, duplicate reaction
   prevention, ignored-user filtering and redactions through the send endpoint.
   Aggregates exclude hidden history, ignored senders and redacted relations.
+  Deployed clients use the advertised `org.matrix.simplified_msc3575` route and flag,
+  URL cursors, sticky tuple/ranges requests and SYNC list operations.
   Sliding positions work in history/relations; current proposal requests use
   non-sticky parameters and include knocks, departures and removed-state stubs.
 - Permission-filtered room summaries and space hierarchy across federation,

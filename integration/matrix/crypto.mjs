@@ -126,6 +126,20 @@ try {
   assert.deepEqual(searched.search_categories.room_events.groups.room_id[plaintextRoom].results, [plaintextEvent]);
   console.log('CRYPTO PASS SDK-created plaintext room is searchable with context, state and grouping');
 
+  const sliding = await alice.slidingSync({conn_id: 'sdk-interop', lists: {all: {
+    ranges: [[0, 20]], timeline_limit: 10, required_state: [['m.room.name', '']]
+  }}});
+  assert.ok(sliding.pos);
+  assert.ok(sliding.lists.all.ops.some(op => op.op === 'SYNC' && op.room_ids.includes(plaintextRoom)));
+  assert.ok(sliding.rooms[plaintextRoom].timeline.some(event => event.event_id === plaintextEvent));
+  const {event_id: slidingEvent} = await alice.sendTextMessage(plaintextRoom, 'An incremental sliding sync message');
+  const slidingDelta = await alice.slidingSync({conn_id: 'sdk-interop', pos: sliding.pos, timeout: 1000});
+  assert.ok(slidingDelta.lists.all.ops.some(op => op.room_ids.includes(plaintextRoom)));
+  assert.ok(slidingDelta.rooms[plaintextRoom].timeline.some(event => event.event_id === slidingEvent));
+  assert.ok(!slidingDelta.rooms[plaintextRoom].initial);
+  assert.ok(!slidingDelta.rooms[plaintextRoom].timeline.some(event => event.event_id === plaintextEvent));
+  console.log('CRYPTO PASS official SDK Sliding Sync route, URL cursors, sticky windows and incremental timelines');
+
   for (const client of [alice, bob]) {
     await client.getCrypto().userHasCrossSigningKeys(client.getUserId(), true);
     await client.getCrypto().bootstrapSecretStorage({setupNewSecretStorage: true,

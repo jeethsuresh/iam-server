@@ -14,7 +14,14 @@ defmodule LakehouseWeb.Matrix.ClientControllerTest do
 
   test "GET /_matrix/client/versions", %{conn: conn} do
     conn = get(conn, "/_matrix/client/versions")
-    assert %{"versions" => ["v1.1"], "unstable_features" => %{"org.matrix.msc4186" => true}} = json_response(conn, 200)
+
+    assert %{
+             "versions" => ["v1.1"],
+             "unstable_features" => %{
+               "org.matrix.msc4186" => true,
+               "org.matrix.simplified_msc3575" => true
+             }
+           } = json_response(conn, 200)
   end
 
   test "POST /_matrix/client/v3/login", %{conn: conn} do

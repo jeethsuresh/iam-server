@@ -143,10 +143,7 @@ defmodule LakehouseMatrix.Federation.Invites do
   defp verify_preview(ref, version, events, lookup) do
     result =
       Enum.reduce_while(events, {:ok, []}, fn event, {:ok, accepted} ->
-        with true <- is_map(event) and is_binary(event["state_key"]),
-             :ok <- Event.verify_sender(event, version, lookup),
-             {:ok, checked} <- Event.verify(event, version, lookup),
-             ^ref <- Event.room_id(checked, version) do
+        with {:ok, checked} <- verify_preview_event(event, ref, version, lookup) do
           {:cont, {:ok, [checked | accepted]}}
         else
           _ -> {:halt, {:error, :invalid_param}}
@@ -158,6 +155,27 @@ defmodule LakehouseMatrix.Federation.Invites do
            Enum.filter(accepted, &(&1["type"] == "m.room.create" and &1["state_key"] == "")),
          true <- create["content"]["room_version"] == version do
       {:ok, Enum.reverse(accepted)}
+    else
+      _ -> {:error, :invalid_param}
+    end
+  end
+
+  @doc false
+  def filter_preview(ref, version, events, lookup) do
+    Enum.flat_map(events, fn event ->
+      case verify_preview_event(event, ref, version, lookup) do
+        {:ok, checked} -> [checked]
+        _ -> []
+      end
+    end)
+  end
+
+  defp verify_preview_event(event, ref, version, lookup) do
+    with true <- is_map(event) and is_binary(event["state_key"]),
+         :ok <- Event.verify_sender(event, version, lookup),
+         {:ok, checked} <- Event.verify(event, version, lookup),
+         ^ref <- Event.room_id(checked, version) do
+      {:ok, checked}
     else
       _ -> {:error, :invalid_param}
     end

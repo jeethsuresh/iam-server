@@ -93,7 +93,7 @@ defmodule LakehouseMatrix.Protocol.ImportTest do
 
   test "a remote knock is a pending notification and can be cancelled through signed leave",
        ctx do
-    alias LakehouseMatrix.{ClientRooms, Matrix}
+    alias LakehouseMatrix.Matrix
     alias LakehouseMatrix.Federation.Outbox
     {_, remote} = F.append(ctx.remote, "m.room.join_rules", %{"join_rule" => "knock"}, key: "")
 
@@ -116,8 +116,16 @@ defmodule LakehouseMatrix.Protocol.ImportTest do
            %{
              "knock_room_state" =>
                Enum.map(remote.state, fn {_, event} ->
-                 Map.take(event, ~w(type state_key sender content))
-               end)
+                 wire(event)
+               end) ++
+                 [
+                   %{
+                     "type" => "m.room.name",
+                     "state_key" => "",
+                     "sender" => F.alice(),
+                     "content" => %{"name" => "Unsigned forged name"}
+                   }
+                 ]
            }}
 
         method == :get and String.contains?(path, "/make_leave/") ->
@@ -147,7 +155,14 @@ defmodule LakehouseMatrix.Protocol.ImportTest do
     Application.put_env(:lakehouse_matrix, :federation_requester, request)
 
     assert {:ok, %{"room_id" => ref}} =
-             ClientRooms.knock(ctx.user.id, remote.room, ["example.org"], %{"reason" => "Hello"})
+             LakehouseMatrix.Federation.RemoteMembership.knock(
+               ctx.user.id,
+               remote.room,
+               ["example.org"],
+               %{"reason" => "Hello"},
+               request,
+               &F.lookup/3
+             )
 
     assert ref == remote.room
     metadata = Graph.room_by_id(ref)
@@ -155,6 +170,9 @@ defmodule LakehouseMatrix.Protocol.ImportTest do
     assert metadata.extremities == []
     assert {:ok, sync} = ClientSync.sync(ctx.user.id, "A", %{})
     assert get_in(sync, ["rooms", "knock", ref, "knock_state", "events"])
+    preview = get_in(sync, ["rooms", "knock", ref, "knock_state", "events"])
+    assert Enum.any?(preview, &(&1["type"] == "m.room.create"))
+    refute Enum.any?(preview, &(get_in(&1, ["content", "name"]) == "Unsigned forged name"))
     assert {:ok, %{}} = Matrix.leave_room(ctx.user.id, ref)
     assert :delivered = Outbox.deliver_once(request, &F.lookup/3)
 

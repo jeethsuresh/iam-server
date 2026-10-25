@@ -45,6 +45,7 @@ defmodule LakehouseWeb.Matrix.AccountPolicyTest do
     native = get(build_conn(), "/_matrix/client/versions") |> json_response(200)
     assert "v1.19" in native["versions"]
     assert native["unstable_features"]["org.matrix.msc4186"]
+    assert native["unstable_features"]["org.matrix.simplified_msc3575"]
     Application.put_env(:lakehouse_matrix, :native_event_graph, false)
     legacy = get(build_conn(), "/_matrix/client/versions") |> json_response(200)
     assert legacy["versions"] == ["v1.1"]

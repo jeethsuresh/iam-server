@@ -158,8 +158,14 @@ defmodule LakehouseMatrix.Federation.RoomAccess do
         Enum.any?(get_in(rule, ["content", "allow"]) || [], fn
           %{"type" => "m.room_membership", "room_id" => room} ->
             case Graph.room_by_id(room) do
-              nil -> false
-              other -> Authorization.membership(state(other), user) == "join"
+              nil ->
+                false
+
+              other ->
+                parent = state(other)
+
+                joined?(parent, LakehouseMatrix.Identity.homeserver_domain()) and
+                  Authorization.membership(parent, user) == "join"
             end
 
           _ ->

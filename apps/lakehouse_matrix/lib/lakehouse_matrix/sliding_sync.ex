@@ -225,7 +225,27 @@ defmodule LakehouseMatrix.SlidingSync do
           memberships =
             Enum.reduce(window, memberships, &Map.update(&2, &1, [name], fn v -> [name | v] end))
 
-          {Map.put(lists, name, %{"count" => length(ids)}), configs, memberships}
+          result = %{"count" => length(ids)}
+
+          result =
+            if format == :msc4186 do
+              # Deployed simplified-sync clients still consume MSC3575 list
+              # operations. A complete SYNC per requested window is retry-safe.
+              ops =
+                for [lo, hi] <- ranges(config) do
+                  %{
+                    "op" => "SYNC",
+                    "range" => [lo, hi],
+                    "room_ids" => Enum.map(Enum.slice(ids, lo, hi - lo + 1), &Identity.room_id/1)
+                  }
+                end
+
+              Map.put(result, "ops", ops)
+            else
+              result
+            end
+
+          {Map.put(lists, name, result), configs, memberships}
         end
       end)
 

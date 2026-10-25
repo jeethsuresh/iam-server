@@ -37,7 +37,7 @@ defmodule LakehouseWeb.Matrix.ProtocolCompatibilityTest do
   end
 
   defp sliding(a, body, query \\ "") do
-    api(a, :post, "/_matrix/client/unstable/org.matrix.msc4186/sync" <> query, body)
+    api(a, :post, "/_matrix/client/unstable/org.matrix.simplified_msc3575/sync" <> query, body)
   end
 
   defp list(limit \\ 10),
@@ -414,6 +414,13 @@ defmodule LakehouseWeb.Matrix.ProtocolCompatibilityTest do
     initial = sliding(a, %{"lists" => list()}) |> json_response(200)
     assert initial["rooms"][ref]["initial"]
     assert initial["lists"]["all"]["count"] == 1
+
+    assert [%{"op" => "SYNC", "range" => [0, 20], "room_ids" => [^ref]}] =
+             initial["lists"]["all"]["ops"]
+
+    assert sliding(a, %{}, "?pos=unknown") |> json_response(400) |> Map.fetch!("errcode") ==
+             "M_UNKNOWN_POS"
+
     assert Enum.any?(initial["rooms"][ref]["required_state"], &(&1["type"] == "m.room.create"))
 
     sent =
@@ -429,6 +436,7 @@ defmodule LakehouseWeb.Matrix.ProtocolCompatibilityTest do
 
     assert Enum.any?(delta["rooms"][ref]["timeline"], &(&1["event_id"] == sent["event_id"]))
     refute delta["rooms"][ref]["initial"]
+    assert [%{"op" => "SYNC", "room_ids" => [^ref]}] = delta["lists"]["all"]["ops"]
   end
 
   test "subscriptions never expose unauthorized rooms, and positions are device-bound", %{
