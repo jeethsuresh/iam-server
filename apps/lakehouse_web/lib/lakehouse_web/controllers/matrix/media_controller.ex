@@ -200,6 +200,15 @@ defmodule LakehouseWeb.Matrix.MediaController do
   defp serve(conn, {:error, :invalid_param}),
     do: matrix_error(conn, 400, "M_INVALID_PARAM", "Invalid media parameter")
 
+  defp serve(conn, {:error, :rate_limited}),
+    do:
+      conn
+      |> put_resp_header("retry-after", "1")
+      |> matrix_error(429, "M_LIMIT_EXCEEDED", "Image converter is busy; retry shortly")
+
+  defp serve(conn, {:error, :unsupported_image}),
+    do: matrix_error(conn, 404, "M_NOT_FOUND", "Thumbnail format is not supported")
+
   defp serve(conn, {:error, :forbidden}),
     do: matrix_error(conn, 403, "M_FORBIDDEN", "You cannot access this media")
 

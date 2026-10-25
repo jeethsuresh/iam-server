@@ -5,6 +5,7 @@ defmodule LakehouseMatrix.Application do
   @impl true
   def start(_type, _args) do
     children = [
+      {Task.Supervisor, name: LakehouseMatrix.ImageTasks, max_children: 1},
       {Registry, keys: :unique, name: LakehouseMatrix.RoomRegistry},
       {DynamicSupervisor, strategy: :one_for_one, name: LakehouseMatrix.RoomDynamicSupervisor}
     ]

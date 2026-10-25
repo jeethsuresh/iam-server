@@ -127,6 +127,12 @@ E2EE is complete.
   Encrypted rooms, redactions, forgotten rooms and inaccessible history are
   excluded. Results are bounded to 100 with approximate counts; search does not
   issue pagination tokens, as permitted by the search specification.
+- Raster previews use one supervised converter per VM, with bounded memory,
+  disk and execution time and a raster-only ImageMagick policy. Disconnecting
+  the requesting client retains the converter slot until the process exits.
+  Unsupported vectors/documents remain downloadable as original uploads;
+  their bytes never enter preview conversion. See the
+  [ImageMagick policy documentation](https://imagemagick.org/security-policy/).
 - Matrix 1.19 policy-server requests and signature validation. Local operations
   retry outside database transactions; unapproved inbound events soft-fail.
 

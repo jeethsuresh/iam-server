@@ -67,6 +67,30 @@ try {
   assert.deepEqual(new Uint8Array(await jsonDownload.arrayBuffer()), jsonBytes);
   console.log('CRYPTO PASS JSON media bytes and MIME type survive upload and federated download');
 
+  const pngBytes = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACAQMAAABIeJ9nAAAAA1BMVEUAAIBKwr76AAAADElEQVQI12NgYGAAAAAEAAEnNCcKAAAAAElFTkSuQmCC', 'base64');
+  const pngUpload = await fetch(native + '/_matrix/media/v3/upload?filename=preview.png', {
+    method: 'POST', headers: {Authorization: 'Bearer ' + a.access_token, 'Content-Type': 'image/png'}, body: pngBytes
+  });
+  assert.equal(pngUpload.status, 200);
+  const pngResult = await pngUpload.json();
+  assert.ok(pngResult.info.thumbnail_url);
+  const [pngServer, pngId] = pngResult.content_uri.slice('mxc://'.length).split('/');
+  for (const [base, token] of [[native, a.access_token], [reference, b.access_token]]) {
+    const preview = await fetch(base + '/_matrix/client/v1/media/thumbnail/' + encodeURIComponent(pngServer) + '/' + encodeURIComponent(pngId) + '?width=64&height=64&method=scale', {
+      headers: {Authorization: 'Bearer ' + token}
+    });
+    assert.equal(preview.status, 200);
+    const mime = preview.headers.get('content-type');
+    const bytes = new Uint8Array(await preview.arrayBuffer());
+    if (base === native) assert.ok(mime.startsWith('image/jpeg'), base + ' MIME: ' + mime);
+    if (mime.startsWith('image/jpeg')) assert.deepEqual(bytes.slice(0, 3), new Uint8Array([255, 216, 255]));
+    else {
+      assert.ok(mime.startsWith('image/png'), base + ' MIME: ' + mime);
+      assert.deepEqual(bytes.slice(0, 8), new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]));
+    }
+  }
+  console.log('CRYPTO PASS bounded raster previews work through native and federated media endpoints');
+
   const reserved = await json(native, '/_matrix/media/v1/create', {}, a.access_token);
   assert.ok(reserved.unused_expires_at > Date.now());
   const [reservedServer, reservedId] = reserved.content_uri.slice('mxc://'.length).split('/');
