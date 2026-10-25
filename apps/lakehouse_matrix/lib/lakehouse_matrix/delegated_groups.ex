@@ -15,7 +15,8 @@ defmodule LakehouseMatrix.DelegatedGroups do
   def authorized?(g, id, permission) do
     permission in g.scopes and access(g, id) == :ok and
       (permission != "chats.write" or
-         (LakehouseMatrix.RiverPublishing.writer_allowed?(id, g.principal_id) and
+         (is_nil(State.get(id, "m.room.encryption")) and
+            LakehouseMatrix.RiverPublishing.writer_allowed?(id, g.principal_id) and
             IAM.can?(g.principal_id, "matrix.room.send", Identity.resource_arn(id)) and
             case Repo.get(RiverDirect, id) do
               nil -> true
@@ -671,6 +672,8 @@ defmodule LakehouseMatrix.DelegatedGroups do
         unless access(grant, id) == :ok, do: Repo.rollback(:forbidden)
 
         if permission == "chats.write" do
+          if State.get(id, "m.room.encryption"), do: Repo.rollback(:encryption_required)
+
           unless LakehouseMatrix.RiverPublishing.writer_allowed?(id, grant.principal_id),
             do: Repo.rollback(:forbidden)
 
@@ -940,6 +943,14 @@ defmodule LakehouseMatrix.DelegatedGroups do
       )
 
   defp event!(g, id, type, content, state_key, event_id \\ nil) do
+    # River's delegated API carries plaintext content. A standard Matrix
+    # client must encrypt timeline events itself once encryption is enabled.
+    # Check under the stream/room transaction so enabling encryption cannot
+    # race a pending message, edit, reaction or attachment manifest.
+    if is_nil(state_key) and type not in ~w(m.room.encrypted m.room.redaction) and
+         State.get(id, "m.room.encryption"),
+       do: Repo.rollback(:encryption_required)
+
     cond do
       type == "m.room.create" && LakehouseMatrix.Protocol.Rooms.enabled?() ->
         creation = Map.drop(content, ["creator", "room_version"])

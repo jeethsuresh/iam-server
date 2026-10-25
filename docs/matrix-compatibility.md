@@ -40,8 +40,11 @@ The rollout may reset room state and history, as authorized for this transition.
 Do not synthesize federation signatures for old random event IDs. Accounts,
 identity credentials and global account secrets must survive a room reset.
 River itself still needs a maintained client crypto integration before it can
-read and send encrypted room content. Server support verified by the reference
-clients does not mean River client E2EE is complete.
+read and send encrypted room content. Its delegated plaintext API rejects new
+messages, edits, reactions and attachment manifests after a room enables
+encryption; standard Matrix clients can send ciphertext through the Matrix API.
+Server support verified by the reference clients does not mean River client
+E2EE is complete.
 
 ## Protocol services
 

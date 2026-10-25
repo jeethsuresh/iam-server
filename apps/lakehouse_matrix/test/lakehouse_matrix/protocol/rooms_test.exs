@@ -252,6 +252,71 @@ defmodule LakehouseMatrix.Protocol.RoomsTest do
     refute get_in(second, ["rooms", "invite", ref])
   end
 
+  test "River plaintext mutations stop when a shared room enables encryption", ctx do
+    alias LakehouseMatrix.{DelegatedGroups, RiverContent}
+
+    {:ok, grant} =
+      LakehouseIam.Apps.Grants.upsert(
+        ctx.alice.id,
+        "https://chat.gravitas.cool",
+        ~w(chats.list chats.read chats.write groups.create groups.manage),
+        :all,
+        []
+      )
+
+    {:ok, room} =
+      DelegatedGroups.create(grant, %{
+        "name" => "Encrypted River",
+        "kind" => "group",
+        "txn_id" => "encrypted"
+      })
+
+    {:ok, previous} =
+      DelegatedGroups.send(grant, room.id, "m.room.message", "before", %{
+        "body" => "before encryption"
+      })
+
+    assert DelegatedGroups.authorized?(grant, room.id, "chats.write")
+
+    assert {:ok, _} =
+             ClientRooms.put_state(ctx.alice.id, room.room_id, "m.room.encryption", "", %{
+               "algorithm" => "m.megolm.v1.aes-sha2"
+             })
+
+    refute DelegatedGroups.authorized?(grant, room.id, "chats.write")
+
+    assert {:error, :encryption_required} =
+             DelegatedGroups.send(grant, room.id, "m.room.message", "after", %{
+               "body" => "must never be stored"
+             })
+
+    assert {:error, :encryption_required} =
+             RiverContent.reaction(grant, room.id, %{
+               "event_id" => previous["event_id"],
+               "key" => "👍",
+               "active" => true,
+               "txn_id" => "reaction"
+             })
+
+    refute Repo.exists?(
+             from e in LakehouseMatrix.Schema.RoomEvent,
+               where:
+                 e.room_id == ^room.id and
+                   fragment("?->>'body' = 'must never be stored'", e.content)
+           )
+
+    assert {:ok, %{"event_id" => encrypted}} =
+             ClientRooms.send(ctx.alice.id, "D", room.room_id, "m.room.encrypted", "encrypted", %{
+               "algorithm" => "m.megolm.v1.aes-sha2",
+               "ciphertext" => "client ciphertext",
+               "session_id" => "session",
+               "device_id" => "D",
+               "sender_key" => "key"
+             })
+
+    assert Graph.event(encrypted).pdu["type"] == "m.room.encrypted"
+  end
+
   test "River spaces and channels share signed events, stable retries and restricted membership with Matrix clients",
        ctx do
     alias LakehouseMatrix.{DelegatedGroups, Memberships, State}
