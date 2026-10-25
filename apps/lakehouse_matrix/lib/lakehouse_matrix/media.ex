@@ -2,12 +2,11 @@ defmodule LakehouseMatrix.Media do
   @moduledoc """
   Media upload/download. Blobs live in `Media.Store`; metadata in `media_objects`.
   """
-  import Ecto.Query
 
   alias LakehouseIam.Repo
   alias LakehouseMatrix.Identity
   alias LakehouseMatrix.Media.Image
-  alias LakehouseMatrix.Schema.{MediaObject, RoomEvent, RoomMembership}
+  alias LakehouseMatrix.Schema.MediaObject
 
   @max_bytes 10 * 1024 * 1024
 
@@ -43,7 +42,8 @@ defmodule LakehouseMatrix.Media do
           body,
           filename,
           content_type,
-          Keyword.get(opts, :matrix_public, false) == true
+          Keyword.get(opts, :matrix_public, false) == true,
+          Keyword.get(opts, :reserved_id)
         )
     end
   end
@@ -122,7 +122,7 @@ defmodule LakehouseMatrix.Media do
   defp local_download(principal_id, media_id) do
     with {:ok, record} <- fetch_record(media_id),
          :ok <- authorize_download(principal_id, record),
-         {:ok, body} <- store().get(media_id, []) do
+         {:ok, body} <- store().get(record.id, []) do
       {:ok, %{body: body, content_type: record.content_type, filename: record.filename}}
     end
   end
@@ -145,8 +145,8 @@ defmodule LakehouseMatrix.Media do
   @spec get_record(String.t()) :: MediaObject.t() | nil
   def get_record(media_id), do: Repo.get(MediaObject, media_id)
 
-  defp do_upload(uploader_id, body, filename, content_type, matrix_public) do
-    media_id = Ecto.UUID.generate()
+  defp do_upload(uploader_id, body, filename, content_type, matrix_public, reserved_id) do
+    media_id = reserved_id || Ecto.UUID.generate()
     image? = String.starts_with?(content_type, "image/")
 
     with :ok <- store().put(media_id, body, []),
@@ -245,7 +245,7 @@ defmodule LakehouseMatrix.Media do
       record.uploader_id == principal_id ->
         :ok
 
-      referenced_in_joined_room?(principal_id, record.id) ->
+      LakehouseMatrix.MediaReferences.can_read?(principal_id, record) ->
         :ok
 
       true ->
@@ -253,31 +253,7 @@ defmodule LakehouseMatrix.Media do
     end
   end
 
-  defp referenced_in_joined_room?(principal_id, media_id) do
-    needle = "%#{media_id}%"
-
-    room_ids =
-      from(m in RoomMembership,
-        where:
-          m.principal_id == ^principal_id and
-            fragment("?->>'membership' = 'join'", m.membership_state),
-        select: m.room_id
-      )
-      |> Repo.all()
-
-    if room_ids == [] do
-      false
-    else
-      from(e in RoomEvent,
-        where: e.room_id in ^room_ids,
-        where: fragment("(?)::text LIKE ?", e.content, ^needle),
-        select: e.id,
-        limit: 1
-      )
-      |> Repo.one()
-      |> is_binary()
-    end
-  end
+  def accessible?(principal, record), do: authorize_download(principal, record) == :ok
 
   defp store do
     Application.get_env(:lakehouse_matrix, :media_store, LakehouseMatrix.Media.Store.Local)

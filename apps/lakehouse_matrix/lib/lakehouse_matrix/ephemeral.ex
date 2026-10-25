@@ -85,6 +85,7 @@ defmodule LakehouseMatrix.Ephemeral do
               )
           }
           |> Map.merge(profile(principal))
+          |> Map.reject(fn {_, value} -> is_nil(value) end)
 
         fresh =
           not is_nil(current) and current.content == content and
@@ -128,7 +129,8 @@ defmodule LakehouseMatrix.Ephemeral do
       end
 
     received_at = if current && !expired?, do: current.updated_at, else: ClientStore.now()
-    publish_presence!(principal, Map.merge(content, profile(principal)), received_at)
+    content = content |> Map.drop(~w(displayname avatar_url)) |> Map.merge(profile(principal))
+    publish_presence!(principal, content, received_at)
     :ok
   end
 
@@ -138,6 +140,8 @@ defmodule LakehouseMatrix.Ephemeral do
       |> LakehouseMatrix.ClientProfiles.membership()
 
   defp publish_presence!(principal, content, received_at) do
+    content = Map.reject(content, fn {_, value} -> is_nil(value) end)
+
     Repo.insert_all(
       "matrix_user_presence",
       [

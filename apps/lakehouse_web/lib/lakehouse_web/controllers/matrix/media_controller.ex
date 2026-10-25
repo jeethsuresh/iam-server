@@ -3,6 +3,42 @@ defmodule LakehouseWeb.Matrix.MediaController do
 
   alias LakehouseMatrix.Media
 
+  def create(conn, _),
+    do:
+      LakehouseWeb.Matrix.ProtocolController.respond(
+        conn,
+        LakehouseMatrix.AsyncMedia.create(conn.assigns.principal_id)
+      )
+
+  def upload_reserved(conn, %{"serverName" => server, "mediaId" => id} = params) do
+    filename = params["filename"] || "upload.bin"
+    {body, type} = extract_upload(conn, params, filename)
+
+    if body == :too_large do
+      matrix_error(conn, 413, "M_TOO_LARGE", "File exceeds 10MB limit")
+    else
+      result =
+        LakehouseMatrix.AsyncMedia.put(conn.assigns.principal_id, server, id, body,
+          filename: filename,
+          content_type: type
+        )
+
+      case result do
+        {:error, :too_large} ->
+          matrix_error(conn, 413, "M_TOO_LARGE", "File exceeds 10MB limit")
+
+        {:error, :invalid_upload} ->
+          matrix_error(conn, 400, "M_BAD_JSON", "Invalid upload")
+
+        {:error, :cannot_overwrite_media} ->
+          matrix_error(conn, 409, "M_CANNOT_OVERWRITE_MEDIA", "Media already uploaded")
+
+        other ->
+          LakehouseWeb.Matrix.ProtocolController.respond(conn, other)
+      end
+    end
+  end
+
   def upload(conn, params) do
     filename = Map.get(params, "filename") || conn.query_params["filename"] || "upload.bin"
 
@@ -88,7 +124,10 @@ defmodule LakehouseWeb.Matrix.MediaController do
   end
 
   def download(conn, %{"serverName" => server, "mediaId" => id} = params) do
-    result = Media.download(conn.assigns.principal_id, server, id)
+    result =
+      LakehouseMatrix.AsyncMedia.fetch(server, id, params, fn ->
+        Media.download(conn.assigns.principal_id, server, id)
+      end)
 
     result =
       case result do
@@ -103,13 +142,26 @@ defmodule LakehouseWeb.Matrix.MediaController do
   end
 
   def thumbnail(conn, %{"serverName" => server, "mediaId" => id} = params),
-    do: serve(conn, Media.thumbnail(conn.assigns.principal_id, server, id, params))
+    do:
+      serve(
+        conn,
+        LakehouseMatrix.AsyncMedia.fetch(server, id, params, fn ->
+          Media.thumbnail(conn.assigns.principal_id, server, id, params)
+        end)
+      )
 
   def federation(conn, %{"mediaId" => id} = params) do
     result =
-      if String.contains?(conn.request_path, "/thumbnail/"),
-        do: Media.federation_thumbnail(id, params),
-        else: Media.federation_download(id)
+      LakehouseMatrix.AsyncMedia.fetch(
+        LakehouseMatrix.Identity.homeserver_domain(),
+        id,
+        params,
+        fn ->
+          if String.contains?(conn.request_path, "/thumbnail/"),
+            do: Media.federation_thumbnail(id, params),
+            else: Media.federation_download(id)
+        end
+      )
 
     case result do
       {:ok, media} ->
@@ -141,6 +193,12 @@ defmodule LakehouseWeb.Matrix.MediaController do
 
   defp serve(conn, {:error, :not_found}),
     do: matrix_error(conn, 404, "M_NOT_FOUND", "Media not found")
+
+  defp serve(conn, {:error, :not_yet_uploaded}),
+    do: matrix_error(conn, 504, "M_NOT_YET_UPLOADED", "Content has not yet been uploaded")
+
+  defp serve(conn, {:error, :invalid_param}),
+    do: matrix_error(conn, 400, "M_INVALID_PARAM", "Invalid media parameter")
 
   defp serve(conn, {:error, :forbidden}),
     do: matrix_error(conn, 403, "M_FORBIDDEN", "You cannot access this media")

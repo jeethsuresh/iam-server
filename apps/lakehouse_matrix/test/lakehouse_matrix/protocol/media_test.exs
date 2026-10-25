@@ -93,7 +93,7 @@ defmodule LakehouseMatrix.FederationMediaTest do
              Media.download(ctx.alice.id, "remote.org", private.media_id)
 
     assert_received {:path, path}
-    assert path == "/_matrix/federation/v1/media/download/" <> private.media_id
+    assert path == "/_matrix/federation/v1/media/download/" <> private.media_id <> "?timeout_ms=0"
     assert {:error, :not_found} = Media.download(ctx.alice.id, "remote.org", "../admin")
     refute_received {:path, _}
     assert {:error, :blocked_address} = Transport.get_raw_url("https://127.0.0.1/private")

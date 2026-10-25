@@ -107,7 +107,15 @@ clients does not mean River client E2EE is complete.
 - Authenticated local/remote media and multipart federation downloads, with
   separate visibility for private River uploads and standard Matrix media.
   Raw JSON files retain their bytes and MIME type through client upload and
-  federation. Matrix requests accept JSON without a mandatory Content-Type and
+  federation. Owner-bound asynchronous MXC reservations expire after 24 hours,
+  enforce pending-upload quotas, and serialize writes without holding the global
+  stream lock. Downloads can wait for pending uploads and return
+  `M_NOT_YET_UPLOADED`; completed media cannot be overwritten.
+  Private legacy media uses authorized typed attachment references, including
+  history visibility and redaction checks. UUID text cannot grant access.
+  Explicit sharing of readable attachments into federating rooms publishes the
+  required media, while local-only rooms retain private access.
+  Matrix requests accept JSON without a mandatory Content-Type and
   return JSON-object/parse errors with CORS; browser SSO and legacy uploads retain
   their existing request handling.
 - Matrix 1.19 policy-server requests and signature validation. Local operations

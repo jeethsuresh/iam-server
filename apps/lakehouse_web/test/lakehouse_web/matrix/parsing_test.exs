@@ -122,6 +122,40 @@ defmodule LakehouseWeb.Matrix.ParsingTest do
     assert download.status == 200 and download.resp_body == "legacy bytes"
   end
 
+  test "reserved media uses raw bytes, reports pending uploads and forbids overwrites", ctx do
+    session =
+      raw(:post, "/_matrix/client/v3/login", Jason.encode!(ctx.params)) |> json_response(200)
+
+    auth = [{"authorization", "Bearer " <> session["access_token"]}]
+    reservation = raw(:post, "/_matrix/media/v1/create", "{}", auth) |> json_response(200)
+
+    [server, id] =
+      reservation["content_uri"] |> String.replace_prefix("mxc://", "") |> String.split("/")
+
+    path = "/_matrix/client/v1/media/download/#{server}/#{id}"
+
+    assert raw(:get, path <> "?timeout_ms=0", "", auth)
+           |> json_response(504)
+           |> Map.fetch!("errcode") == "M_NOT_YET_UPLOADED"
+
+    assert raw(:get, path <> "?timeout_ms=-1", "", auth)
+           |> json_response(400)
+           |> Map.fetch!("errcode") == "M_INVALID_PARAM"
+
+    bytes = "{ \"base64\": \"SGVsbG8=\" }"
+    upload = "/_matrix/media/v3/upload/#{server}/#{id}?filename=reserved.json"
+
+    assert raw(:put, upload, bytes, auth ++ [{"content-type", "application/json"}])
+           |> json_response(200) == %{}
+
+    assert raw(:get, path, "", auth).resp_body == bytes
+
+    assert raw(:put, upload, "overwrite", auth) |> json_response(409) |> Map.fetch!("errcode") ==
+             "M_CANNOT_OVERWRITE_MEDIA"
+
+    assert raw(:get, path, "", auth).resp_body == bytes
+  end
+
   test "authentication accepts case-insensitive Bearer and query tokens but ignores body credentials",
        ctx do
     session =

@@ -87,6 +87,9 @@ defmodule LakehouseMatrix.ClientProfiles do
           meta = Map.put(account.meta || %{}, "matrix_profile", profile)
           account |> Ecto.Changeset.change(meta: meta) |> Repo.update!()
 
+          if field == "avatar_url" and match?({:put, _}, operation),
+            do: LakehouseMatrix.MediaReferences.publish_profile!(principal, profile["avatar_url"])
+
           if field in ~w(displayname avatar_url) do
             content =
               Map.take(profile, ~w(displayname avatar_url))

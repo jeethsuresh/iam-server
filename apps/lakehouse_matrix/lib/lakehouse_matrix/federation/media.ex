@@ -10,7 +10,10 @@ defmodule LakehouseMatrix.Federation.Media do
   def download(server, id, thumbnail \\ nil) do
     with {:ok, _} <- Transport.server_name(server), true <- valid_id?(id) do
       action = if thumbnail, do: "thumbnail", else: "download"
-      query = if thumbnail, do: "?" <> URI.encode_query(thumbnail), else: ""
+      # The client-facing waiter owns the deadline and must release database
+      # connections between polls. Do not park a federation transport on a
+      # remote server's default 20 second asynchronous-upload wait.
+      query = "?" <> URI.encode_query(Map.put(thumbnail || %{}, "timeout_ms", 0))
 
       with {:ok, response} <-
              Transport.request_raw(
@@ -33,6 +36,15 @@ defmodule LakehouseMatrix.Federation.Media do
         else
           {:ok, media}
         end
+      else
+        {:error, {:http, 504, %{"errcode" => "M_NOT_YET_UPLOADED"}}} ->
+          {:error, :not_yet_uploaded}
+
+        {:error, {:http, 404, _}} ->
+          {:error, :not_found}
+
+        other ->
+          other
       end
     else
       _ -> {:error, :invalid_param}

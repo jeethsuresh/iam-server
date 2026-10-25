@@ -603,6 +603,11 @@ defmodule LakehouseMatrix.Protocol.Graph do
     project_state!(metadata, previous, resolved)
     LakehouseMatrix.Protocol.Redactions.apply!(metadata, record.event_id)
 
+    LakehouseMatrix.MediaReferences.capture!(
+      Repo.get_by!(RoomEvent, event_id: record.event_id),
+      metadata
+    )
+
     if record.pdu["type"] != "m.room.redaction" and is_nil(event(record.event_id).redacted_by),
       do: LakehouseMatrix.Notifications.record!(metadata, record)
   end

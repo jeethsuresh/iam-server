@@ -245,6 +245,7 @@ defmodule LakehouseMatrix.Federation.Edus do
           value,
           ~w(presence status_msg currently_active last_active_ago displayname avatar_url)
         )
+        |> Map.reject(fn {_, value} -> is_nil(value) end)
 
       unless Enum.all?(~w(status_msg displayname avatar_url), fn key ->
                is_nil(data[key]) or (is_binary(data[key]) and byte_size(data[key]) <= 4096)

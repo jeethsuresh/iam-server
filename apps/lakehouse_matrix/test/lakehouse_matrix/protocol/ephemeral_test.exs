@@ -85,6 +85,32 @@ defmodule LakehouseMatrix.EphemeralTest do
     assert {:ok, 0} = Ephemeral.expire(DateTime.add(ClientStore.now(), 2, :second))
   end
 
+  test "profile deletion clears presence fields and unchanged presence does not create another stream event",
+       ctx do
+    user = Identity.user_id("bob")
+
+    assert {:ok, _} =
+             LakehouseMatrix.ClientProfiles.put(
+               ctx.bob.id,
+               user,
+               "avatar_url",
+               "mxc://remote.org/avatar"
+             )
+
+    assert {:ok, _} = Ephemeral.set_presence(ctx.bob.id, %{"presence" => "online"})
+
+    assert {:ok, %{"avatar_url" => "mxc://remote.org/avatar"}} =
+             Ephemeral.get_presence(ctx.alice.id, user)
+
+    assert {:ok, _} = LakehouseMatrix.ClientProfiles.delete(ctx.bob.id, user, "avatar_url")
+    assert {:ok, content} = Ephemeral.get_presence(ctx.alice.id, user)
+    refute Map.has_key?(content, "avatar_url")
+    refute Map.has_key?(content, "status_msg")
+    position = ClientStore.position()
+    assert {:ok, _} = Ephemeral.set_presence(ctx.bob.id, %{"presence" => "online"})
+    assert ClientStore.position() == position
+  end
+
   test "presence respects shared rooms, keeps status messages and delivers remote changes", ctx do
     user = Identity.user_id("bob")
 

@@ -26,6 +26,9 @@ defmodule LakehouseMatrix.Events do
     |> Repo.insert()
     |> tap(fn
       {:ok, e} ->
+        if is_nil(LakehouseMatrix.Protocol.Graph.room(e.room_id)),
+          do: LakehouseMatrix.MediaReferences.capture!(e, nil)
+
         LakehouseIam.Changes.notify(%{
           "room_id" => e.room_id,
           "member" => if(e.type == "m.room.member", do: e.state_key)

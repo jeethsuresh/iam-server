@@ -67,6 +67,29 @@ try {
   assert.deepEqual(new Uint8Array(await jsonDownload.arrayBuffer()), jsonBytes);
   console.log('CRYPTO PASS JSON media bytes and MIME type survive upload and federated download');
 
+  const reserved = await json(native, '/_matrix/media/v1/create', {}, a.access_token);
+  assert.ok(reserved.unused_expires_at > Date.now());
+  const [reservedServer, reservedId] = reserved.content_uri.slice('mxc://'.length).split('/');
+  const mediaPath = '/_matrix/client/v1/media/download/' + encodeURIComponent(reservedServer) + '/' + encodeURIComponent(reservedId);
+  const pending = await fetch(native + mediaPath + '?timeout_ms=0', {headers: {Authorization: 'Bearer ' + a.access_token}});
+  assert.equal(pending.status, 504);
+  assert.equal((await pending.json()).errcode, 'M_NOT_YET_UPLOADED');
+  const waiting = fetch(native + mediaPath + '?timeout_ms=3000', {headers: {Authorization: 'Bearer ' + a.access_token}});
+  const remoteWaiting = fetch(reference + mediaPath + '?timeout_ms=3000', {headers: {Authorization: 'Bearer ' + b.access_token}});
+  await new Promise(resolve => setTimeout(resolve, 150));
+  const candidates = [new Uint8Array([0, 255, 1, 2]), new Uint8Array([0, 255, 3, 4])];
+  const puts = await Promise.all(candidates.map(bytes => fetch(native + '/_matrix/media/v3/upload/' + encodeURIComponent(reservedServer) + '/' + encodeURIComponent(reservedId), {
+    method: 'PUT', headers: {Authorization: 'Bearer ' + a.access_token, 'Content-Type': 'application/octet-stream'}, body: bytes
+  })));
+  assert.deepEqual(puts.map(response => response.status).sort(), [200, 409]);
+  const winner = puts.findIndex(response => response.status === 200);
+  assert.equal((await puts[1 - winner].json()).errcode, 'M_CANNOT_OVERWRITE_MEDIA');
+  for (const response of [await waiting, await remoteWaiting]) {
+    assert.equal(response.status, 200);
+    assert.deepEqual(new Uint8Array(await response.arrayBuffer()), candidates[winner]);
+  }
+  console.log('CRYPTO PASS pending uploads wait across federation and concurrent PUTs cannot overwrite the winning bytes');
+
   for (const client of [alice, bob]) {
     await client.getCrypto().userHasCrossSigningKeys(client.getUserId(), true);
     await client.getCrypto().bootstrapSecretStorage({setupNewSecretStorage: true,

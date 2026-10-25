@@ -57,6 +57,19 @@ defmodule LakehouseWeb.Matrix.FederationTest do
     ~s(X-Matrix origin="#{ctx.remote}",key="#{ctx.key}",destination="#{destination}",sig="#{sig}")
   end
 
+  test "federated pending media preserves the Matrix upload error", ctx do
+    user = MatrixFixtures.user_fixture("reservedmedia")
+    {:ok, %{"content_uri" => uri}} = LakehouseMatrix.AsyncMedia.create(user.id)
+    id = LakehouseMatrix.Media.media_id_from_uri(uri)
+    path = "/_matrix/federation/v1/media/download/#{id}?timeout_ms=0"
+
+    assert build_conn()
+           |> put_req_header("authorization", header(ctx, "GET", path))
+           |> get(path)
+           |> json_response(504)
+           |> Map.fetch!("errcode") == "M_NOT_YET_UPLOADED"
+  end
+
   test "send_knock returns the JSON object required by federation v1", ctx do
     alias LakehouseMatrix.{Identity, Rooms}
     alias LakehouseMatrix.Protocol.{Event, Graph}

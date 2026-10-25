@@ -315,6 +315,8 @@ defmodule LakehouseWeb.Router do
     pipe_through [:api, LakehouseWeb.Plugs.MatrixAuth]
 
     post "/v3/upload", MediaController, :upload
+    post "/v1/create", MediaController, :create
+    put "/v3/upload/:serverName/:mediaId", MediaController, :upload_reserved
     get "/v3/download/:serverName/:mediaId", MediaController, :download
     get "/v3/download/:serverName/:mediaId/:fileName", MediaController, :download
     get "/v3/thumbnail/:serverName/:mediaId", MediaController, :thumbnail
