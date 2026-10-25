@@ -7,14 +7,19 @@ defmodule LakehouseMatrix.ClientProfiles do
   alias LakehouseMatrix.Federation.Transport
 
   def local(principal) do
-    saved = (principal.meta || %{})["matrix_profile"] || %{}
-    saved = if is_map(saved), do: saved, else: %{}
-
-    Map.merge(
-      %{"displayname" => principal.username, "avatar_url" => nil},
-      Map.take(saved, ~w(displayname avatar_url))
-    )
+    case (principal.meta || %{})["matrix_profile"] do
+      saved when is_map(saved) -> Map.filter(saved, fn {key, _} -> valid_key?(key) end)
+      _ -> %{"displayname" => principal.username, "avatar_url" => nil}
+    end
   end
+
+  def membership(principal), do: local(principal) |> Map.take(~w(displayname avatar_url))
+
+  def valid_key?(key),
+    do:
+      is_binary(key) and byte_size(key) in 1..255 and
+        (key in ~w(displayname avatar_url) or
+           Regex.match?(~r/\A[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+\z/, key))
 
   def get(user) do
     case Identity.parse_user_id(user) do
@@ -34,54 +39,83 @@ defmodule LakehouseMatrix.ClientProfiles do
                  nil
                ),
              true <-
-               is_map(response) and
-                 Enum.all?(Map.take(response, ~w(displayname avatar_url)), fn {_, value} ->
+               is_map(response) and byte_size(Jason.encode!(response)) <= 65_536 and
+                 Enum.all?(Map.take(response, ~w(displayname avatar_url m.tz)), fn {_, value} ->
                    is_nil(value) or (is_binary(value) and byte_size(value) <= 4096)
                  end) do
-          {:ok, Map.take(response, ~w(displayname avatar_url))}
+          {:ok, Map.filter(response, fn {key, _} -> valid_key?(key) end)}
         else
           _ -> {:error, :not_found}
         end
     end
   end
 
-  def put(principal, user, field, value) do
-    with true <- field in ~w(displayname avatar_url),
-         true <-
-           is_nil(value) or
-             (is_binary(value) and String.valid?(value) and byte_size(value) <= 4096),
-         true <- field != "avatar_url" or valid_avatar?(value) do
-      Policy.transaction(fn ->
-        ClientStore.lock!()
+  def put(principal, user, field, value), do: change(principal, user, field, {:put, value})
+  def delete(principal, user, field), do: change(principal, user, field, :delete)
 
-        account =
-          Repo.one!(
-            from p in LakehouseIam.Schema.Principal, where: p.id == ^principal, lock: "FOR UPDATE"
-          )
+  defp change(principal, user, field, operation) do
+    cond do
+      is_binary(field) and byte_size(field) > 255 ->
+        {:error, :key_too_large}
 
-        unless user == Identity.user_id(account.username), do: Repo.rollback(:forbidden)
-        profile = Map.put(local(account), field, value)
-        meta = Map.put(account.meta || %{}, "matrix_profile", profile)
-        account |> Ecto.Changeset.change(meta: meta) |> Repo.update!()
+      not valid_key?(field) ->
+        {:error, :invalid_param}
 
-        content =
-          Map.put(profile, "membership", "join") |> Map.reject(fn {_, value} -> is_nil(value) end)
+      not valid_value?(field, operation) ->
+        {:error, :invalid_param}
 
-        for room <- Memberships.joined_room_ids(principal) do
-          case ClientRooms.persist(principal, room, "m.room.member", content, user) do
-            {:ok, _} -> :ok
-            {:error, reason} -> Repo.rollback(reason)
+      true ->
+        Policy.transaction(fn ->
+          ClientStore.lock!()
+
+          account =
+            Repo.one!(
+              from p in LakehouseIam.Schema.Principal,
+                where: p.id == ^principal,
+                lock: "FOR UPDATE"
+            )
+
+          unless user == Identity.user_id(account.username), do: Repo.rollback(:forbidden)
+
+          profile =
+            case operation do
+              :delete -> Map.delete(local(account), field)
+              {:put, value} -> Map.put(local(account), field, value)
+            end
+
+          if byte_size(Jason.encode!(profile)) > 65_536, do: Repo.rollback(:profile_too_large)
+          meta = Map.put(account.meta || %{}, "matrix_profile", profile)
+          account |> Ecto.Changeset.change(meta: meta) |> Repo.update!()
+
+          if field in ~w(displayname avatar_url) do
+            content =
+              Map.take(profile, ~w(displayname avatar_url))
+              |> Map.put("membership", "join")
+              |> Map.reject(fn {_, value} -> is_nil(value) end)
+
+            for room <- Memberships.joined_room_ids(principal) do
+              case ClientRooms.persist(principal, room, "m.room.member", content, user) do
+                {:ok, _} -> :ok
+                {:error, reason} -> Repo.rollback(reason)
+              end
+            end
+
+            LakehouseMatrix.Ephemeral.profile_changed!(principal)
           end
-        end
 
-        LakehouseMatrix.Ephemeral.profile_changed!(principal)
-
-        %{}
-      end)
-    else
-      _ -> {:error, :invalid_param}
+          %{}
+        end)
     end
   end
+
+  defp valid_value?(_, :delete), do: true
+
+  defp valid_value?(field, {:put, value}) when field in ~w(displayname avatar_url m.tz) do
+    (is_nil(value) or (is_binary(value) and String.valid?(value) and byte_size(value) <= 4096)) and
+      (field != "avatar_url" or valid_avatar?(value))
+  end
+
+  defp valid_value?(_, {:put, _}), do: true
 
   def search(principal, params) do
     term = params["search_term"]

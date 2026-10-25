@@ -95,6 +95,10 @@ clients does not mean River client E2EE is complete.
   hides a departed room for that user and rejoining restores it.
   Profile changes also produce presence updates without resetting activity;
   inactive ages advance and local expiry reaches joined federation peers.
+  Profiles support namespaced JSON fields, `m.tz`, deletion and the 64 KiB limit;
+  only display name/avatar enter room memberships and presence. Private room
+  tags preserve fractional ordering and mutual-room pages bind user/device and
+  recheck current membership without including new joins in an older page.
 - Authenticated local/remote media and multipart federation downloads, with
   separate visibility for private River uploads and standard Matrix media.
 - Matrix 1.19 policy-server requests and signature validation. Local operations
@@ -107,9 +111,10 @@ reuse the IAM JWT key or rotate a seed under an existing key ID.
 
 ## Remaining release and conformance work
 
-- Complete the remaining account-management APIs and audit the
-  Matrix 1.19 required behavior. Optional modules must be documented
-  explicitly and unsupported endpoints must return honest Matrix errors.
+- Complete remaining account-management, search, reporting, OpenID, third-party,
+  media and administration work. Audit every Matrix 1.19 module and required
+  behavior, document server policies and optional operations, and return honest
+  Matrix errors for unsupported endpoints.
 - Integrate maintained crypto and recovery into River without widening its
   existing delegated grant silently. Test web and native clients.
 - Finish the reset/release tooling, signing-key provisioning, runtime flags,

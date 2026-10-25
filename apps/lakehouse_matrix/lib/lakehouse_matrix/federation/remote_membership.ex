@@ -19,6 +19,7 @@ defmodule LakehouseMatrix.Federation.RemoteMembership do
            "/_matrix/federation/v1/make_leave/" <> escape(metadata.room_id) <> "/" <> escape(user),
          {:ok, response} <- request.(:get, pending.origin, path, nil),
          template when is_map(template) <- response["event"],
+         true <- is_map(template["content"]),
          true <-
            response["room_version"] in [nil, metadata.version] and
              template["room_id"] == metadata.room_id and template["sender"] == user and
@@ -135,13 +136,14 @@ defmodule LakehouseMatrix.Federation.RemoteMembership do
                ),
              version when version in ["11", "12"] <- response["room_version"],
              template when is_map(template) <- response["event"],
+             true <- is_map(template["content"]),
              true <-
                template["room_id"] == ref and template["sender"] == user and
                  template["state_key"] == user and template["type"] == "m.room.member" and
                  get_in(template, ["content", "membership"]) == "knock",
              {:ok, seed, key} <- Signing.config(),
              profile <-
-               LakehouseMatrix.ClientProfiles.local(
+               LakehouseMatrix.ClientProfiles.membership(
                  Repo.get!(LakehouseIam.Schema.Principal, principal)
                ),
              content <-

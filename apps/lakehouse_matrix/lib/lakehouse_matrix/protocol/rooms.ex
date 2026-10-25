@@ -79,7 +79,7 @@ defmodule LakehouseMatrix.Protocol.Rooms do
           room.id,
           sender,
           "m.room.member",
-          Map.put(LakehouseMatrix.ClientProfiles.local(principal), "membership", "join")
+          Map.put(LakehouseMatrix.ClientProfiles.membership(principal), "membership", "join")
           |> Map.reject(fn {_, value} -> is_nil(value) end),
           sender
         )
@@ -204,7 +204,7 @@ defmodule LakehouseMatrix.Protocol.Rooms do
         if membership in ~w(join knock),
           do:
             Map.merge(
-              LakehouseMatrix.ClientProfiles.local(
+              LakehouseMatrix.ClientProfiles.membership(
                 Repo.get!(LakehouseIam.Schema.Principal, principal)
               ),
               content

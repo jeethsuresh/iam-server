@@ -49,6 +49,51 @@ defmodule LakehouseWeb.Matrix.ProtocolCompatibilityTest do
       }
     }
 
+  test "namespaced profile fields, deletion, tags and mutual-room discovery use their standard endpoints",
+       %{a: a, alice: alice, bob: bob} do
+    user = Identity.user_id(alice.username)
+    peer = Identity.user_id(bob.username)
+    path = "/_matrix/client/v3/profile/#{user}/org.example.card"
+
+    assert api(a, :put, path, %{}) |> json_response(400) |> Map.fetch!("errcode") ==
+             "M_MISSING_PARAM"
+
+    assert api(a, :put, path, %{"org.example.card" => %{"score" => 1.25}}).status == 200
+
+    assert get(build_conn(), path) |> json_response(200) == %{
+             "org.example.card" => %{"score" => 1.25}
+           }
+
+    assert api(a, :delete, path).status == 200
+    assert get(build_conn(), path).status == 404
+
+    assert api(a, :put, "/_matrix/client/v3/profile/#{user}/m.tz", %{"m.tz" => "America/Toronto"}).status ==
+             200
+
+    capabilities = api(a, :get, "/_matrix/client/v3/capabilities") |> json_response(200)
+    assert get_in(capabilities, ["capabilities", "m.profile_fields", "enabled"]) == true
+    ref = "!" <> String.duplicate("a", 43)
+    tags = "/_matrix/client/v3/user/#{user}/rooms/#{ref}/tags"
+    assert api(a, :put, tags <> "/m.favourite", %{"order" => 0.75}).status == 200
+
+    assert api(a, :get, tags) |> json_response(200) == %{
+             "tags" => %{"m.favourite" => %{"order" => 0.75}}
+           }
+
+    assert api(a, :get, String.replace(tags, user, peer)).status == 403
+    assert api(a, :delete, tags <> "/m.favourite").status == 200
+
+    assert api(
+             a,
+             :put,
+             "/_matrix/client/v3/user/#{user}/rooms/#{ref}/account_data/org.example.test",
+             %{"value" => true}
+           ).status == 200
+
+    assert api(a, :get, "/_matrix/client/v1/mutual_rooms?user_id=#{URI.encode_www_form(peer)}")
+           |> json_response(200) == %{"joined" => [], "count" => 0}
+  end
+
   test "native relation routes and redactions through send use Matrix response semantics", %{
     a: a,
     alice: alice

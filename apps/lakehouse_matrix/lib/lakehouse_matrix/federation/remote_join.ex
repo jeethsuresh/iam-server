@@ -17,7 +17,12 @@ defmodule LakehouseMatrix.Federation.RemoteJoin do
     with true <- IAM.can?(principal, "matrix.room.join", nil),
          {:ok, ref, servers} <- resolve(ref, servers, request),
          true <- is_binary(ref) and String.starts_with?(ref, "!") and byte_size(ref) <= 255 do
-      user = Repo.get!(LakehouseIam.Schema.Principal, principal).username |> Identity.user_id()
+      account = Repo.get!(LakehouseIam.Schema.Principal, principal)
+      user = account.username |> Identity.user_id()
+
+      params =
+        Map.put(params, "_local_profile", LakehouseMatrix.ClientProfiles.membership(account))
+
       metadata = Graph.room_by_id(ref)
       pending = metadata && Invites.pending(metadata.local_room_id, user)
 
@@ -64,6 +69,7 @@ defmodule LakehouseMatrix.Federation.RemoteJoin do
     with {:ok, response} <- request.(:get, server, path, nil),
          version when version in ["11", "12"] <- response["room_version"],
          template when is_map(template) <- response["event"],
+         true <- is_map(template["content"]),
          true <-
            template["room_id"] == ref and template["sender"] == user and
              template["state_key"] == user and
@@ -154,6 +160,12 @@ defmodule LakehouseMatrix.Federation.RemoteJoin do
   defp resolve(_, _, _), do: {:error, :invalid_param}
 
   defp join_content(event, params) do
+    content =
+      Map.drop(event["content"], ~w(displayname avatar_url))
+      |> Map.merge(params["_local_profile"] || %{})
+
+    event = Map.put(event, "content", content)
+
     if is_binary(params["reason"]),
       do: put_in(event, ["content", "reason"], params["reason"]),
       else: event

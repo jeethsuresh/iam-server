@@ -209,7 +209,9 @@ defmodule LakehouseWeb.Router do
     post "/unstable/org.matrix.msc4186/sync", ProtocolController, :sliding_sync
     post "/v4/sync", ProtocolController, :sliding_sync
     put "/v3/profile/:userId/:field", ProtocolController, :set_profile
+    delete "/v3/profile/:userId/:field", ProtocolController, :set_profile
     post "/v3/user_directory/search", ProtocolController, :user_directory
+    get "/v1/mutual_rooms", ProtocolController, :mutual_rooms
     get "/v3/account/whoami", ProtocolController, :whoami
     post "/v3/logout", ProtocolController, :logout
     post "/v3/logout/all", ProtocolController, :logout_all
@@ -250,6 +252,9 @@ defmodule LakehouseWeb.Router do
     put "/v3/user/:userId/account_data/:type", ProtocolController, :put_data
     get "/v3/user/:userId/rooms/:roomId/account_data/:type", ProtocolController, :get_data
     put "/v3/user/:userId/rooms/:roomId/account_data/:type", ProtocolController, :put_data
+    get "/v3/user/:userId/rooms/:roomId/tags", ProtocolController, :tags
+    put "/v3/user/:userId/rooms/:roomId/tags/:tag", ProtocolController, :tags
+    delete "/v3/user/:userId/rooms/:roomId/tags/:tag", ProtocolController, :tags
     post "/v3/user/:userId/filter", ProtocolController, :create_filter
     get "/v3/user/:userId/filter/:filterId", ProtocolController, :get_filter
     put "/v3/sendToDevice/:eventType/:txnId", ProtocolController, :send_to_device

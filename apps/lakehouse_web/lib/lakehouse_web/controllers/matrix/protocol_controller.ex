@@ -275,6 +275,7 @@ defmodule LakehouseWeb.Matrix.ProtocolController do
           "m.get_login_token" => %{"enabled" => true},
           "m.set_displayname" => %{"enabled" => true},
           "m.set_avatar_url" => %{"enabled" => true},
+          "m.profile_fields" => %{"enabled" => true},
           "m.3pid_changes" => %{"enabled" => false}
         }
       })
@@ -415,7 +416,7 @@ defmodule LakehouseWeb.Matrix.ProtocolController do
     room = params["roomId"] || ""
 
     if type != "m.push_rules" and user == Identity.user_id(conn.assigns.username) and
-         (room == "" or match?({:ok, _}, ClientRooms.readable(principal(conn), room))) and
+         (room == "" or LakehouseMatrix.ClientRoomData.valid_room_ref?(room)) and
          byte_size(Jason.encode!(body(conn))) <= 65_536 do
       respond(conn, ClientStore.put_data(principal(conn), room, type, body(conn)))
     else
@@ -509,22 +510,64 @@ defmodule LakehouseWeb.Matrix.ProtocolController do
   def profile(conn, %{"userId" => user} = params) do
     case LakehouseMatrix.ClientProfiles.get(user) do
       {:ok, profile} ->
-        json(conn, if(params["field"], do: Map.take(profile, [params["field"]]), else: profile))
+        if params["field"] && not Map.has_key?(profile, params["field"]),
+          do: respond(conn, {:error, :not_found}),
+          else:
+            json(
+              conn,
+              if(params["field"], do: Map.take(profile, [params["field"]]), else: profile)
+            )
 
       error ->
         respond(conn, error)
     end
   end
 
-  def set_profile(conn, %{"userId" => user, "field" => field} = params),
-    do:
-      respond(
-        conn,
-        LakehouseMatrix.ClientProfiles.put(principal(conn), user, field, params[field])
-      )
+  def set_profile(conn, %{"userId" => user, "field" => field}) do
+    result =
+      cond do
+        conn.method == "DELETE" ->
+          LakehouseMatrix.ClientProfiles.delete(principal(conn), user, field)
+
+        not Map.has_key?(body(conn), field) ->
+          {:error, :missing_param}
+
+        map_size(body(conn)) != 1 ->
+          {:error, :invalid_param}
+
+        true ->
+          LakehouseMatrix.ClientProfiles.put(principal(conn), user, field, body(conn)[field])
+      end
+
+    respond(conn, result)
+  end
 
   def user_directory(conn, params),
     do: respond(conn, LakehouseMatrix.ClientProfiles.search(principal(conn), params))
+
+  def mutual_rooms(conn, params),
+    do:
+      respond(conn, LakehouseMatrix.ClientRoomData.mutual(principal(conn), device(conn), params))
+
+  def tags(conn, %{"userId" => user, "roomId" => ref} = params) do
+    if user == Identity.user_id(conn.assigns.username) do
+      result =
+        if conn.method == "GET",
+          do: LakehouseMatrix.ClientRoomData.tags(principal(conn), ref),
+          else:
+            LakehouseMatrix.ClientRoomData.tag(
+              principal(conn),
+              ref,
+              params["tag"],
+              conn.method,
+              body(conn)
+            )
+
+      respond(conn, result)
+    else
+      respond(conn, {:error, :forbidden})
+    end
+  end
 
   def media_config(conn, _), do: json(conn, %{"m.upload.size" => 10 * 1024 * 1024})
 
@@ -626,6 +669,15 @@ defmodule LakehouseWeb.Matrix.ProtocolController do
   def respond(conn, {:error, reason}) do
     {status, code, message} =
       case reason do
+        :missing_param ->
+          {400, "M_MISSING_PARAM", "A required request parameter is missing"}
+
+        :key_too_large ->
+          {400, "M_KEY_TOO_LARGE", "Profile keys must not exceed 255 bytes"}
+
+        :profile_too_large ->
+          {400, "M_PROFILE_TOO_LARGE", "Profiles must not exceed 64 KiB"}
+
         :policy_unavailable ->
           {503, "M_UNAVAILABLE", "The room policy server did not provide a valid signature"}
 

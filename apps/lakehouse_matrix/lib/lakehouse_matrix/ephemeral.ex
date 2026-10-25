@@ -135,7 +135,7 @@ defmodule LakehouseMatrix.Ephemeral do
   defp profile(principal),
     do:
       Repo.get!(LakehouseIam.Schema.Principal, principal)
-      |> LakehouseMatrix.ClientProfiles.local()
+      |> LakehouseMatrix.ClientProfiles.membership()
 
   defp publish_presence!(principal, content, received_at) do
     Repo.insert_all(

@@ -93,4 +93,42 @@ defmodule LakehouseMatrix.ClientProfilesTest do
     assert {:ok, %{"displayname" => "Remote", "avatar_url" => nil}} =
              ClientProfiles.get("@remote:remote.org")
   end
+
+  test "namespaced profiles retain JSON types and deletions without leaking fields into room membership",
+       ctx do
+    assert {:ok, _} = ClientProfiles.put(ctx.alice.id, ctx.user, "m.tz", "America/Toronto")
+    custom = %{"score" => 2.5, "enabled" => true, "tags" => [nil, "one"]}
+    assert {:ok, _} = ClientProfiles.put(ctx.alice.id, ctx.user, "org.example.card", custom)
+
+    assert {:ok, %{"org.example.card" => ^custom, "m.tz" => "America/Toronto"}} =
+             ClientProfiles.get(ctx.user)
+
+    assert {:ok, _} = ClientProfiles.put(ctx.alice.id, ctx.user, "displayname", "Alicia")
+    {:ok, %{"chunk" => members}} = ClientContext.members(ctx.bob.id, "B", ctx.ref, %{})
+    member = Enum.find(members, &(&1["state_key"] == ctx.user))
+    refute Map.has_key?(member["content"], "org.example.card")
+    refute Map.has_key?(member["content"], "m.tz")
+    assert {:ok, _} = ClientProfiles.delete(ctx.alice.id, ctx.user, "displayname")
+    {:ok, profile} = ClientProfiles.get(ctx.user)
+    refute Map.has_key?(profile, "displayname")
+    assert {:ok, _} = ClientProfiles.delete(ctx.alice.id, ctx.user, "org.example.card")
+    {:ok, profile} = ClientProfiles.get(ctx.user)
+    refute Map.has_key?(profile, "org.example.card")
+
+    assert {:error, :invalid_param} =
+             ClientProfiles.put(ctx.alice.id, ctx.user, "NotNamespaced", "value")
+
+    assert {:error, :key_too_large} =
+             ClientProfiles.put(ctx.alice.id, ctx.user, "org." <> String.duplicate("a", 252), nil)
+
+    assert {:error, :profile_too_large} =
+             ClientProfiles.put(
+               ctx.alice.id,
+               ctx.user,
+               "org.example.big",
+               String.duplicate("a", 65_536)
+             )
+
+    assert {:ok, _} = ClientProfiles.delete(ctx.alice.id, ctx.user, "org.example.absent")
+  end
 end
