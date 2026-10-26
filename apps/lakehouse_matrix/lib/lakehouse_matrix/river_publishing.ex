@@ -386,7 +386,29 @@ defmodule LakehouseMatrix.RiverPublishing do
 
       target = if p && p.thread_id && p.visibility == "public", do: p.anchor_id, else: event
 
-      if not is_nil(p) and p.visibility == "public" and
+      # Reactions to comments use the post's publication lock and visibility,
+      # including for readers who have never joined the public comment room.
+      {room, target} =
+        if params["target_id"] && params["target_id"] != event do
+          comment = Repo.get_by(RoomEvent, event_id: params["target_id"], type: "m.room.message")
+          member = member?(g, original.room_id)
+
+          private =
+            comment && member && comment.room_id == original.room_id &&
+              get_in(comment.content, ["m.relates_to", "event_id"]) == event
+
+          public =
+            comment && p && p.thread_id && comment.room_id == p.thread_id &&
+              get_in(comment.content, ["m.relates_to", "event_id"]) == p.anchor_id &&
+              (member || (p.visibility == "public" && p.comments_policy == "public"))
+
+          unless private || public, do: Repo.rollback(:not_found)
+          {comment.room_id, comment.event_id}
+        else
+          {room, target}
+        end
+
+      if not is_nil(p) and room == p.thread_id and p.visibility == "public" and
            not Memberships.joined?(room, g.principal_id),
          do: unwrap!(DelegatedGroups.membership(g, room, %{"action" => "public_join"}))
 
@@ -394,6 +416,8 @@ defmodule LakehouseMatrix.RiverPublishing do
         if p && p.visibility == "public",
           do: %{g | room_ids: Enum.uniq(g.room_ids ++ [room])},
           else: g
+
+      LakehouseMatrix.AccountModeration.require!(g.principal_id, :write)
 
       unless "chats.write" in refreshed.scopes and
                LakehouseIam.IAM.can?(

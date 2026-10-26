@@ -53,6 +53,22 @@ defmodule LakehouseWeb.RiverPublishingTest do
     assert {:ok, %{reaction_summary: [%{count: 1}]}} = RiverPublishing.show(nil, post)
   end
 
+  test "signed-in outsiders can react to visible comments without first joining, but cannot target private or unrelated messages", %{grants: [ga, gb, gc], room: room, post: post} do
+    {:ok, _} = publish(ga, room, post)
+    {:ok, comment} = RiverPublishing.comment(gb, post, %{"body" => "Public reply", "audience" => "public", "txn_id" => "visible-reply"})
+    params = %{"target_id" => comment["event_id"], "key" => "sticker:https://images.example.test/reaction.gif", "active" => true, "txn_id" => "comment-sticker"}
+    assert {:ok, first} = RiverPublishing.reaction(gc, post, params)
+    assert {:ok, ^first} = RiverPublishing.reaction(gc, post, params)
+    assert {:ok, view} = RiverPublishing.show(gc, post)
+    assert [%{count: 1, mine: true}] = hd(view.comments)["reaction_summary"]
+    {:ok, private} = RiverPublishing.comment(gb, post, %{"body" => "Private reply", "audience" => "members", "txn_id" => "private-reply"})
+    assert {:error, :not_found} = RiverPublishing.reaction(gc, post, %{params | "target_id" => private["event_id"], "txn_id" => "hidden-reply"})
+    {:ok, unrelated} = DelegatedGroups.send(gb, room, "m.room.message", "unrelated", %{"body" => "Unrelated chat"})
+    assert {:error, :not_found} = RiverPublishing.reaction(gb, post, %{params | "target_id" => unrelated["event_id"], "txn_id" => "unrelated-reaction"})
+    assert {:ok, _} = publish(ga, room, post, "members", "restrict-reactions")
+    assert {:error, :not_found} = RiverPublishing.reaction(gc, post, %{params | "txn_id" => "late-reaction"})
+  end
+
   test "a saved members-only post persists its public comment room when published", %{grants: [ga, gb, gc], room: room, post: post} do
     # River's editor always saves an initial publication policy, even for a
     # private post. Publishing later must update this existing database row.

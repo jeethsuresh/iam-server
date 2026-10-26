@@ -735,8 +735,11 @@ defmodule LakehouseMatrix.DelegatedGroups do
   defp validate("m.reaction", %{
          "m.relates_to" => %{"rel_type" => "m.annotation", "event_id" => id, "key" => key}
        })
-       when is_binary(id) and is_binary(key) and byte_size(key) in 1..64,
-       do: :ok
+       when is_binary(id) do
+    if (is_binary(key) and byte_size(key) in 1..64) or LakehouseMatrix.RiverReactions.valid?(key),
+      do: :ok,
+      else: {:error, :invalid_event}
+  end
 
   defp validate(type, %{"body" => body} = c) when type != "m.reaction" do
     valid =

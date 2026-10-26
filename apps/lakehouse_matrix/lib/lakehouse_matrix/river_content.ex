@@ -8,7 +8,6 @@ defmodule LakehouseMatrix.RiverContent do
   @entry_types ~w(cool.gravitas.river.post.v1 cool.gravitas.river.discussion.v1)
   @edit "cool.gravitas.river.entry.edit.v1"
   @reaction_action "cool.gravitas.river.reaction.v1"
-  @emojis ~w(👍 👎 ❤️ 😂 🎉 🔥 👀 🙌 ✅ 🤔 😮 😢 🚀 💯 👏 ✨ 🫶 🙏 🥰 😎 🤯 💡 🌈 ☕)
 
   def thread(g, id, p) do
     DelegatedGroups.with_room(g, id, "chats.read", fn ->
@@ -88,7 +87,8 @@ defmodule LakehouseMatrix.RiverContent do
   def reaction_authorized!(g, id, p) do
     target = target!(id, p["event_id"])
 
-    unless target.type in ["m.room.message" | @entry_types] and p["key"] in @emojis and
+    unless target.type in ["m.room.message", "m.sticker" | @entry_types] and
+             LakehouseMatrix.RiverReactions.valid?(p["key"]) and
              is_boolean(p["active"]) and txn?(p["txn_id"]),
            do: Repo.rollback(:invalid_event)
 
