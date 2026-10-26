@@ -25,3 +25,9 @@ patches:
       - op: add
         path: /data/MATRIX_RTC_URL
         value: wss://rtc.gravitas.cool
+      - op: add
+        path: /data/PROTOCOL_OWNERS
+        value: '{"appstore":"https://apps.gravitas.cool"}'
+      - op: add
+        path: /data/PROTOCOL_GATEWAY_ADDR
+        value: traefik.traefik.svc.cluster.local:443

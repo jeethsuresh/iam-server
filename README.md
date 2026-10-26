@@ -145,3 +145,7 @@ Full `mix test` (and any tests that hit `LakehouseIam.Repo`) require PostgreSQL 
 ## Shared contacts
 
 See [Gravitas contacts](docs/contacts.md) for delegated permissions, contact requests, River friend projection, migration compatibility and release order.
+
+## Protocol capability registry
+
+Gravitas supports private per-user protocol subscriptions, semver capability discovery and durable multicast. See [the PCR API and deployment guide](docs/protocol-registry.md).

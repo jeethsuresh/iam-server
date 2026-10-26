@@ -167,7 +167,7 @@ defmodule LakehouseIam.Apps.Tokens do
 
   @doc "Legacy credentials cannot inherit delegation when a consent grant is upgraded."
   def effective_scopes(%AppToken{scopes: nil}, grant),
-    do: Enum.reject(grant.scopes, &(&1 in ~w(native.broker groups.join spaces.channels friends.read friends.manage contacts.read contacts.manage calls.read calls.join posts.publish)))
+    do: Enum.reject(grant.scopes, &(&1 in ~w(protocols.read appstore.push appstore.push.broadcast native.broker groups.join spaces.channels friends.read friends.manage contacts.read contacts.manage calls.read calls.join posts.publish)))
 
   def effective_scopes(%AppToken{scopes: scopes}, grant),
     do: Enum.filter(scopes, &(&1 in grant.scopes))

@@ -6,7 +6,8 @@ defmodule LakehouseIam.Application do
   def start(_type, _args) do
     children = [
       LakehouseIam.Repo,
-      LakehouseIam.Changes
+      LakehouseIam.Changes,
+      LakehouseIam.Protocols.Worker
     ]
 
     opts = [strategy: :one_for_one, name: LakehouseIam.Supervisor]

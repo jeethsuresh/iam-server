@@ -129,6 +129,19 @@ defmodule LakehouseWeb.Router do
     post "/oauth/broker/authorize", NativeBrokerController, :authorize
   end
 
+  scope "/protocols/v1", LakehouseWeb do
+    pipe_through [:api, LakehouseWeb.Plugs.ProtocolAuth]
+    put "/registry", ProtocolController, :register_service
+    get "/specifications", ProtocolController, :specifications
+    get "/users/:subject", ProtocolController, :subscriptions
+    post "/users/:subject/invoke", ProtocolController, :invoke
+  end
+
+  scope "/app/v1/protocols", LakehouseWeb do
+    pipe_through [:api, LakehouseWeb.Plugs.AppTokenAuth]
+    put "/registry", ProtocolController, :register
+  end
+
   scope "/app/v1", LakehouseWeb.App, as: :app_v1 do
     pipe_through [:api, LakehouseWeb.Plugs.AppTokenAuth]
 
