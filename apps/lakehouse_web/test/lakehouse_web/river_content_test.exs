@@ -36,6 +36,25 @@ defmodule LakehouseWeb.RiverContentTest do
     assert {:error, :transaction_conflict} = react(a, r.id, e["event_id"], true, "remove-a")
   end
 
+  test "sticker reactions aggregate, remove idempotently and reject unsafe URLs", %{ga: a, gb: b, room: r} do
+    {:ok, event} = message(a, r.id, "sticker-target")
+    key = "sticker:https://images.example.test/" <> String.duplicate("a", 160) <> ".gif?size=200"
+    params = %{"event_id" => event["event_id"], "key" => key, "active" => true, "txn_id" => "sticker-add"}
+    assert {:ok, first} = RiverContent.reaction(a, r.id, params)
+    assert {:ok, ^first} = RiverContent.reaction(a, r.id, params)
+    assert {:ok, _} = RiverContent.reaction(b, r.id, %{params | "txn_id" => "sticker-b"})
+    assert [%{key: ^key, count: 2, mine: true}] = summary(a, r.id, event["event_id"])
+    remove = %{params | "active" => false, "txn_id" => "sticker-remove"}
+    assert {:ok, removed} = RiverContent.reaction(a, r.id, remove)
+    assert [%{key: ^key, count: 1, mine: false}] = summary(a, r.id, event["event_id"])
+    assert {:ok, _} = RiverContent.reaction(a, r.id, %{params | "txn_id" => "sticker-readd"})
+    assert {:ok, ^removed} = RiverContent.reaction(a, r.id, remove)
+    assert [%{count: 2}] = summary(a, r.id, event["event_id"])
+    for invalid <- ["sticker:file:///secret", "sticker:javascript:alert(1)", "sticker:https://u:p@host/x.gif", "sticker:https://host/a b.gif", "sticker:https://host/" <> String.duplicate("a", 2048)] do
+      assert {:error, :invalid_event} = RiverContent.reaction(a, r.id, %{params | "key" => invalid, "txn_id" => "invalid-sticker"})
+    end
+  end
+
   test "nested thread replies keep standard root and quoted-parent relations", %{ga: a, gb: b, room: r} do
     {:ok, root} = message(a, r.id, "root", "Original")
     {:ok, first} = DelegatedGroups.send(b, r.id, "m.room.message", "reply", %{"body" => "Reply",
