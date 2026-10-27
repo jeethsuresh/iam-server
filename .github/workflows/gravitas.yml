@@ -54,6 +54,12 @@ jobs:
           -e POSTGRES_HOST=127.0.0.1 -e POSTGRES_PORT=5432
           -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres
           iam-tests:ci
+      - name: Verify concurrent subgroup registration and membership revisions
+        run: >-
+          docker run --rm --network host
+          -e POSTGRES_HOST=127.0.0.1 -e POSTGRES_PORT=5432
+          -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres
+          --entrypoint mix iam-tests:ci run scripts/test-subgroup-concurrency.exs
       - name: Verify native federation and encrypted client recovery against Synapse
         run: bash integration/matrix/run.sh iam-tests:ci
   image:

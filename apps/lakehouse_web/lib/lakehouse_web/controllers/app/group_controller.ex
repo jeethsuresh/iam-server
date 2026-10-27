@@ -19,6 +19,9 @@ defmodule LakehouseWeb.App.GroupController do
   def membership(conn, %{"id" => id} = p),
     do: respond(conn, Groups.membership(conn.assigns.app_grant, id, p))
 
+  def subgroups(conn, %{"id" => id}),
+    do: respond(conn, Groups.subgroups(conn.assigns.app_grant, id))
+
   def channels(conn, %{"id" => id}),
     do: respond(conn, Groups.channels(conn.assigns.app_grant, id))
 

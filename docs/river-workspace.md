@@ -1,5 +1,8 @@
 # River workspace APIs
 
+Participant subsets, contextual conversation creation, and the separate
+containment/visibility model are specified in [subgroups.md](subgroups.md).
+
 Extends the contacts release without changing the Go/Flutter architecture. Source
 reference for Orbit parity: jeethsuresh/orbit f8abebcb407bc8a4d4e4920a6862e549f7ec3e00.
 

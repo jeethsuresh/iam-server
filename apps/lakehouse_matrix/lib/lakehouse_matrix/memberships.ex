@@ -141,6 +141,19 @@ defmodule LakehouseMatrix.Memberships do
         membership,
         %LakehouseMatrix.Events.Context{} = ctx
       ) do
+    if Repo.in_transaction?() do
+      write_membership(room_id, principal_id, membership, ctx)
+    else
+      Repo.transaction(fn ->
+        case write_membership(room_id, principal_id, membership, ctx) do
+          {:ok, result} -> result
+          {:error, reason} -> Repo.rollback(reason)
+        end
+      end)
+    end
+  end
+
+  defp write_membership(room_id, principal_id, membership, ctx) do
     if membership in ~w(join invite knock),
       do: LakehouseMatrix.ClientStore.restore_room!(principal_id, room_id)
 
@@ -195,6 +208,10 @@ defmodule LakehouseMatrix.Memberships do
     if match?({:ok, _}, result) and membership == "join" and
          (is_nil(existing) or existing.membership_state["membership"] != "join"),
        do: LakehouseMatrix.RoomUpgrades.copy_settings!(principal_id, room_id)
+
+    if match?({:ok, _}, result) and
+         is_nil(Repo.get(LakehouseMatrix.Schema.ProtocolRoom, room_id)),
+       do: LakehouseMatrix.Subgroups.sync!(room_id, ctx.event_id)
 
     result
   end

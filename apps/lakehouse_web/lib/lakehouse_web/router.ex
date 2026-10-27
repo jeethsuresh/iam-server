@@ -164,6 +164,7 @@ defmodule LakehouseWeb.Router do
     post "/direct", GroupController, :direct
     post "/groups/:id/membership", GroupController, :membership
     patch "/groups/:id", GroupController, :update
+    get "/groups/:id/subgroups", GroupController, :subgroups
     get "/groups/:id/channels", GroupController, :channels
     post "/groups/:id/channels", GroupController, :create_channel
     post "/groups/:id/read", GroupController, :mark_read
