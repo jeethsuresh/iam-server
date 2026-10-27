@@ -24,6 +24,15 @@ defmodule LakehouseMatrix.Subgroups do
   end
 
   def backfill! do
+    # Release.migrate starts only the repository. Loading this application's
+    # environment preserves the configured homeserver identity without starting
+    # any Matrix workers while the migration owns the database.
+    case Application.load(:lakehouse_matrix) do
+      :ok -> :ok
+      {:error, {:already_loaded, :lakehouse_matrix}} -> :ok
+      error -> raise "cannot load Matrix configuration for subgroup backfill: #{inspect(error)}"
+    end
+
     for p <-
           Repo.all(from p in LakehouseIam.Schema.Principal, where: p.type == :user, select: p.id),
         do: ParticipantSets.register!([ParticipantSets.principal(p)])
