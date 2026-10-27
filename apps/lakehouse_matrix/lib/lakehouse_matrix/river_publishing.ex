@@ -73,6 +73,7 @@ defmodule LakehouseMatrix.RiverPublishing do
     locked_grant(g, fn ->
       unwrap!(
         DelegatedGroups.with_room(g, room, "chats.write", fn ->
+          RiverContent.require_space!(room)
           original = post!(p["event_id"])
 
           unless original.room_id == room and original.principal_id == g.principal_id,
@@ -437,6 +438,8 @@ defmodule LakehouseMatrix.RiverPublishing do
         Repo.one(from r in Room, where: r.id == ^space, lock: "FOR SHARE") ||
           Repo.rollback(:not_found)
 
+        unless RiverContent.space?(space), do: Repo.rollback(:not_found)
+
         unwrap!(blog_query(g, space, params))
       end)
     else
@@ -574,7 +577,9 @@ defmodule LakehouseMatrix.RiverPublishing do
   defp member?(g, room), do: DelegatedGroups.authorized?(g, room, "chats.read")
 
   defp post!(event) when is_binary(event) and byte_size(event) <= 512 do
-    Repo.get_by(RoomEvent, event_id: event, type: @post) || Repo.rollback(:not_found)
+    post = Repo.get_by(RoomEvent, event_id: event, type: @post) || Repo.rollback(:not_found)
+    unless RiverContent.space?(post.room_id), do: Repo.rollback(:not_found)
+    post
   end
 
   defp post!(_), do: Repo.rollback(:not_found)

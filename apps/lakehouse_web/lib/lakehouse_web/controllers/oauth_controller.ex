@@ -121,7 +121,10 @@ defmodule LakehouseWeb.OAuthController do
     with {:ok, principal} <- current_principal(conn),
          sess when not is_nil(sess) <- Federated.fetch(session_id),
          true <- sess.username == principal.username do
-      room_mode = if params["all_rooms"] in ["true", "on", "1"], do: :all, else: :selected
+      room_mode =
+        if "matrix.full" in sess.scopes or params["all_rooms"] in ["true", "on", "1"],
+          do: :all,
+          else: :selected
 
       room_ids =
         case params["room_ids"] do

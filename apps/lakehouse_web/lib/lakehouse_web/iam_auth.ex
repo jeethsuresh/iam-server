@@ -179,7 +179,8 @@ defmodule LakehouseWeb.IamAuth do
       (not needs_rooms?(scopes) or grant.room_mode == :all)
   end
 
-  defp needs_rooms?(scopes), do: "chats.read" in scopes or "chats.write" in scopes
+  defp needs_rooms?(scopes),
+    do: "matrix.full" in scopes or "chats.read" in scopes or "chats.write" in scopes
 
   defp finish_with_code(sess, principal, session_id, room_mode, room_ids, user_jwt, family_id) do
     case OAuth.issue_code_redirect(sess, principal.id, room_mode, room_ids, session_id: family_id) do

@@ -1,7 +1,7 @@
 defmodule LakehouseIam.Apps.Scopes do
   @moduledoc "Known OAuth-like scopes for third-party apps."
 
-  @known ~w(profile.name protocols.read appstore.push appstore.push.broadcast chats.list chats.read chats.write groups.create groups.manage groups.join spaces.channels friends.read friends.manage contacts.read contacts.manage calls.read calls.join posts.publish native.broker)
+  @known ~w(profile.name protocols.read appstore.push appstore.push.broadcast matrix.full chats.list chats.read chats.write groups.create groups.manage groups.join spaces.channels friends.read friends.manage contacts.read contacts.manage calls.read calls.join posts.publish native.broker)
 
   def known, do: @known
 

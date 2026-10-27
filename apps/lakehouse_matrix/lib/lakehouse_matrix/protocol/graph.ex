@@ -117,6 +117,12 @@ defmodule LakehouseMatrix.Protocol.Graph do
       metadata = room(local_id) || Repo.rollback(:room_not_found)
       require_local_sender!(sender)
 
+      content =
+        case LakehouseMatrix.RiverContent.bind_space(local_id, type, content) do
+          {:ok, bound} -> bound
+          {:error, reason} -> Repo.rollback(reason)
+        end
+
       require_ok!(
         LakehouseMatrix.AccountModeration.event(sender, local_id, type, content, state_key)
       )

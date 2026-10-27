@@ -22,6 +22,14 @@ defmodule LakehouseIam.Schema.AppGrant do
     |> cast(attrs, [:principal_id, :app_origin, :scopes, :room_mode, :room_ids])
     |> validate_required([:principal_id, :app_origin, :scopes, :room_mode])
     |> validate_inclusion(:room_mode, [:all, :selected])
+    |> validate_matrix_access()
     |> unique_constraint([:principal_id, :app_origin])
+  end
+
+  defp validate_matrix_access(changeset) do
+    if "matrix.full" in get_field(changeset, :scopes, []) and
+         get_field(changeset, :room_mode) != :all,
+       do: add_error(changeset, :room_mode, "full Matrix access requires all rooms"),
+       else: changeset
   end
 end
