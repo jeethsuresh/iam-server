@@ -43,6 +43,21 @@ defmodule LakehouseMatrix.DelegatedGroups do
     |> Enum.map(&describe(&1, grant.principal_id))
   end
 
+  def subgroups(grant, id) do
+    with :ok <- scope(grant, "chats.list"),
+         :ok <- scope(grant, "chats.read"),
+         :ok <- access(grant, id) do
+      transact(fn ->
+        unless access(grant, id) == :ok, do: Repo.rollback(:forbidden)
+
+        groups =
+          list(grant) |> Enum.filter(&(&1.membership == "join" and access(grant, &1.id) == :ok))
+
+        LakehouseIam.ParticipantSets.projection(id, groups)
+      end)
+    end
+  end
+
   def overview(grant) do
     with :ok <- scope(grant, "chats.list") do
       groups = list(grant)
@@ -535,6 +550,10 @@ defmodule LakehouseMatrix.DelegatedGroups do
               "leave"
           end
 
+        # A leaving actor cannot send a timeline audit after leaving. An
+        # invitation decline is already audited by its signed membership event.
+        leaving = target == actor and membership == "leave"
+        if leaving and current == "join", do: audit!(grant, id, action, user_id(target))
         event = member!(grant, id, target, membership)
         for child <- channel_ids(id), do: member!(grant, child, target, membership)
 
@@ -545,7 +564,7 @@ defmodule LakehouseMatrix.DelegatedGroups do
           |> Repo.update!()
         end
 
-        audit!(grant, id, action, user_id(target))
+        unless leaving, do: audit!(grant, id, action, user_id(target))
         %{"event_id" => event["event_id"], "membership" => membership}
       end)
     else
@@ -835,6 +854,8 @@ defmodule LakehouseMatrix.DelegatedGroups do
       kind: metadata(id)["kind"] || "group",
       description: get_in(State.get(id, "m.room.topic") || %{}, ["content", "topic"]) || "",
       parent_id: channel && channel.space_id,
+      context_id:
+        get_in(State.get(id, "cool.gravitas.river.context.v1") || %{}, ["content", "context_id"]),
       channel_kind: channel && channel.kind,
       membership: Memberships.membership(id, principal),
       owner: Matrix.creator?(id, principal),
@@ -843,6 +864,11 @@ defmodule LakehouseMatrix.DelegatedGroups do
       last_activity_at: unread.timestamp,
       members: if(Memberships.joined?(id, principal), do: Memberships.list_members(id), else: [])
     }
+    |> Map.merge(
+      if Memberships.joined?(id, principal),
+        do: LakehouseIam.ParticipantSets.current(id),
+        else: %{subgroup_id: nil, subgroup_revision: nil}
+    )
   end
 
   defp unread(id, principal) do

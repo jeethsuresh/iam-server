@@ -83,6 +83,10 @@ defmodule LakehouseIam.Accounts do
 
         Ecto.Multi.new()
         |> Ecto.Multi.insert(:principal, principal_cs)
+        |> Ecto.Multi.run(:singleton, fn _, %{principal: p} ->
+          {:ok,
+           LakehouseIam.ParticipantSets.register!([LakehouseIam.ParticipantSets.principal(p.id)])}
+        end)
         |> Ecto.Multi.insert(:credential, fn %{principal: p} -> cred_cs.(p.id) end)
         |> Repo.transaction()
         |> case do

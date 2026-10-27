@@ -631,6 +631,14 @@ defmodule LakehouseMatrix.Protocol.Graph do
 
     resolved = resolved || decode_state(record.state_after)
     project_state!(metadata, previous, resolved)
+
+    membership_state = fn state ->
+      Map.filter(state, fn {{type, _}, _} -> type == "m.room.member" end)
+    end
+
+    if membership_state.(previous) != membership_state.(resolved),
+      do: LakehouseMatrix.Subgroups.sync!(metadata.local_room_id, record.event_id)
+
     LakehouseMatrix.Protocol.Redactions.apply!(metadata, record.event_id)
 
     LakehouseMatrix.MediaReferences.capture!(

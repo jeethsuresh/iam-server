@@ -8,30 +8,49 @@ defmodule LakehouseMatrix.RiverWorkspace do
   @entries ~w(cool.gravitas.river.post.v1 cool.gravitas.river.discussion.v1)
 
   def conversation(g, p) do
+    context = p["context_id"] || p["space_id"]
+
     with true <- is_list(p["member_ids"]) and length(p["member_ids"]) in 1..24,
          true <- is_binary(p["txn_id"]) and is_binary(p["name"]),
-         true <- "contacts.read" in g.scopes and "groups.manage" in g.scopes do
+         true <- "groups.manage" in g.scopes,
+         true <- not is_nil(context) or "contacts.read" in g.scopes do
       LakehouseMatrix.Protocol.Policy.transaction(fn ->
         LakehouseMatrix.ClientStore.lock!()
-        peers = p["member_ids"] |> Enum.map(&person!/1) |> Enum.uniq() |> Enum.sort()
+
+        people =
+          p["member_ids"]
+          |> Enum.map(&conversation_person!(&1, context))
+          |> Enum.uniq_by(& &1.user_id)
+          |> Enum.sort_by(&(&1.principal_id || &1.user_id))
+
+        peers = for %{principal_id: id} <- people, not is_nil(id), do: id
         unless g.principal_id not in peers, do: Repo.rollback(:invalid_member)
         ids = Enum.sort([g.principal_id | peers])
 
         Repo.all(
-          from a in Principal, where: a.id in ^ids, order_by: a.id, lock: "FOR NO KEY UPDATE"
+          from(a in Principal, where: a.id in ^ids, order_by: a.id, lock: "FOR NO KEY UPDATE")
         )
 
-        unless Enum.all?(
-                 peers,
-                 &(Contacts.connected?(g.principal_id, &1) and
-                     Contacts.available_in_app?(&1, g.app_origin))
-               ),
-               do: Repo.rollback(:forbidden)
+        if context do
+          unwrap!(
+            DelegatedGroups.with_room(g, context, "chats.read", fn ->
+              unless Enum.all?(people, &context_member?(context, &1)),
+                do: Repo.rollback(:forbidden)
+            end)
+          )
+        else
+          unless Enum.all?(
+                   peers,
+                   &(Contacts.connected?(g.principal_id, &1) and
+                       Contacts.available_in_app?(&1, g.app_origin))
+                 ),
+                 do: Repo.rollback(:forbidden)
+        end
 
-        Repo.one(from a in AppGrant, where: a.id == ^g.id, lock: "FOR UPDATE") ||
+        Repo.one(from(a in AppGrant, where: a.id == ^g.id, lock: "FOR UPDATE")) ||
           Repo.rollback(:forbidden)
 
-        if length(peers) == 1 do
+        if length(peers) == 1 and is_nil(context) do
           unwrap!(DelegatedGroups.direct(g, %{"user_id" => mxid(hd(peers))}))
         else
           room =
@@ -45,25 +64,60 @@ defmodule LakehouseMatrix.RiverWorkspace do
 
           unwrap!(
             DelegatedGroups.with_room(g, room.id, "chats.write", fn ->
-              # The immutable ledger binds the request's participant set on retry.
+              participants = %{"version" => 1, "members" => Enum.map(people, & &1.user_id)}
+
+              participants =
+                if context, do: Map.put(participants, "context_id", context), else: participants
+
               DelegatedGroups.content_event!(
                 g,
                 room.id,
                 "cool.gravitas.river.conversation.v1",
-                %{"version" => 1, "members" => Enum.map(peers, &mxid/1)},
+                participants,
                 "participants"
               )
 
-              for id <- peers, Memberships.membership(room.id, id) not in ["join", "invite"] do
-                unwrap!(
-                  DelegatedGroups.membership(g, room.id, %{
-                    "action" => "invite",
-                    "user_id" => mxid(id)
-                  })
+              if context do
+                DelegatedGroups.template_state!(
+                  g,
+                  room.id,
+                  "cool.gravitas.river.context.v1",
+                  %{"version" => 1, "context_id" => context, "visibility" => "participants"},
+                  ""
                 )
               end
 
-              room
+              for person <- people do
+                if person.principal_id do
+                  unless Memberships.membership(room.id, person.principal_id) in [
+                           "join",
+                           "invite"
+                         ] do
+                    unwrap!(
+                      DelegatedGroups.membership(g, room.id, %{
+                        "action" => "invite",
+                        "user_id" => person.user_id
+                      })
+                    )
+                  end
+                else
+                  unless get_in(State.get(room.id, "m.room.member", person.user_id) || %{}, [
+                           "content",
+                           "membership"
+                         ]) in ["join", "invite"] do
+                    unwrap!(
+                      LakehouseMatrix.Protocol.Rooms.invite(
+                        g.principal_id,
+                        room.id,
+                        person.user_id
+                      )
+                    )
+                  end
+                end
+              end
+
+              # Refresh the description after attaching contextual metadata.
+              Enum.find(DelegatedGroups.list(g), &(&1.id == room.id)) || room
             end)
           )
         end
@@ -133,7 +187,7 @@ defmodule LakehouseMatrix.RiverWorkspace do
       roots =
         Enum.flat_map(@entries, fn type ->
           Repo.all(
-            from e in RoomEvent,
+            from(e in RoomEvent,
               join: m in RoomMembership,
               on: m.room_id == e.room_id and m.principal_id == ^g.principal_id,
               left_join: r in RiverEntryRead,
@@ -143,6 +197,7 @@ defmodule LakehouseMatrix.RiverWorkspace do
                   is_nil(r.event_id) and e.inserted_at >= m.updated_at,
               order_by: [desc: e.inserted_at, desc: e.id],
               limit: 20
+            )
           )
         end)
 
@@ -174,10 +229,11 @@ defmodule LakehouseMatrix.RiverWorkspace do
         Enum.flat_map(@entries, fn type ->
           rows =
             Repo.all(
-              from e in RoomEvent,
+              from(e in RoomEvent,
                 where: e.room_id in ^space_ids and e.type == ^type,
                 order_by: [desc: e.inserted_at, desc: e.id],
                 limit: 6
+              )
             )
 
           projected =
@@ -276,6 +332,34 @@ defmodule LakehouseMatrix.RiverWorkspace do
       LakehouseIam.Changes.notify(%{"principal_id" => g.principal_id})
       %{ok: true}
     end)
+  end
+
+  defp conversation_person!(value, context) do
+    case Identity.parse_user_id(value) do
+      {:ok, _} ->
+        id = person!(value)
+        %{principal_id: id, user_id: mxid(id)}
+
+      _ ->
+        unless context && match?({:ok, _}, LakehouseMatrix.Protocol.Event.user_domain(value)),
+          do: Repo.rollback(:invalid_member)
+
+        %{principal_id: nil, user_id: value}
+    end
+  end
+
+  defp context_member?(context, %{principal_id: id}) when not is_nil(id),
+    do: Memberships.joined?(context, id)
+
+  defp context_member?(context, %{user_id: user}) do
+    case LakehouseMatrix.Protocol.Graph.room(context) do
+      nil ->
+        false
+
+      metadata ->
+        state = LakehouseMatrix.Federation.RoomAccess.state(metadata)
+        get_in(state, [{"m.room.member", user}, "content", "membership"]) == "join"
+    end
   end
 
   defp person!(value) do
