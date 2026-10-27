@@ -45,3 +45,5 @@ config :wallaby,
   base_url: "http://127.0.0.1:#{test_port}",
   driver: Wallaby.Chrome,
   chrome: [headless: true]
+
+config :lakehouse_iam, :protocol_worker_enabled, false

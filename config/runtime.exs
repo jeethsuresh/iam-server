@@ -210,3 +210,31 @@ if matrix_federation and not matrix_native,
   do: raise("Matrix federation requires MATRIX_NATIVE_EVENT_GRAPH=true")
 
 config :lakehouse_matrix, native_event_graph: matrix_native, federation_enabled: matrix_federation
+
+# Provider routes and credentials are operator configuration, never PCR fields.
+if config_env() == :prod do
+  protocol_services = Jason.decode!(System.get_env("PROTOCOL_SERVICES", "{}"))
+  protocol_owners = Jason.decode!(System.get_env("PROTOCOL_OWNERS", "{}"))
+  canonical_origin? = fn origin ->
+    uri = URI.parse(origin)
+    uri.scheme == "https" and is_binary(uri.host) and uri.host != "" and
+      origin == "https://" <> uri.host and uri.port == 443
+  end
+  unless is_map(protocol_services) and is_map(protocol_owners),
+    do: raise("PROTOCOL_SERVICES and PROTOCOL_OWNERS must be JSON objects")
+  Enum.each(protocol_services, fn {origin, service} ->
+    unless canonical_origin?.(origin) and is_map(service) and
+      is_binary(service["key"]) and byte_size(service["key"]) >= 32 and
+      is_list(service["permissions"]) and Enum.all?(service["permissions"], &is_binary/1),
+      do: raise("Invalid PROTOCOL_SERVICES entry")
+  end)
+  unless Enum.all?(protocol_owners, fn {name, origin} ->
+    is_binary(name) and canonical_origin?.(origin) and Map.has_key?(protocol_services, origin)
+  end), do: raise("Protocol owners must be configured services")
+  keys = Enum.map(protocol_services, fn {_, s} -> s["key"] end)
+  unless length(Enum.uniq(keys)) == length(keys), do: raise("Protocol service keys must be distinct")
+  config :lakehouse_iam,
+    protocol_services: protocol_services,
+    protocol_owners: protocol_owners,
+    protocol_gateway: System.get_env("PROTOCOL_GATEWAY_ADDR")
+end
