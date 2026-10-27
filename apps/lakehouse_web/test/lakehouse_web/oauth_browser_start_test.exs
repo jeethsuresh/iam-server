@@ -3,6 +3,7 @@ defmodule LakehouseWeb.OAuthBrowserStartTest do
 
   alias LakehouseIam.{Accounts, Federated, Identifier}
   alias LakehouseIam.Apps.{Grants, Pkce}
+  alias LakehouseIam.Schema.AppGrant
   alias LakehouseWeb.MatrixFixtures
 
   setup do
@@ -38,6 +39,50 @@ defmodule LakehouseWeb.OAuthBrowserStartTest do
     assert query["state"] == params["state"]
     assert query["keep"] == "1"
     query
+  end
+
+  @tag :matrix_full_consent
+  test "full Matrix consent requires all current and future rooms", %{user: user, params: params} do
+    origin = "http://127.0.0.1:4102"
+    {:ok, old} = Grants.upsert(user.id, origin, ~w(profile.name chats.read), :selected)
+    full = Map.put(params, "scope", "profile.name chats.read matrix.full")
+
+    denied =
+      get(signed_in(user), "/oauth/start", Map.put(full, "prompt", "none")) |> callback(full)
+
+    assert denied["error"] == "consent_required"
+    assert Grants.get(user.id, origin).room_mode == :selected
+    refute "matrix.full" in Grants.get(user.id, origin).scopes
+
+    started = get(signed_in(user), "/oauth/start", full)
+    sid = URI.decode_query(URI.parse(redirected_to(started)).query)["sessionID"]
+    html = get(signed_in(user), "/oauth/consent", %{"sessionID" => sid}) |> html_response(200)
+    assert html =~ "Full Matrix access required"
+    refute html =~ "name=\"room_ids[]\""
+    # Omitting/forging room selection cannot turn the required permission into
+    # a partial grant after the user accepts the explicit full-access screen.
+    accepted =
+      post(signed_in(user), "/oauth/consent", %{
+        "sessionID" => sid,
+        "all_rooms" => "false",
+        "room_ids" => []
+      })
+
+    assert redirected_to(accepted) =~ "code="
+    grant = Grants.get(user.id, origin)
+    assert grant.id == old.id
+    assert grant.room_mode == :all and grant.room_ids == []
+    assert "matrix.full" in grant.scopes
+
+    reused =
+      get(signed_in(user), "/oauth/start", Map.put(full, "prompt", "none")) |> callback(full)
+
+    assert reused["code"]
+    refute reused["error"]
+
+    assert {:error, _} =
+             Grants.upsert(user.id, "https://selected.example", ["matrix.full"], :selected)
+    refute AppGrant.changeset(%AppGrant{}, %{scopes: nil}).valid?
   end
 
   test "backend registration can defer identity to the browser session", %{params: params} do

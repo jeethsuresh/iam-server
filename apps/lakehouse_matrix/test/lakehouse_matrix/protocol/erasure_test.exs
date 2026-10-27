@@ -412,6 +412,15 @@ defmodule LakehouseMatrix.ErasureTest do
 
   test "River read models restore prior edits, replies and reactions while hiding erased content from later members",
        c do
+    {:ok, %{"room_id" => space_ref}} =
+      ClientRooms.create(c.author.id, %{
+        "preset" => "public_chat",
+        "creation_content" => %{"type" => "m.space"}
+      })
+    {:ok, _} = Matrix.join_room(c.before.id, space_ref)
+    {:ok, space} = Identity.parse_room_id(space_ref)
+    c = %{c | local: space, ref: space_ref}
+
     {:ok, post} =
       Graph.send(c.local, c.sender, "cool.gravitas.river.post.v1", %{
         "version" => 1,

@@ -476,31 +476,33 @@ defmodule LakehouseMatrix.ClientRooms do
   defp valid_state_content?(_, _), do: true
 
   def persist(principal, room, type, content, key) do
-    if LakehouseMatrix.Protocol.Graph.room(room) do
-      case LakehouseMatrix.Protocol.Graph.send(room, user_id(principal), type, content, key) do
-        {:ok, event} ->
-          {:ok, Events.to_client_event(Repo.get_by!(RoomEvent, event_id: event["event_id"]))}
+    with {:ok, content} <- LakehouseMatrix.RiverContent.bind_space(room, type, content) do
+      if LakehouseMatrix.Protocol.Graph.room(room) do
+        case LakehouseMatrix.Protocol.Graph.send(room, user_id(principal), type, content, key) do
+          {:ok, event} ->
+            {:ok, Events.to_client_event(Repo.get_by!(RoomEvent, event_id: event["event_id"]))}
 
-        error ->
-          error
+          error ->
+            error
+        end
+      else
+        ctx = %Context{
+          room_id: room,
+          principal_id: principal,
+          sender: user_id(principal),
+          event_id: Identity.new_event_id(),
+          type: type,
+          content: content,
+          state_key: key,
+          origin_server_ts: System.system_time(:millisecond)
+        }
+
+        if not is_nil(key),
+          do: State.upsert(room, key, type, content, ctx.event_id, ctx.origin_server_ts)
+
+        with {:ok, record} <- Events.persist(ctx, %{"content" => content}),
+             do: {:ok, Events.to_client_event(record)}
       end
-    else
-      ctx = %Context{
-        room_id: room,
-        principal_id: principal,
-        sender: user_id(principal),
-        event_id: Identity.new_event_id(),
-        type: type,
-        content: content,
-        state_key: key,
-        origin_server_ts: System.system_time(:millisecond)
-      }
-
-      if not is_nil(key),
-        do: State.upsert(room, key, type, content, ctx.event_id, ctx.origin_server_ts)
-
-      with {:ok, record} <- Events.persist(ctx, %{"content" => content}),
-           do: {:ok, Events.to_client_event(record)}
     end
   end
 

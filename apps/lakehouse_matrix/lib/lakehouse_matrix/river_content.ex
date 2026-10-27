@@ -9,11 +9,38 @@ defmodule LakehouseMatrix.RiverContent do
   @edit "cool.gravitas.river.entry.edit.v1"
   @reaction_action "cool.gravitas.river.reaction.v1"
 
+  # The Matrix space room transports entries; child conversation rooms do not
+  # own them. Keep the canonical space ID in the custom event object.
+  def space?(id) do
+    get_in(LakehouseMatrix.State.get(id, "m.room.create") || %{}, ["content", "type"]) ==
+      "m.space" and
+      is_nil(Repo.get(LakehouseMatrix.Schema.RiverChannel, id))
+  end
+
+  def require_space!(id) do
+    unless space?(id), do: Repo.rollback(:space_required)
+  end
+
+  def bind_space(id, type, content) when type in @entry_types do
+    space = LakehouseMatrix.Identity.room_id(id)
+
+    cond do
+      not space?(id) -> {:error, :space_required}
+      not is_map(content) -> {:error, :invalid_event}
+      content["space_id"] not in [nil, space] -> {:error, :invalid_event}
+      true -> {:ok, Map.put(content, "space_id", space)}
+    end
+  end
+
+  def bind_space(_id, _type, content), do: {:ok, content}
+  def entry?(type), do: type in @entry_types
+
   def thread(g, id, p) do
     DelegatedGroups.with_room(g, id, "chats.read", fn ->
       root = target!(id, p["event_id"]) |> LakehouseMatrix.Erasure.record(g.principal_id)
       unless root.type in ["m.room.message" | @entry_types], do: Repo.rollback(:invalid_event)
       root = thread_root(id, root) |> LakehouseMatrix.Erasure.record(g.principal_id)
+      if root.type in @entry_types, do: require_space!(id)
       unless root.type in ["m.room.message" | @entry_types], do: Repo.rollback(:invalid_event)
 
       query =
@@ -32,6 +59,8 @@ defmodule LakehouseMatrix.RiverContent do
 
   def entries(g, id, p) do
     DelegatedGroups.with_room(g, id, "chats.read", fn ->
+      require_space!(id)
+
       type =
         case p["kind"] do
           "post" -> "cool.gravitas.river.post.v1"
@@ -51,6 +80,7 @@ defmodule LakehouseMatrix.RiverContent do
 
   def edit(g, id, p) do
     DelegatedGroups.with_room(g, id, "chats.write", fn ->
+      require_space!(id)
       original = target!(id, p["event_id"])
 
       unless original.type in @entry_types and original.principal_id == g.principal_id,
@@ -72,7 +102,13 @@ defmodule LakehouseMatrix.RiverContent do
         %{
           "version" => 1,
           "m.relates_to" => %{"rel_type" => "m.replace", "event_id" => original.event_id},
-          "m.new_content" => %{"version" => 1, "title" => p["title"], "body" => p["body"]}
+          "space_id" => LakehouseMatrix.Identity.room_id(id),
+          "m.new_content" => %{
+            "version" => 1,
+            "space_id" => LakehouseMatrix.Identity.room_id(id),
+            "title" => p["title"],
+            "body" => p["body"]
+          }
         },
         p["txn_id"]
       )
@@ -86,6 +122,7 @@ defmodule LakehouseMatrix.RiverContent do
   @doc false
   def reaction_authorized!(g, id, p) do
     target = target!(id, p["event_id"])
+    if target.type in @entry_types, do: require_space!(id)
 
     unless target.type in ["m.room.message", "m.sticker" | @entry_types] and
              LakehouseMatrix.RiverReactions.valid?(p["key"]) and

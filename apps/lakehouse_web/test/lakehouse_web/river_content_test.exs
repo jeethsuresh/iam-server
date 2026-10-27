@@ -10,7 +10,7 @@ defmodule LakehouseWeb.RiverContentTest do
     b = MatrixFixtures.user_fixture("contentbob")
     {:ok, ga} = Grants.upsert(a.id, "https://chat.gravitas.cool", @scopes, :all, [])
     {:ok, gb} = Grants.upsert(b.id, "https://chat.gravitas.cool", @scopes, :all, [])
-    {:ok, room} = DelegatedGroups.create(ga, %{"name" => "Content", "kind" => "dm", "txn_id" => "content"})
+    {:ok, room} = DelegatedGroups.create(ga, %{"name" => "Content", "kind" => "space", "txn_id" => "content"})
     {:ok, _} = DelegatedGroups.membership(ga, room.id, %{"action" => "invite", "user_id" => Identity.user_id(b.username)})
     {:ok, _} = DelegatedGroups.membership(gb, room.id, %{"action" => "accept"})
     %{ga: ga, gb: gb, room: room}

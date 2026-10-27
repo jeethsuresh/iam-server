@@ -47,6 +47,7 @@ defmodule LakehouseMatrix.DelegatedGroups do
     with :ok <- scope(grant, "chats.list") do
       groups = list(grant)
       ids = for g <- groups, g.membership == "join", do: g.id
+      space_ids = for g <- groups, g.membership == "join" and g.kind == "space", do: g.id
 
       recent =
         if "chats.read" in grant.scopes do
@@ -54,6 +55,7 @@ defmodule LakehouseMatrix.DelegatedGroups do
             Repo.all(
               from e in RoomEvent,
                 where: e.room_id in ^ids and is_nil(e.state_key) and e.type in ^@types,
+                where: e.type in ["m.room.message", "m.reaction"] or e.room_id in ^space_ids,
                 order_by: [desc: e.inserted_at, desc: e.id],
                 limit: 200
             )
@@ -617,6 +619,7 @@ defmodule LakehouseMatrix.DelegatedGroups do
     with :ok <- scope(grant, "chats.write"),
          :ok <- access(grant, id),
          true <- type in @types && txn?(txn) && is_map(content),
+         {:ok, content} <- LakehouseMatrix.RiverContent.bind_space(id, type, content),
          true <- byte_size(Jason.encode!(content)) <= 250_000,
          true <- IAM.can?(grant.principal_id, "matrix.room.send", Identity.resource_arn(id)),
          :ok <- validate(type, content),
@@ -787,6 +790,9 @@ defmodule LakehouseMatrix.DelegatedGroups do
           do: Repo.rollback(:invalid_relation)
 
         root = Repo.get_by(RoomEvent, room_id: id, event_id: relation["event_id"])
+
+        if root && LakehouseMatrix.RiverContent.entry?(root.type),
+          do: LakehouseMatrix.RiverContent.require_space!(id)
 
         unless root && LakehouseMatrix.RiverPublishing.replies_allowed?(root) &&
                  root.type in [

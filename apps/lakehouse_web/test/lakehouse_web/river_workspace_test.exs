@@ -19,6 +19,12 @@ defmodule LakehouseWeb.RiverWorkspaceTest do
     end
     %{people: people, grants: grants}
   end
+  defp entry_space(g, peer) do
+    {:ok, space} = DelegatedGroups.create(g, %{"name" => "Entries", "kind" => "space", "txn_id" => "entries"})
+    {:ok, _} = DelegatedGroups.membership(g, space.id, %{"action" => "invite", "user_id" => Identity.user_id(peer.username)})
+    {:ok, space}
+  end
+
   test "friend-selected groups are idempotent and retain Matrix invite acceptance", %{people: [a, b, c, _], grants: [ga, gb, _, _]} do
     params = %{"name" => "Study group", "member_ids" => Enum.map([b,c], &Identity.user_id(&1.username)), "txn_id" => "group"}
     assert {:ok, room} = RiverWorkspace.conversation(ga, params)
@@ -54,7 +60,7 @@ defmodule LakehouseWeb.RiverWorkspaceTest do
     assert Enum.find(DelegatedGroups.list(ga), &(&1.id == space.id)).description == "A place to build"
   end
   test "catch-up reads are independent per entry and per user; participating old threads remain discoverable", %{grants: [ga, gb, _, _], people: [_, b, _, _]} do
-    {:ok, dm} = DelegatedGroups.direct(ga, %{"user_id" => Identity.user_id(b.username)})
+    {:ok, dm} = entry_space(ga, b)
     {:ok, _} = DelegatedGroups.membership(gb, dm.id, %{"action" => "accept"})
     {:ok, post} = DelegatedGroups.send(ga, dm.id, "cool.gravitas.river.post.v1", "post", %{"version" => 1, "title" => "News", "body" => "Read this"})
     {:ok, _} = DelegatedGroups.send(gb, dm.id, "m.room.message", "reply", %{"body" => "Following", "m.relates_to" => %{"rel_type" => "m.thread", "event_id" => post["event_id"]}})
@@ -79,7 +85,7 @@ defmodule LakehouseWeb.RiverWorkspaceTest do
     assert {:error, :too_many_connections} = Changes.subscribe(a.id, "https://chat.gravitas.cool")
   end
   test "catch-up excludes acknowledged entries before applying its page bound", %{grants: [ga, gb | _], people: [_, b | _]} do
-    {:ok, dm} = DelegatedGroups.direct(ga,%{"user_id" => Identity.user_id(b.username)})
+    {:ok, dm} = entry_space(ga, b)
     {:ok, _} = DelegatedGroups.membership(gb,dm.id,%{"action"=>"accept"})
     posts = for n <- 1..201 do
       {:ok, post} = DelegatedGroups.send(ga,dm.id,"cool.gravitas.river.post.v1","catchup-#{n}",%{"version"=>1,"title"=>"Entry #{n}","body"=>"Body"})
@@ -116,7 +122,7 @@ defmodule LakehouseWeb.RiverWorkspaceTest do
   end
 
   test "catch-up has independent bounds and previews; joining does not mark old entries unread", %{grants: [ga, gb | _], people: [_, b | _]} do
-    {:ok, dm} = DelegatedGroups.direct(ga, %{"user_id"=>Identity.user_id(b.username)})
+    {:ok, dm} = entry_space(ga, b)
     {:ok, old} = DelegatedGroups.send(ga, dm.id, "cool.gravitas.river.post.v1", "before-join", %{"version"=>1,"title"=>"Before join","body"=>"History"})
     {:ok, _} = DelegatedGroups.membership(gb, dm.id, %{"action"=>"accept"})
     for kind <- ~w(post discussion), n <- 1..21 do

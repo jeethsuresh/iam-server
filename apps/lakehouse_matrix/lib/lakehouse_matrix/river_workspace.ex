@@ -128,6 +128,7 @@ defmodule LakehouseMatrix.RiverWorkspace do
          {:ok, overview} <- DelegatedGroups.overview(g) do
       groups = overview.groups
       ids = for x <- groups, x.membership == "join", do: x.id
+      space_ids = Enum.filter(ids, &RiverContent.space?/1)
 
       roots =
         Enum.flat_map(@entries, fn type ->
@@ -138,7 +139,7 @@ defmodule LakehouseMatrix.RiverWorkspace do
               left_join: r in RiverEntryRead,
               on: r.event_id == e.event_id and r.principal_id == ^g.principal_id,
               where:
-                e.room_id in ^ids and e.type == ^type and e.principal_id != ^g.principal_id and
+                e.room_id in ^space_ids and e.type == ^type and e.principal_id != ^g.principal_id and
                   is_nil(r.event_id) and e.inserted_at >= m.updated_at,
               order_by: [desc: e.inserted_at, desc: e.id],
               limit: 20
@@ -166,6 +167,7 @@ defmodule LakehouseMatrix.RiverWorkspace do
         for {room, target} <- targets,
             e = Repo.get_by(RoomEvent, room_id: room, event_id: target),
             not is_nil(e),
+            not RiverContent.entry?(e.type) or RiverContent.space?(room),
             do: Map.put(hd(RiverContent.decorate([e], g.principal_id)), "group_id", room)
 
       recent_entries =
@@ -173,7 +175,7 @@ defmodule LakehouseMatrix.RiverWorkspace do
           rows =
             Repo.all(
               from e in RoomEvent,
-                where: e.room_id in ^ids and e.type == ^type,
+                where: e.room_id in ^space_ids and e.type == ^type,
                 order_by: [desc: e.inserted_at, desc: e.id],
                 limit: 6
             )
@@ -213,7 +215,7 @@ defmodule LakehouseMatrix.RiverWorkspace do
     content = event["rendered_content"] || event["content"]
 
     content =
-      Map.take(content, ~w(version title body))
+      Map.take(content, ~w(version space_id title body))
       |> Map.update("body", "", &String.slice(&1, 0, 300))
 
     event |> Map.put("content", content) |> Map.delete("rendered_content")
@@ -263,6 +265,7 @@ defmodule LakehouseMatrix.RiverWorkspace do
 
   def read_entry(g, id, p) do
     DelegatedGroups.with_room(g, id, "chats.read", fn ->
+      RiverContent.require_space!(id)
       e = Repo.get_by(RoomEvent, room_id: id, event_id: p["event_id"])
       unless e && e.type in @entries, do: Repo.rollback(:invalid_event)
 

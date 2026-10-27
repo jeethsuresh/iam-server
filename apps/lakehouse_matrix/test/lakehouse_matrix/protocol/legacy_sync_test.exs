@@ -136,7 +136,8 @@ defmodule LakehouseMatrix.LegacySyncTest do
     refute Enum.any?(invite["state"], &(&1["type"] == "m.room.message"))
 
     # A River discussion's parent policy still applies to archived history.
-    {:ok, %{"room_id" => parent_ref}} = ClientRooms.create(c.alice.id, %{})
+    {:ok, %{"room_id" => parent_ref}} =
+      ClientRooms.create(c.alice.id, %{"creation_content" => %{"type" => "m.space"}})
     {:ok, parent} = Identity.parse_room_id(parent_ref)
     {:ok, post} = Graph.send(parent, c.user, "cool.gravitas.river.post.v1", %{"body" => "Post"})
 
