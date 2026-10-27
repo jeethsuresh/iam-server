@@ -6,6 +6,7 @@ defmodule LakehouseWeb.Telemetry do
 
   @impl true
   def init(_arg) do
+    LakehouseWeb.Performance.attach()
     Supervisor.init([], strategy: :one_for_one)
   end
 end

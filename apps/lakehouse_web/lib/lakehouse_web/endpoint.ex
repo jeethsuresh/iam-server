@@ -21,6 +21,7 @@ defmodule LakehouseWeb.Endpoint do
     only: LakehouseWeb.static_paths()
 
   plug Plug.RequestId
+  plug LakehouseWeb.Performance
 
   plug Plug.Telemetry,
     event_prefix: [:phoenix, :endpoint]

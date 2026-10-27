@@ -99,13 +99,17 @@ defmodule LakehouseMatrix.SlidingSync do
 
   defp poll(principal, device, params, previous, format, deadline) do
     with {:ok, {response, state, high}} <-
-           Repo.transaction(fn -> build(principal, device, params, previous, format) end) do
+           Repo.transaction(fn ->
+             LakehouseMatrix.ReadSnapshot.run(fn ->
+               build(principal, device, params, previous, format)
+             end)
+           end) do
       remaining = deadline - System.monotonic_time(:millisecond)
 
       if not is_nil(previous) and remaining > 0 and map_size(response["rooms"]) == 0 and
            extensions_empty?(response["extensions"]) and
            response["lists"] == (previous.state["lists"] || %{}) do
-        Process.sleep(min(remaining, 200))
+        LakehouseMatrix.SyncWait.until_change(high, deadline, principal)
         poll(principal, device, params, previous, format, deadline)
       else
         token = ClientStore.random()

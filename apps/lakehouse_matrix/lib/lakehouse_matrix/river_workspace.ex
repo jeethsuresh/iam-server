@@ -179,8 +179,8 @@ defmodule LakehouseMatrix.RiverWorkspace do
 
   def home(g) do
     with "chats.read" <- Enum.find(g.scopes, &(&1 == "chats.read")),
-         {:ok, overview} <- DelegatedGroups.overview(g) do
-      groups = overview.groups
+         "chats.list" <- Enum.find(g.scopes, &(&1 == "chats.list")) do
+      groups = DelegatedGroups.summaries(g)
       ids = for x <- groups, x.membership == "join", do: x.id
       space_ids = Enum.filter(ids, &RiverContent.space?/1)
 
