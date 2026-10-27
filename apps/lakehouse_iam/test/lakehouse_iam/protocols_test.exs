@@ -256,6 +256,48 @@ defmodule LakehouseIam.ProtocolsTest do
     assert Repo.aggregate(Delivery, :count) == 1
   end
 
+  test "default HTTP transport uses the provider credential, preserves the public Host and retries",
+       %{user: user, grant: grant, sender: sender} do
+    defaults = Req.default_options()
+    gateway = Application.get_env(:lakehouse_iam, :protocol_gateway)
+
+    on_exit(fn ->
+      Req.default_options(defaults)
+
+      if gateway,
+        do: Application.put_env(:lakehouse_iam, :protocol_gateway, gateway),
+        else: Application.delete_env(:lakehouse_iam, :protocol_gateway)
+    end)
+
+    Application.put_env(:lakehouse_iam, :protocol_gateway, "relay.internal:443")
+    assert {:ok, _} = Protocols.register(grant, registry())
+    assert {:ok, _} = Protocols.invoke(sender, user.id, invocation("transport"))
+
+    plug = fn conn, status ->
+      assert conn.host == "relay.internal"
+      assert conn.request_path == "/api/protocols/invoke"
+      assert Plug.Conn.get_req_header(conn, "host") == ["apps.example"]
+
+      assert Plug.Conn.get_req_header(conn, "authorization") == [
+               "Bearer " <> String.duplicate("s", 48)
+             ]
+
+      {:ok, raw, conn} = Plug.Conn.read_body(conn)
+      body = Jason.decode!(raw)
+      assert body["sender"] == @sender
+      assert body["subject"] == user.id
+      Plug.Conn.send_resp(conn, status, String.duplicate("x", 16384))
+    end
+
+    Req.default_options(Keyword.put(defaults, :plug, fn conn -> plug.(conn, 503) end))
+    assert :worked = Protocols.deliver_once()
+    assert Repo.aggregate(Delivery, :count) == 1
+    Repo.update_all(Delivery, set: [available_at: DateTime.add(DateTime.utc_now(), -1, :second)])
+    Req.default_options(Keyword.put(defaults, :plug, fn conn -> plug.(conn, 200) end))
+    assert :worked = Protocols.deliver_once()
+    assert Repo.aggregate(Delivery, :count) == 0
+  end
+
   test "schema subset rejects unsupported keywords and validates nested objects" do
     assert JsonSchema.schema?(%{"type" => "object"})
     refute JsonSchema.schema?(%{"type" => "object", "$ref" => "https://example/schema"})
