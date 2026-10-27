@@ -27,7 +27,7 @@ defmodule LakehouseIam.Schema.AppGrant do
   end
 
   defp validate_matrix_access(changeset) do
-    if "matrix.full" in get_field(changeset, :scopes, []) and
+    if "matrix.full" in (get_field(changeset, :scopes) || []) and
          get_field(changeset, :room_mode) != :all,
        do: add_error(changeset, :room_mode, "full Matrix access requires all rooms"),
        else: changeset

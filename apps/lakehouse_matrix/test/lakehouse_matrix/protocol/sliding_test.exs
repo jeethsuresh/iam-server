@@ -52,7 +52,7 @@ defmodule LakehouseMatrix.Protocol.SlidingTest do
       })
 
     {:ok, _} = Matrix.leave_room(ctx.bob.id, ref)
-    {:ok, %{"room_id" => parent_ref}} = room(ctx, %{})
+    {:ok, %{"room_id" => parent_ref}} = room(ctx, %{"creation_content" => %{"type" => "m.space"}})
     {:ok, parent} = Identity.parse_room_id(parent_ref)
 
     {:ok, post} =

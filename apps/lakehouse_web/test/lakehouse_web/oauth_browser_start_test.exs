@@ -3,6 +3,7 @@ defmodule LakehouseWeb.OAuthBrowserStartTest do
 
   alias LakehouseIam.{Accounts, Federated, Identifier}
   alias LakehouseIam.Apps.{Grants, Pkce}
+  alias LakehouseIam.Schema.AppGrant
   alias LakehouseWeb.MatrixFixtures
 
   setup do
@@ -40,6 +41,7 @@ defmodule LakehouseWeb.OAuthBrowserStartTest do
     query
   end
 
+  @tag :matrix_full_consent
   test "full Matrix consent requires all current and future rooms", %{user: user, params: params} do
     origin = "http://127.0.0.1:4102"
     {:ok, old} = Grants.upsert(user.id, origin, ~w(profile.name chats.read), :selected)
@@ -80,6 +82,7 @@ defmodule LakehouseWeb.OAuthBrowserStartTest do
 
     assert {:error, _} =
              Grants.upsert(user.id, "https://selected.example", ["matrix.full"], :selected)
+    refute AppGrant.changeset(%AppGrant{}, %{scopes: nil}).valid?
   end
 
   test "backend registration can defer identity to the browser session", %{params: params} do
