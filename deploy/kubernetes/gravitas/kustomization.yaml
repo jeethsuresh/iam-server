@@ -7,6 +7,7 @@ resources:
   - media.yaml
   - ingress.yaml
 patches:
+  - path: cpu-burst.yaml
   - path: app-storage.yaml
   - path: matrix-signing.patch.yaml
   - target:

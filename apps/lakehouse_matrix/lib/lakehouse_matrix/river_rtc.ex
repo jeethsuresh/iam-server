@@ -212,7 +212,7 @@ defmodule LakehouseMatrix.RiverRtc do
   def list(g) do
     with true <- "chats.read" in g.scopes and "calls.read" in g.scopes do
       rooms =
-        DelegatedGroups.list(g)
+        DelegatedGroups.summaries(g)
         |> Enum.filter(&(&1.membership == "join"))
         |> Map.new(&{&1.id, &1})
 

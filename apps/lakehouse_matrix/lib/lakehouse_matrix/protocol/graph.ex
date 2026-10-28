@@ -8,9 +8,16 @@ defmodule LakehouseMatrix.Protocol.Graph do
   alias LakehouseMatrix.Protocol.{Authorization, Event, Policy, StateResolution}
   alias LakehouseMatrix.Schema.{Pdu, ProtocolRoom, Room, RoomEvent, RoomState, RoomMembership}
 
-  def room(local_id), do: Repo.get(ProtocolRoom, local_id)
+  def room(local_id),
+    do:
+      LakehouseMatrix.ReadSnapshot.fetch({:room, local_id}, fn ->
+        Repo.get(ProtocolRoom, local_id)
+      end)
+
   def room_by_id(id), do: Repo.get_by(ProtocolRoom, room_id: id)
-  def event(id), do: Repo.get(Pdu, id)
+
+  def event(id),
+    do: LakehouseMatrix.ReadSnapshot.fetch({:event, id}, fn -> Repo.get(Pdu, id) end)
 
   def ancestor?(local_id, ancestor, descendants) do
     if descendants == [] do

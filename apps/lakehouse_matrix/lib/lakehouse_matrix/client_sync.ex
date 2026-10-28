@@ -36,7 +36,9 @@ defmodule LakehouseMatrix.ClientSync do
       poll(
         fn -> snapshot(principal, device, since, full, filter) end,
         deadline,
-        not is_nil(params["since"])
+        not is_nil(params["since"]),
+        principal,
+        device
       )
     else
       false -> {:error, :invalid_param}
@@ -45,87 +47,89 @@ defmodule LakehouseMatrix.ClientSync do
   end
 
   def snapshot(principal, device, since, full, filter \\ %{}) do
-    Repo.transaction(fn ->
-      high = ClientStore.lock!() |> delivery_position(principal, device, since)
-      LakehouseMatrix.AccountModeration.require!(principal, :read)
-      memberships = memberships_at(principal, high)
-      room_filter = filter["room"] || %{}
-      joined = ClientFilters.rooms(memberships.join, room_filter)
-      invited = ClientFilters.rooms(memberships.invite, room_filter)
-      left = ClientFilters.rooms(memberships.leave, room_filter)
+    LakehouseMatrix.ReadSnapshot.run(fn ->
+      Repo.transaction(fn ->
+        high = ClientStore.lock!() |> delivery_position(principal, device, since)
+        LakehouseMatrix.AccountModeration.require!(principal, :read)
+        memberships = memberships_at(principal, high)
+        room_filter = filter["room"] || %{}
+        joined = ClientFilters.rooms(memberships.join, room_filter)
+        invited = ClientFilters.rooms(memberships.invite, room_filter)
+        left = ClientFilters.rooms(memberships.leave, room_filter)
 
-      join =
-        for room <- joined, into: %{} do
-          {Identity.room_id(room),
-           room_payload(principal, device, room, since, high, full, filter)}
-        end
+        join =
+          for room <- joined, into: %{} do
+            {Identity.room_id(room),
+             room_payload(principal, device, room, since, high, full, filter)}
+          end
 
-      join =
-        if full,
-          do: join,
-          else:
-            Map.reject(join, fn {ref, payload} ->
-              {:ok, id} = Identity.parse_room_id(ref)
+        join =
+          if full,
+            do: join,
+            else:
+              Map.reject(join, fn {ref, payload} ->
+                {:ok, id} = Identity.parse_room_id(ref)
 
-              room_empty?(payload) and
-                not LakehouseMatrix.Notifications.changed?(principal, id, since, high)
-            end)
+                room_empty?(payload) and
+                  not LakehouseMatrix.Notifications.changed?(principal, id, since, high)
+              end)
 
-      invite =
-        for room <- invited,
-            full or membership_changed?(principal, room, since, high),
-            into: %{} do
-          {Identity.room_id(room),
-           %{"invite_state" => %{"events" => stripped(room, high, principal)}}}
-        end
+        invite =
+          for room <- invited,
+              full or membership_changed?(principal, room, since, high),
+              into: %{} do
+            {Identity.room_id(room),
+             %{"invite_state" => %{"events" => stripped(room, high, principal)}}}
+          end
 
-      leave =
-        for room <- left,
-            (not full and membership_changed?(principal, room, since, high)) or
-              (full and room_filter["include_leave"] == true),
-            into: %{} do
-          membership = last_membership(principal, room, high)
+        leave =
+          for room <- left,
+              (not full and membership_changed?(principal, room, since, high)) or
+                (full and room_filter["include_leave"] == true),
+              into: %{} do
+            membership = last_membership(principal, room, high)
 
-          {Identity.room_id(room),
-           room_payload(principal, device, room, since, membership.stream_id, full, filter)}
-        end
+            {Identity.room_id(room),
+             room_payload(principal, device, room, since, membership.stream_id, full, filter)}
+          end
 
-      knock =
-        for room <- ClientFilters.rooms(memberships.knock, room_filter),
-            full or membership_changed?(principal, room, since, high),
-            into: %{},
-            do:
-              {Identity.room_id(room),
-               %{"knock_state" => %{"events" => stripped(room, high, principal)}}}
+        knock =
+          for room <- ClientFilters.rooms(memberships.knock, room_filter),
+              full or membership_changed?(principal, room, since, high),
+              into: %{},
+              do:
+                {Identity.room_id(room),
+                 %{"knock_state" => %{"events" => stripped(room, high, principal)}}}
 
-      room_sections = %{"join" => join, "invite" => invite, "leave" => leave}
+        room_sections = %{"join" => join, "invite" => invite, "leave" => leave}
 
-      room_sections =
-        if knock == %{}, do: room_sections, else: Map.put(room_sections, "knock", knock)
+        room_sections =
+          if knock == %{}, do: room_sections, else: Map.put(room_sections, "knock", knock)
 
-      %{
-        "next_batch" => Cursor.encode("sync", principal, device, high),
-        "rooms" => room_sections,
-        "account_data" => %{
-          "events" =>
-            ClientStore.account_data(principal, "", if(full, do: 0, else: since), high)
-            |> ClientFilters.events(filter["account_data"] || %{})
-        },
-        "to_device" => %{"events" => ClientStore.to_device(principal, device, since, high)},
-        "device_lists" => device_lists(principal, since, high),
-        "device_one_time_keys_count" => LakehouseMatrix.ClientKeys.counts(principal, device),
-        "device_unused_fallback_key_types" =>
-          LakehouseMatrix.ClientKeys.unused_fallback(principal, device),
-        "presence" => %{
-          "events" =>
-            LakehouseMatrix.Ephemeral.presence_events(
-              principal,
-              if(full, do: 0, else: since),
-              high
-            )
-            |> ClientFilters.events(filter["presence"] || %{})
+        %{
+          "next_batch" => Cursor.encode("sync", principal, device, high),
+          "rooms" => room_sections,
+          "account_data" => %{
+            "events" =>
+              ClientStore.account_data(principal, "", if(full, do: 0, else: since), high)
+              |> ClientFilters.events(filter["account_data"] || %{})
+          },
+          "to_device" => %{"events" => ClientStore.to_device(principal, device, since, high)},
+          "device_lists" => device_lists(principal, since, high),
+          "device_one_time_keys_count" => LakehouseMatrix.ClientKeys.counts(principal, device),
+          "device_unused_fallback_key_types" =>
+            LakehouseMatrix.ClientKeys.unused_fallback(principal, device),
+          "presence" => %{
+            "events" =>
+              LakehouseMatrix.Ephemeral.presence_events(
+                principal,
+                if(full, do: 0, else: since),
+                high
+              )
+              |> ClientFilters.events(filter["presence"] || %{})
+          }
         }
-      }
+      end)
     end)
   end
 
@@ -137,8 +141,10 @@ defmodule LakehouseMatrix.ClientSync do
 
   def reader_allowed?(room, principal),
     do:
-      LakehouseMatrix.RiverRtc.chat_allowed?(room, principal) and
-        LakehouseMatrix.RiverPublishing.reader_allowed?(room, principal)
+      LakehouseMatrix.ReadSnapshot.fetch({:reader_allowed, room, principal}, fn ->
+        LakehouseMatrix.RiverRtc.chat_allowed?(room, principal) and
+          LakehouseMatrix.RiverPublishing.reader_allowed?(room, principal)
+      end)
 
   # A departed River discussion can also lose access through its parent. Keep
   # the membership transition, without returning its archived content or state.
@@ -436,7 +442,11 @@ defmodule LakehouseMatrix.ClientSync do
         |> LakehouseMatrix.ClientEventMetadata.previous_content(principal)
       end)
 
-  def state_at(room, high) do
+  def state_at(room, high),
+    do:
+      LakehouseMatrix.ReadSnapshot.fetch({:state, room, high}, fn -> load_state_at(room, high) end)
+
+  defp load_state_at(room, high) do
     if LakehouseMatrix.Protocol.Graph.room(room) do
       ids = LakehouseMatrix.Protocol.Graph.state_at_stream(room, high) |> Map.values()
 
@@ -611,13 +621,14 @@ defmodule LakehouseMatrix.ClientSync do
 
   def integer(_, _, _, _), do: {:error, :invalid_param}
 
-  defp poll(fun, deadline, wait) do
+  defp poll(fun, deadline, wait, principal, device) do
     with {:ok, payload} <- fun.() do
       remaining = deadline - System.monotonic_time(:millisecond)
 
       if wait and empty?(payload) and remaining > 0 do
-        Process.sleep(min(remaining, 200))
-        poll(fun, deadline, true)
+        {:ok, position} = Cursor.decode(payload["next_batch"], "sync", principal, device)
+        LakehouseMatrix.SyncWait.until_change(position, deadline, principal)
+        poll(fun, deadline, true, principal, device)
       else
         {:ok, payload}
       end
@@ -751,7 +762,10 @@ defmodule LakehouseMatrix.ClientSync do
     do: Repo.one(from e in RoomEvent, where: e.event_id == ^id, select: e.stream_id) || 0
 
   defp mxid(principal),
-    do: Repo.get!(LakehouseIam.Schema.Principal, principal).username |> Identity.user_id()
+    do:
+      LakehouseMatrix.ReadSnapshot.fetch({:mxid, principal}, fn ->
+        Repo.get!(LakehouseIam.Schema.Principal, principal).username |> Identity.user_id()
+      end)
 
   def delivery_position(high, principal, device, since) do
     pending =

@@ -176,13 +176,15 @@ defmodule LakehouseMatrix.ClientStore do
   end
 
   def get_data(principal, room, type) do
-    Repo.one(
-      from a in "matrix_account_data",
-        where:
-          a.principal_id == type(^principal, :binary_id) and a.room_id == ^room and
-            a.type == ^type,
-        select: a.content
-    )
+    LakehouseMatrix.ReadSnapshot.fetch({:account_data, principal, room, type}, fn ->
+      Repo.one(
+        from a in "matrix_account_data",
+          where:
+            a.principal_id == type(^principal, :binary_id) and a.room_id == ^room and
+              a.type == ^type,
+          select: a.content
+      )
+    end)
   end
 
   def create_filter(principal, content) do

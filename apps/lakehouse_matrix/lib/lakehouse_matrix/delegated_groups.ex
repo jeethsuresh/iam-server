@@ -36,11 +36,27 @@ defmodule LakehouseMatrix.DelegatedGroups do
         (Memberships.joined?(id, g.principal_id) or Memberships.invited?(id, g.principal_id))
 
   def list(grant) do
+    visible_room_ids(grant)
+    |> Enum.map(&describe(&1, grant.principal_id))
+  end
+
+  # Home and call lists only need identity, name and membership. Do not compute
+  # every room's unread history, participant graph and full member roster here.
+  def summaries(grant) do
+    for id <- visible_room_ids(grant) do
+      %{
+        id: id,
+        name: Rooms.get_room(id).name,
+        membership: Memberships.membership(id, grant.principal_id)
+      }
+    end
+  end
+
+  defp visible_room_ids(grant) do
     (Memberships.joined_room_ids(grant.principal_id) ++
        Memberships.invited_room_ids(grant.principal_id))
     |> Enum.uniq()
     |> Enum.filter(&(allowed(grant, &1) == :ok or invitation_allowed?(grant, &1)))
-    |> Enum.map(&describe(&1, grant.principal_id))
   end
 
   def subgroups(grant, id) do

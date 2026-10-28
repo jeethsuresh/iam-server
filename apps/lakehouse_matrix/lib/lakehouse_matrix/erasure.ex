@@ -379,15 +379,17 @@ defmodule LakehouseMatrix.Erasure do
 
   defp client_snapshot(id, principal) when is_binary(id),
     do:
-      Repo.one(
-        from a in "matrix_erased_events",
-          where: a.event_id == ^id,
-          select: %{
-            content: a.original_content,
-            allowed:
-              fragment("matrix_erasure_access(?, ?)", a.event_id, type(^principal, :binary_id))
-          }
-      )
+      LakehouseMatrix.ReadSnapshot.fetch({:erasure_view, id, principal}, fn ->
+        Repo.one(
+          from a in "matrix_erased_events",
+            where: a.event_id == ^id,
+            select: %{
+              content: a.original_content,
+              allowed:
+                fragment("matrix_erasure_access(?, ?)", a.event_id, type(^principal, :binary_id))
+            }
+        )
+      end)
 
   defp client_snapshot(_, _), do: nil
 end
