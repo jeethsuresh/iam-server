@@ -7,6 +7,7 @@ defmodule LakehouseIam.NativeBroker do
   alias LakehouseIam.Schema.{AppGrant, Session}
 
   @scope "native.broker"
+  @river_scopes ~w(profile.name matrix.full chats.list chats.read chats.write groups.create groups.manage groups.join spaces.channels contacts.read contacts.manage calls.read calls.join posts.publish)
 
   def origin, do: Application.get_env(:lakehouse_iam, :native_broker_origin)
 
@@ -51,7 +52,9 @@ defmodule LakehouseIam.NativeBroker do
               lock: "FOR UPDATE"
           ) || Repo.rollback(:consent_required)
 
-        unless Scopes.covers?(grant.scopes, request.scopes), do: Repo.rollback(:consent_required)
+        unless Scopes.covers?(grant.scopes, request.scopes) and
+                 ("matrix.full" not in request.scopes or grant.room_mode == :all),
+          do: Repo.rollback(:consent_required)
         remaining_ms = min(DateTime.diff(family.expires_at, DateTime.utc_now(), :millisecond), 60_000)
         if remaining_ms < 1_000, do: Repo.rollback(:invalid_token)
         code = :crypto.strong_rand_bytes(32) |> Base.url_encode64(padding: false)
@@ -115,15 +118,24 @@ defmodule LakehouseIam.NativeBroker do
     }
 
     with true <- is_binary(app_origin) and app_origin != origin(),
-         "profile.name" <- params["scope"],
          {:ok, ^app_origin} <- Origin.from_url(app_origin),
          "S256" <- params["code_challenge_method"],
          state when is_binary(state) and byte_size(state) in 1..1024 <- params["state"],
          {:ok, request} <- Federated.validate_request(attrs),
-         ["profile.name"] <- request.scopes do
+         true <- supported_request?(request) do
       {:ok, request}
     else
       _ -> {:error, :invalid_request}
     end
+  end
+
+  # Native brokers may reuse existing River consent, never request arbitrary
+  # chat capabilities for another target or add to an existing selected grant.
+  defp supported_request?(%{scopes: ["profile.name"]}), do: true
+
+  defp supported_request?(request) do
+    river = Application.get_env(:lakehouse_iam, :native_broker_river_origin, "https://chat.gravitas.cool")
+    request.app_origin == river and request.redirect_url == river <> "/auth/gravitas/callback" and
+      MapSet.new(request.scopes) == MapSet.new(@river_scopes)
   end
 end

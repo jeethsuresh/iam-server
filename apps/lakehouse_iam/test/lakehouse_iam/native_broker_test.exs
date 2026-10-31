@@ -167,4 +167,34 @@ defmodule LakehouseIam.NativeBrokerTest do
       assert {:error, :invalid_request} = NativeBroker.authorize(c.pair.access_token, params)
     end
   end
+
+  test "River reuses only existing full consent and retains the original family", c do
+    old = Application.get_env(:lakehouse_iam, :native_broker_river_origin)
+    Application.put_env(:lakehouse_iam, :native_broker_river_origin, @app)
+    on_exit(fn ->
+      if old, do: Application.put_env(:lakehouse_iam, :native_broker_river_origin, old),
+        else: Application.delete_env(:lakehouse_iam, :native_broker_river_origin)
+    end)
+    scopes = ~w(profile.name matrix.full chats.list chats.read chats.write groups.create groups.manage groups.join spaces.channels contacts.read contacts.manage calls.read calls.join posts.publish)
+    params = Map.put(c.params, "scope", Enum.join(scopes, " "))
+    assert {:error, :consent_required} = NativeBroker.authorize(c.pair.access_token, params)
+    refute Grants.get(c.user.id, @app)
+    consent(c)
+    assert {:error, :consent_required} = NativeBroker.authorize(c.pair.access_token, params)
+    {:ok, _} = Grants.upsert(c.user.id, @app, scopes, :all)
+    assert {:ok, result} = NativeBroker.authorize(c.pair.access_token, params)
+    assert {:ok, child} = OAuth.exchange_code(result.code, c.verifier, result.redirect_uri)
+    assert MapSet.new(String.split(child.scope)) == MapSet.new(scopes)
+    assert child.session_id == c.family_id
+    assert {:ok, auth} = Tokens.verify_access(child.access_token)
+    assert auth.grant.room_mode == :all
+    refute "native.broker" in auth.token.scopes
+    for bad <- [Map.put(params, "scope", "profile.name chats.read"),
+                Map.put(params, "scope", Enum.join(scopes ++ ["native.broker"], " ")),
+                Map.put(params, "redirect_uri", @app <> "/other")] do
+      assert {:error, :invalid_request} = NativeBroker.authorize(c.pair.access_token, bad)
+    end
+    :ok = Sessions.revoke(c.family.refresh_token, :browser)
+    assert {:error, :invalid} = Tokens.check_session(child.session_check_token)
+  end
 end
