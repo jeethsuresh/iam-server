@@ -30,7 +30,7 @@ defmodule LakehouseIam.Federated do
 
     with {:ok, username} <- optional_username(attr(attrs, :username, "username")),
          :ok <- validate_state(state, username),
-         {:ok, scopes} <- Scopes.parse(attr(attrs, :scope, "scope") || ""),
+         {:ok, scopes} <- Scopes.parse(attr(attrs, :scope, "scope") || "profile.name"),
          caller_url <- attr(attrs, :caller_url, "callerURL"),
          redirect_url <- attr(attrs, :redirect_url, "redirectURL"),
          :ok <- validate_url(caller_url, "callerURL"),

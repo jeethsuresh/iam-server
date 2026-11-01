@@ -63,6 +63,7 @@ defmodule LakehouseWeb.Router do
 
     get "/oauth/start", OAuthController, :start
     get "/oauth/authorize", OAuthController, :authorize
+    get "/profile/pictures/:key", IamProfileController, :picture
   end
 
   scope "/", LakehouseWeb do
@@ -90,6 +91,7 @@ defmodule LakehouseWeb.Router do
     get "/profile", IamProfileController, :show
     get "/media/:serverName/:mediaId", WebMediaController, :show
 
+    post "/web/settings/profile", SettingsController, :update_profile
     post "/web/settings/password", ProfilePasswordController, :update_browser
     post "/web/admin/approve", AdminController, :approve
     post "/web/settings/apps/revoke", SettingsController, :revoke_app

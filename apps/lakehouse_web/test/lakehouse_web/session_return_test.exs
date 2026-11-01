@@ -89,7 +89,7 @@ defmodule LakehouseWeb.SessionReturnTest do
 
     assert redirected_to(conn) == path
     conn = conn |> recycle() |> get(path)
-    assert redirected_to(conn) == Catalog.launch_url(service, user.username)
+    assert redirected_to(conn) == Catalog.launch_url(service)
   end
 
   test "external, malformed and action destinations cannot be restored from session data" do

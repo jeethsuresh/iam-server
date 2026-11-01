@@ -68,7 +68,12 @@ defmodule LakehouseIam.Accounts do
 
         principal_cs =
           %Principal{}
-          |> Principal.registration_changeset(%{type: :user, username: canonical, active: active})
+          |> Principal.registration_changeset(%{
+            type: :user,
+            username: canonical,
+            active: active,
+            full_name: Keyword.get(opts, :full_name)
+          })
 
         hash = Argon2.hash_pwd_salt(password)
 

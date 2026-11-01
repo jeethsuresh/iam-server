@@ -18,12 +18,28 @@ defmodule LakehouseWeb.SettingsController do
 
     render(conn, :index,
       username: conn.assigns.username,
+      profile: LakehouseIam.Repo.get!(LakehouseIam.Schema.Principal, conn.assigns.principal_id),
       current_user_is_admin: Map.get(conn.assigns, :current_user_is_admin, false),
       pending_users: pending,
       connected_apps: connected_apps,
       flash_info: flash && Phoenix.Flash.get(flash, :info),
       flash_error: flash && Phoenix.Flash.get(flash, :error)
     )
+  end
+
+  def update_profile(conn, params) do
+    case LakehouseIam.Profiles.update(conn.assigns.principal_id, params) do
+      {:ok, _} ->
+        conn |> put_flash(:info, "Profile updated.") |> redirect(to: ~p"/settings")
+
+      {:error, _} ->
+        conn
+        |> put_flash(
+          :error,
+          "Use a full name of up to 120 characters and a PNG, JPEG or WebP picture up to 256 KB."
+        )
+        |> redirect(to: ~p"/settings")
+    end
   end
 
   def revoke_app(conn, %{"origin" => origin}) do

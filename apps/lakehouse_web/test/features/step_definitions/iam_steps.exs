@@ -21,6 +21,12 @@ defmodule LakehouseWeb.Bdd.IamSteps do
     {:ok, Map.put(context, :users, Map.put(users, username, password))}
   end
 
+  step "user {string} has full name {string}", %{args: [username, name]} do
+    {:ok, user} = Accounts.fetch_user(username)
+    assert {:ok, _} = LakehouseIam.Profiles.update(user.id, %{"full_name" => name})
+    :ok
+  end
+
   step "a pending user {string} with password {string}",
        %{args: [username, password]} = context do
     MatrixFixtures.ensure_rbac!()

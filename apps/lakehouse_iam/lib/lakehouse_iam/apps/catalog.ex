@@ -27,14 +27,6 @@ defmodule LakehouseIam.Apps.Catalog do
     %{connected: connected, available: available, uncatalogued: uncatalogued}
   end
 
-  # Only the public identifier crosses domains here; credentials and tokens stay out of URLs.
-  def launch_url(service, username) do
-    uri = URI.parse(service.login_url)
-
-    query =
-      URI.decode_query(uri.query || "")
-      |> Map.put("login_hint", LakehouseIam.Identifier.format(username))
-
-    URI.to_string(%{uri | query: URI.encode_query(query)})
-  end
+  # A launch URL must not disclose the signed-in account before consent.
+  def launch_url(service), do: service.login_url
 end

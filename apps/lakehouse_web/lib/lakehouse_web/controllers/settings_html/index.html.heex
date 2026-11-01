@@ -19,6 +19,23 @@
 </section>
 
 <section class="settings-section">
+  <h2>Profile</h2>
+  <form action={~p"/web/settings/profile"} method="post" enctype="multipart/form-data">
+    <input type="hidden" name="_csrf_token" value={get_csrf_token()} />
+    <label for="full_name">Full name</label>
+    <input id="full_name" name="full_name" type="text" autocomplete="name" maxlength="120" value={@profile.full_name} />
+    <%= if @profile.picture_key do %>
+      <img src={LakehouseIam.Profiles.picture_url(@profile)} alt="Your profile picture" width="64" height="64" style="border-radius:50%;object-fit:cover" />
+      <label><input type="checkbox" name="remove_picture" value="true" /> Remove picture</label>
+    <% end %>
+    <label for="picture">Profile picture</label>
+    <input id="picture" name="picture" type="file" accept="image/png,image/jpeg,image/webp" />
+    <p>PNG, JPEG or WebP, up to 256 KB. Apps receive your full name by default. Your username and picture each require separate permission.</p>
+    <button type="submit">Save profile</button>
+  </form>
+</section>
+
+<section class="settings-section">
   <h2>Password</h2>
   <form action={~p"/web/settings/password"} method="post">
     <input type="hidden" name="_csrf_token" value={get_csrf_token()} />

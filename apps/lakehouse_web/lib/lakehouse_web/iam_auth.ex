@@ -195,16 +195,17 @@ defmodule LakehouseWeb.IamAuth do
 
   @spec register(String.t(), String.t(), term()) ::
           {:ok, LakehouseIam.Schema.Principal.t()} | error()
-  def register(username, password, registration_key) do
+  def register(username, password, registration_key, full_name \\ nil) do
     with :ok <- LakehouseIam.Registration.authorize(registration_key) do
-      create_account(username, password)
+      create_account(username, password, full_name)
     else
       {:error, message} -> {:error, :forbidden, message}
     end
   end
 
-  defp create_account(username, password) when is_binary(username) and is_binary(password) do
-    case Accounts.register_user(username, password) do
+  defp create_account(username, password, full_name)
+       when is_binary(username) and is_binary(password) do
+    case Accounts.register_user(username, password, full_name: full_name) do
       {:ok, principal} ->
         {:ok, principal}
 
@@ -216,7 +217,7 @@ defmodule LakehouseWeb.IamAuth do
     end
   end
 
-  defp create_account(_, _), do: {:error, :bad_request, "username and password are required"}
+  defp create_account(_, _, _), do: {:error, :bad_request, "username and password are required"}
 
   defp format_changeset(cs) do
     Ecto.Changeset.traverse_errors(cs, fn {msg, opts} ->

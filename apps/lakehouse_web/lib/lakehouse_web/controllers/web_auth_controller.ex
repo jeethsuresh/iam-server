@@ -63,7 +63,12 @@ defmodule LakehouseWeb.WebAuthController do
 
     result =
       with :ok <- IamAuth.registration_session(session_id, params["username"]) do
-        IamAuth.register(params["username"], params["password"], params["registration_key"])
+        IamAuth.register(
+          params["username"],
+          params["password"],
+          params["registration_key"],
+          params["full_name"]
+        )
       end
 
     case result do

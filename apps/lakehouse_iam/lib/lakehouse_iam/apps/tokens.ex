@@ -170,7 +170,7 @@ defmodule LakehouseIam.Apps.Tokens do
     do:
       Enum.reject(
         grant.scopes,
-        &(&1 in ~w(matrix.full protocols.read appstore.push appstore.push.broadcast native.broker groups.join spaces.channels friends.read friends.manage contacts.read contacts.manage calls.read calls.join posts.publish))
+        &(&1 in ~w(profile.username profile.picture matrix.full protocols.read appstore.push appstore.push.broadcast native.broker groups.join spaces.channels friends.read friends.manage contacts.read contacts.manage calls.read calls.join posts.publish))
       )
 
   def effective_scopes(%AppToken{scopes: scopes}, grant),

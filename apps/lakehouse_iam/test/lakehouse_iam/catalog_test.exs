@@ -46,16 +46,15 @@ defmodule LakehouseIam.Apps.CatalogTest do
     assert Catalog.get("invalid") == nil
   end
 
-  test "launch includes a qualified login hint and preserves non-secret app parameters" do
+  test "launch preserves app parameters without disclosing the signed-in username" do
     service = %LakehouseIam.Schema.Service{
       login_url: "https://notes.example.com/start?next=%2Fnotes"
     }
 
-    uri = Catalog.launch_url(service, "alice") |> URI.parse()
+    uri = Catalog.launch_url(service) |> URI.parse()
 
     assert URI.decode_query(uri.query) == %{
-             "next" => "/notes",
-             "login_hint" => LakehouseIam.Identifier.format("alice")
+             "next" => "/notes"
            }
   end
 end

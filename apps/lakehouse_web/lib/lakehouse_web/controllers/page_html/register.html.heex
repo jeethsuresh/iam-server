@@ -14,6 +14,9 @@
   <%= if @session_id != "" do %>
     <input type="hidden" name="sessionID" value={@session_id} />
   <% end %>
+  <label for="full_name">Full name</label>
+  <input id="full_name" name="full_name" type="text" autocomplete="name" maxlength="120" />
+
   <label for="username">Username</label>
   <input id="username" name="username" type="text" autocomplete="username" required maxlength="20" pattern="[a-zA-Z0-9]+" title="Letters and numbers only" value={@username} />
 
