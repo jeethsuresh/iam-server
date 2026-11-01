@@ -93,8 +93,8 @@ defmodule LakehouseMatrix.Protocol.AuthorizationTest do
       {unban, _} = F.append(banned, "m.room.member", %{"membership" => "leave"}, key: F.bob())
       assert :ok = Authorization.check(unban, banned.state, @version)
 
-      {_, restricted} =
-        F.append(chain, "m.room.join_rules", %{"join_rule" => "knock_restricted"}, key: "")
+      rule = if @version == "9", do: "restricted", else: "knock_restricted"
+      {_, restricted} = F.append(chain, "m.room.join_rules", %{"join_rule" => rule}, key: "")
 
       {knock, knocked} =
         F.append(restricted, "m.room.member", %{"membership" => "knock"},
