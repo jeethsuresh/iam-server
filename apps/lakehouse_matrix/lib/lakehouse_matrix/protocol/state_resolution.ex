@@ -1,5 +1,5 @@
 defmodule LakehouseMatrix.Protocol.StateResolution do
-  @moduledoc "Deterministic state resolution v2 (room 11) and v2.1 (room 12)."
+  @moduledoc "Deterministic state resolution v2 (rooms 9/11) and v2.1 (room 12)."
   alias LakehouseMatrix.Protocol.Authorization, as: Auth
 
   @doc "Resolve state maps of {type, state_key} => event_id against an authenticated event graph."

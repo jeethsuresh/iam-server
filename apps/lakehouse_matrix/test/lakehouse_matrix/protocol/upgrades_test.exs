@@ -163,35 +163,38 @@ defmodule LakehouseMatrix.Protocol.UpgradesTest do
              RoomUpgrades.upgrade(ctx.alice.id, old, %{"new_version" => "11"})
   end
 
-  test "a v11 replacement includes the signed tombstone predecessor and preserves space and federation policy",
-       ctx do
-    bob = Identity.user_id("bob")
+  for version <- ["9", "11"] do
+    test "#{version}: a replacement includes the signed tombstone predecessor and preserves space and federation policy",
+         ctx do
+      version = unquote(version)
+      bob = Identity.user_id("bob")
 
-    {:ok, %{"room_id" => old}} =
-      ClientRooms.create(ctx.alice.id, %{
-        "creation_content" => %{
-          "type" => "m.space",
-          "m.federate" => false,
-          "additional_creators" => [bob]
-        },
-        "preset" => "public_chat"
-      })
+      {:ok, %{"room_id" => old}} =
+        ClientRooms.create(ctx.alice.id, %{
+          "creation_content" => %{
+            "type" => "m.space",
+            "m.federate" => false,
+            "additional_creators" => [bob]
+          },
+          "preset" => "public_chat"
+        })
 
-    assert {:ok, %{"replacement_room" => replacement}} =
-             RoomUpgrades.upgrade(ctx.alice.id, old, %{
-               "new_version" => "11",
-               "additional_creators" => "ignored in v11"
-             })
+      assert {:ok, %{"replacement_room" => replacement}} =
+               RoomUpgrades.upgrade(ctx.alice.id, old, %{
+                 "new_version" => version,
+                 "additional_creators" => "ignored in v11"
+               })
 
-    metadata = Graph.room_by_id(replacement)
-    assert metadata.version == "11"
-    tombstone = state(old)[{"m.room.tombstone", ""}]
-    create = state(replacement)[{"m.room.create", ""}]["content"]
-    assert create["predecessor"] == %{"room_id" => old, "event_id" => tombstone["event_id"]}
-    assert create["type"] == "m.space" and create["m.federate"] == false
-    refute Map.has_key?(create, "additional_creators")
-    assert Authorization.power(state(replacement), bob, "11") == 100
-    refute RoomAccess.allowed?(metadata, "outside.example")
+      metadata = Graph.room_by_id(replacement)
+      assert metadata.version == version
+      tombstone = state(old)[{"m.room.tombstone", ""}]
+      create = state(replacement)[{"m.room.create", ""}]["content"]
+      assert create["predecessor"] == %{"room_id" => old, "event_id" => tombstone["event_id"]}
+      assert create["type"] == "m.space" and create["m.federate"] == false
+      refute Map.has_key?(create, "additional_creators")
+      assert Authorization.power(state(replacement), bob, version) == 100
+      refute RoomAccess.allowed?(metadata, "outside.example")
+    end
   end
 
   test "only authorized members upgrade, and additional creators are not copied implicitly",

@@ -1,5 +1,5 @@
 defmodule LakehouseMatrix.Protocol.Authorization do
-  @moduledoc "Room-version 11/12 event authorization, independent of River's local IAM policy."
+  @moduledoc "Room-version 9/11/12 event authorization, independent of River's local IAM policy."
   alias LakehouseMatrix.Protocol.Event
   alias LakehouseMatrix.Federation.Signing
   @versions ["9", "11", "12"]

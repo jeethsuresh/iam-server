@@ -1,5 +1,5 @@
 defmodule LakehouseMatrix.Protocol.Event do
-  @moduledoc "Room-version 11/12 PDU encoding, redaction, hashing and signature checks."
+  @moduledoc "Room-version 9/11/12 PDU encoding, redaction, hashing and signature checks."
   alias LakehouseMatrix.Federation.{Signing, Transport}
 
   @versions ["9", "11", "12"]

@@ -1,5 +1,5 @@
 defmodule LakehouseMatrix.Protocol.Redactions do
-  @moduledoc "Apply v11/v12 redactions only after both events and the redaction's authenticated state are known."
+  @moduledoc "Apply v9/v11/v12 redactions only after both events and the redaction's authenticated state are known."
   import Ecto.Query
   alias LakehouseIam.Repo
   alias LakehouseMatrix.ClientStore

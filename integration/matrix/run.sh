@@ -56,11 +56,20 @@ docker run --name "$name-reset" --network "$name" --init \
   -e WALLABY_SKIP=1 --entrypoint mix "$image" run --no-start integration/matrix/reset.exs \
   > "$fixture_dir/reset.log" 2>&1 || { cat "$fixture_dir/reset.log"; exit 1; }
 grep 'RESET PASS' "$fixture_dir/reset.log"
+synapse_start='exec python -m synapse.app.homeserver --config-path /fixtures/homeserver.yaml'
+if [[ "$mode" == legacy ]]; then
+  synapse_start="python -m synapse.app.homeserver --config-path /fixtures/homeserver.yaml --generate-keys; $synapse_start"
+fi
 containers+=("$name-synapse")
 docker run -d --name "$name-synapse" --network "$name" --network-alias reference.test \
   --user 0 --security-opt label=disable --read-only --tmpfs /data:rw --tmpfs /tmp:rw \
   -v "$fixture_dir:/fixtures:ro" --entrypoint sh \
-  "$reference_image" -ec 'python -m synapse.app.homeserver --config-path /fixtures/homeserver.yaml --generate-keys; exec python -m synapse.app.homeserver --config-path /fixtures/homeserver.yaml' >/dev/null
+  "$reference_image" -ec "$synapse_start" >/dev/null
+for attempt in $(seq 1 90); do
+  if docker exec "$name-synapse" python -c 'import ssl, urllib.request; urllib.request.urlopen("https://reference.test:8448/_matrix/client/versions", context=ssl.create_default_context(cafile="/fixtures/ca.pem"), timeout=2).close()' >/dev/null 2>&1; then break; fi
+  if [[ $(docker inspect -f '{{.State.Running}}' "$name-synapse") != true ]] || (( attempt == 90 )); then exit 1; fi
+  sleep 1
+done
 containers+=("$name-native")
 docker run -d --name "$name-native" --network "$name" --network-alias native.test --init \
   --security-opt label=disable -v "$fixture_dir:/fixtures:ro" \
