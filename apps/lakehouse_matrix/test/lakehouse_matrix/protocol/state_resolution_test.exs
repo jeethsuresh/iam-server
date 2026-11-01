@@ -3,7 +3,7 @@ defmodule LakehouseMatrix.Protocol.StateResolutionTest do
   alias LakehouseMatrix.Protocol.StateResolution, as: Resolution
   alias LakehouseMatrix.ProtocolFixtures, as: F
 
-  for version <- ["11", "12"] do
+  for version <- ["9", "11", "12"] do
     @version version
     test "#{version}: competing topics converge regardless of branch or map ordering" do
       chain = F.public_room(@version)

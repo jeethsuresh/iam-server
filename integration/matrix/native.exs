@@ -27,7 +27,13 @@ defmodule Interop do
         {:ok, %{body: body, headers: headers}}
 
       {:ok, %{status: status, body: body}} ->
-        {:error, {:http, status, body}}
+        error_body =
+          case Jason.decode(body) do
+            {:ok, decoded} -> decoded
+            _ -> %{}
+          end
+
+        {:error, {:http, status, error_body}}
 
       error ->
         error
@@ -111,6 +117,7 @@ defmodule Interop do
 
   def contains(server, token, room, event) do
     sync = sync(server, token)
+
     Enum.any?(
       get_in(sync, ["rooms", "join", room, "timeline", "events"]) || [],
       &(&1["event_id"] == event)

@@ -7,7 +7,8 @@ defmodule LakehouseMatrix.Federation.Auth do
       Enum.reduce_while(headers, {:error, :unauthorized}, fn header, _ ->
         with {:ok, values} <- parse(header),
              {:ok, _} <- Transport.server_name(values["origin"]),
-             true <- values["destination"] == Identity.homeserver_domain(),
+             destination <- values["destination"] || Identity.homeserver_domain(),
+             true <- destination == Identity.homeserver_domain(),
              true <- String.starts_with?(values["key"], "ed25519:"),
              {:ok, public} <-
                Keyring.key(
@@ -21,7 +22,7 @@ defmodule LakehouseMatrix.Federation.Auth do
                  method,
                  uri,
                  values["origin"],
-                 values["destination"],
+                 destination,
                  content
                ),
              signed <-
@@ -53,17 +54,31 @@ defmodule LakehouseMatrix.Federation.Auth do
     end
   end
 
-  def parse("X-Matrix " <> rest) do
-    entries = Regex.scan(~r/(?:\A|,)\s*([a-z_]+)="([A-Za-z0-9_.:\[\]+\/=~-]+)"\s*(?=,|\z)/, rest)
-    values = Map.new(entries, fn [_, k, v] -> {k, v} end)
-    reconstructed = Enum.map_join(entries, "", &hd/1) |> String.replace(~r/\s/, "")
+  def parse(header) when is_binary(header) do
+    with [_, rest] <- Regex.run(~r/\AX-Matrix[ \t]+(.+)\z/i, header) do
+      entries =
+        Regex.scan(
+          ~r/(?:\A|,)[ \t]*([a-z_]+)[ \t]*=[ \t]*("(?:[^"\\\r\n]|\\[\x20-\x7e])*"|[!#$%&'*+.^_`|~0-9A-Za-z:-]+)[ \t]*(?=,|\z)/i,
+          rest
+        )
 
-    if map_size(values) == 4 and length(entries) == 4 and
-         Enum.sort(Map.keys(values)) == ~w(destination key origin sig) and
-         reconstructed == String.replace(rest, ~r/\s/, ""),
-       do: {:ok, values},
-       else: {:error, :invalid_header}
+      values = Map.new(entries, fn [_, k, v] -> {String.downcase(k), unquote_value(v)} end)
+      keys = Map.keys(values) |> Enum.sort()
+
+      if length(entries) == map_size(values) and
+           keys in [~w(key origin sig), ~w(destination key origin sig)] and
+           Enum.map_join(entries, "", &hd/1) == rest,
+         do: {:ok, values},
+         else: {:error, :invalid_header}
+    else
+      _ -> {:error, :invalid_header}
+    end
   end
 
   def parse(_), do: {:error, :invalid_header}
+
+  defp unquote_value("\"" <> _ = value),
+    do: value |> String.slice(1..-2//1) |> String.replace(~r/\\(.)/, "\\1")
+
+  defp unquote_value(value), do: value
 end

@@ -27,6 +27,19 @@ defmodule LakehouseMatrix.Protocol.RoomsTest do
     %{alice: Fixtures.user_fixture("alice"), bob: Fixtures.user_fixture("bob")}
   end
 
+  test "new remote conversations use a shared version while explicit versions remain authoritative" do
+    user = Fixtures.user_fixture("versionchoice")
+
+    for {params, expected} <- [
+          {%{"invite" => ["@remote:example.net"]}, "9"},
+          {%{"invite" => ["@remote:example.net"], "room_version" => "12"}, "12"},
+          {%{}, "12"}
+        ] do
+      assert {:ok, %{"room_id" => id}} = LakehouseMatrix.Protocol.Rooms.create(user.id, params)
+      assert Graph.room_by_id(id).version == expected
+    end
+  end
+
   test "native createRoom produces a version-12 graph and Matrix 1.19 state_after sync", ctx do
     assert {:ok, %{"room_id" => ref}} = ClientRooms.create(ctx.alice.id, %{"name" => "Native"})
     assert {:ok, local} = Identity.parse_room_id(ref)

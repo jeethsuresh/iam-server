@@ -6,6 +6,22 @@ defmodule LakehouseMatrix.Protocol.Rooms do
 
   def enabled?, do: Application.get_env(:lakehouse_matrix, :native_event_graph, false)
 
+  # A room's version cannot be negotiated after creation. Prefer the common
+  # version for new cross-server conversations; retain explicit version choices
+  # and version 12 for local rooms.
+  defp default_version(invites) when is_list(invites) do
+    if Enum.any?(invites, fn user ->
+         case Event.user_domain(user) do
+           {:ok, domain} -> domain != Identity.homeserver_domain()
+           _ -> false
+         end
+       end),
+       do: "9",
+       else: "12"
+  end
+
+  defp default_version(_), do: "12"
+
   def create(principal_id, params, options \\ []) do
     id = Keyword.get(options, :id) || Ecto.UUID.generate()
 
@@ -14,7 +30,7 @@ defmodule LakehouseMatrix.Protocol.Rooms do
       unless IAM.can?(principal_id, "matrix.room.create", nil), do: Repo.rollback(:forbidden)
       principal = Repo.get!(LakehouseIam.Schema.Principal, principal_id)
       sender = Identity.user_id(principal.username)
-      version = params["room_version"] || "12"
+      version = params["room_version"] || default_version(params["invite"])
       unless version in Event.versions(), do: Repo.rollback(:unsupported_room_version)
       preset = params["preset"] || "private_chat"
 

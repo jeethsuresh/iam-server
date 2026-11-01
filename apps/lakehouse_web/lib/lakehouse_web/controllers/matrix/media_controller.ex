@@ -159,6 +159,36 @@ defmodule LakehouseWeb.Matrix.MediaController do
         end)
       )
 
+  def legacy_download(conn, %{"serverName" => server, "mediaId" => id} = params) do
+    local? = server == LakehouseMatrix.Identity.homeserver_domain()
+    thumbnail? = String.contains?(conn.request_path, "/thumbnail/")
+    principal = conn.assigns[:principal_id]
+    # Older federation peers fetch public Matrix MXCs through the unauthenticated
+    # media API. Keep private River uploads behind their existing authorization,
+    # and never let an anonymous request turn this endpoint into a remote proxy.
+    result =
+      cond do
+        not local? and (is_nil(principal) or params["allow_remote"] == "false") ->
+          {:error, :not_found}
+
+        principal ->
+          LakehouseMatrix.AsyncMedia.fetch(server, id, params, fn ->
+            if thumbnail?,
+              do: Media.thumbnail(principal, server, id, params),
+              else: Media.download(principal, server, id)
+          end)
+
+        true ->
+          LakehouseMatrix.AsyncMedia.fetch(server, id, params, fn ->
+            if thumbnail?,
+              do: Media.federation_thumbnail(id, params),
+              else: Media.federation_download(id)
+          end)
+      end
+
+    serve(conn, result)
+  end
+
   def federation(conn, %{"mediaId" => id} = params) do
     result =
       LakehouseMatrix.AsyncMedia.fetch(

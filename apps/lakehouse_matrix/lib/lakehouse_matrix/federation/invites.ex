@@ -150,36 +150,47 @@ defmodule LakehouseMatrix.Federation.Invites do
         end
       end)
 
-    with {:ok, accepted} <- result,
-         [create] <-
-           Enum.filter(accepted, &(&1["type"] == "m.room.create" and &1["state_key"] == "")),
-         true <- create["content"]["room_version"] == version do
+    with {:ok, accepted} <- result do
       {:ok, Enum.reverse(accepted)}
-    else
-      _ -> {:error, :invalid_param}
     end
   end
 
   @doc false
   def filter_preview(ref, version, events, lookup) do
     Enum.flat_map(events, fn event ->
-      case verify_preview_event(event, ref, version, lookup) do
+      case if(is_map(event) and Map.has_key?(event, "signatures"),
+             do: verify_preview_event(event, ref, version, lookup),
+             else: {:error, :invalid_param}
+           ) do
         {:ok, checked} -> [checked]
         _ -> []
       end
     end)
   end
 
-  defp verify_preview_event(event, ref, version, lookup) do
-    with true <- is_map(event) and is_binary(event["state_key"]),
-         :ok <- Event.verify_sender(event, version, lookup),
-         {:ok, checked} <- Event.verify(event, version, lookup),
-         ^ref <- Event.room_id(checked, version) do
-      {:ok, checked}
+  defp verify_preview_event(event, ref, version, lookup) when is_map(event) do
+    # Stripped invite state is an optional, untrusted display preview. Only the
+    # invite PDU is authenticated here; a join verifies the full state/auth chain.
+    if Map.has_key?(event, "signatures") or Map.has_key?(event, "auth_events") do
+      with true <- is_binary(event["state_key"]),
+           :ok <- Event.verify_sender(event, version, lookup),
+           {:ok, checked} <- Event.verify(event, version, lookup),
+           ^ref <- Event.room_id(checked, version) do
+        {:ok, checked}
+      else
+        _ -> {:error, :invalid_param}
+      end
     else
-      _ -> {:error, :invalid_param}
+      if is_binary(event["type"]) and byte_size(event["type"]) in 1..255 and
+           is_binary(event["state_key"]) and byte_size(event["state_key"]) <= 255 and
+           match?({:ok, _}, Event.user_domain(event["sender"])) and is_map(event["content"]) and
+           not Map.has_key?(event, "room_id"),
+         do: {:ok, Map.take(event, ~w(type state_key sender content))},
+         else: {:error, :invalid_param}
     end
   end
+
+  defp verify_preview_event(_, _, _, _), do: {:error, :invalid_param}
 
   def pending(local_id, user) do
     Repo.one(

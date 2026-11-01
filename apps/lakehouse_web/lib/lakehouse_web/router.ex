@@ -375,6 +375,16 @@ defmodule LakehouseWeb.Router do
     get "/v1/media/preview_url", MediaController, :preview
   end
 
+  scope "/_matrix/media", LakehouseWeb.Matrix do
+    pipe_through [:api, :matrix_optional]
+
+    for version <- ["r0", "v3"] do
+      get "/#{version}/download/:serverName/:mediaId", MediaController, :legacy_download
+      get "/#{version}/download/:serverName/:mediaId/:fileName", MediaController, :legacy_download
+      get "/#{version}/thumbnail/:serverName/:mediaId", MediaController, :legacy_download
+    end
+  end
+
   scope "/_matrix/media", LakehouseWeb.Matrix, as: :matrix_media do
     pipe_through [:api, LakehouseWeb.Plugs.MatrixAuth]
 
@@ -382,9 +392,6 @@ defmodule LakehouseWeb.Router do
     get "/v3/preview_url", MediaController, :preview
     post "/v1/create", MediaController, :create
     put "/v3/upload/:serverName/:mediaId", MediaController, :upload_reserved
-    get "/v3/download/:serverName/:mediaId", MediaController, :download
-    get "/v3/download/:serverName/:mediaId/:fileName", MediaController, :download
-    get "/v3/thumbnail/:serverName/:mediaId", MediaController, :thumbnail
     get "/v3/config", ProtocolController, :media_config
   end
 

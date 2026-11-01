@@ -68,6 +68,8 @@ defmodule LakehouseMatrix.Protocol.Graph do
         |> Map.put("room_version", version)
         |> Map.delete("creator")
 
+      content = if version == "9", do: Map.put(content, "creator", sender), else: content
+
       event =
         Policy.draft({:create, local_id, sender, version, content}, fn ->
           event = %{
@@ -82,7 +84,7 @@ defmodule LakehouseMatrix.Protocol.Graph do
           }
 
           event =
-            if version == "11",
+            if version != "12",
               do: Map.put(event, "room_id", "!#{local_id}:#{Identity.homeserver_domain()}"),
               else: event
 
@@ -166,6 +168,15 @@ defmodule LakehouseMatrix.Protocol.Graph do
       "prev_events" => parents,
       "origin_server_ts" => System.system_time(:millisecond)
     }
+
+    event =
+      if metadata.version == "9" and type == "m.room.redaction" do
+        event
+        |> Map.put("redacts", content["redacts"])
+        |> Map.put("content", Map.delete(content, "redacts"))
+      else
+        event
+      end
 
     event = if is_binary(state_key), do: Map.put(event, "state_key", state_key), else: event
     state = materialize(decode_state(metadata.current_state), graph)
@@ -615,6 +626,7 @@ defmodule LakehouseMatrix.Protocol.Graph do
 
   defp project!(metadata, record, previous, resolved \\ nil) do
     event = Map.put(record.pdu, "event_id", record.event_id)
+    event = Map.put(event, "content", Event.client_content(event, metadata.version))
     ctx = context(metadata.local_room_id, event)
 
     case Repo.get_by(RoomEvent, event_id: record.event_id) do
