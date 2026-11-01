@@ -1,0 +1,29 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: iam-matrix
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts: [chat.gravitas.cool]
+  rules:
+    - host: chat.gravitas.cool
+      http:
+        paths:
+          - path: /_matrix
+            pathType: Prefix
+            backend:
+              service:
+                name: iam
+                port:
+                  number: 80
+          - path: /.well-known/matrix/client
+            pathType: Exact
+            backend:
+              service:
+                name: iam
+                port:
+                  number: 80

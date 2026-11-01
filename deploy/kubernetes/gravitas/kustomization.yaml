@@ -6,6 +6,7 @@ resources:
   - postgres.yaml
   - media.yaml
   - ingress.yaml
+  - matrix-ingress.yaml
 patches:
   - path: cpu-burst.yaml
   - path: app-storage.yaml
@@ -17,6 +18,12 @@ patches:
       - op: replace
         path: /data/IAM_EPHEMERAL_DISK
         value: "false"
+      - op: add
+        path: /data/MATRIX_PUBLIC_URL
+        value: https://chat.gravitas.cool
+      - op: add
+        path: /data/MATRIX_DOMAIN
+        value: gravitas.cool
       - op: add
         path: /data/LAKEHOUSE_MEDIA_ROOT
         value: /var/lib/iam/media

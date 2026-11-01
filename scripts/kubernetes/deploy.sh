@@ -106,3 +106,17 @@ fi
 "${kube[@]}" apply -f "$work/release.yaml" --selector 'app.kubernetes.io/component=server'
 "${kube[@]}" rollout status deployment/iam --timeout=240s
 paused=0
+
+if [[ "$overlay" == gravitas ]]; then
+  # Verify the delegated transport and the UI after rollout, with TLS enabled.
+  curl --fail --silent --show-error --retry 5 --retry-delay 2 https://gravitas.cool/.well-known/matrix/server \
+    | python3 -c 'import json,sys; assert json.load(sys.stdin)["m.server"] == "chat.gravitas.cool:443", "Matrix federation is not delegated to chat"'
+  curl --fail --silent --show-error --retry 5 --retry-delay 2 https://gravitas.cool/.well-known/matrix/client \
+    | python3 -c 'import json,sys; assert json.load(sys.stdin)["m.homeserver"]["base_url"] == "https://chat.gravitas.cool", "Matrix client discovery points to the wrong API"'
+  curl --fail --silent --show-error --retry 5 --retry-delay 2 https://chat.gravitas.cool/_matrix/key/v2/server \
+    | python3 -c 'import json,sys; k=json.load(sys.stdin); assert k["server_name"] == "gravitas.cool" and k["signatures"]["gravitas.cool"], "Matrix signing identity changed"'
+  curl --fail --silent --show-error --retry 5 --retry-delay 2 https://chat.gravitas.cool/_matrix/client/versions \
+    | python3 -c 'import json,sys; assert json.load(sys.stdin)["versions"], "Matrix client API is unavailable on chat"'
+  curl --fail --silent --show-error --retry 5 --retry-delay 2 https://chat.gravitas.cool/healthz \
+    | python3 -c 'import json,sys; assert json.load(sys.stdin)["app"] == "River", "Matrix ingress replaced the River UI route"'
+fi

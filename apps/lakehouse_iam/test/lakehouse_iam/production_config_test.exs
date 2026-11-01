@@ -108,6 +108,34 @@ defmodule LakehouseIam.ProductionConfigTest do
     assert config[:lakehouse_matrix][:homeserver_domain] == "legacy.example"
   end
 
+  test "Matrix transport configuration is separate from the identity and requires an HTTPS origin" do
+    previous = System.get_env("MATRIX_PUBLIC_URL")
+
+    on_exit(fn ->
+      if previous,
+        do: System.put_env("MATRIX_PUBLIC_URL", previous),
+        else: System.delete_env("MATRIX_PUBLIC_URL")
+    end)
+
+    System.put_env("MATRIX_PUBLIC_URL", "https://chat.jeeth.dev:9443/")
+    config = runtime()
+    assert config[:lakehouse_matrix][:public_url] == "https://chat.jeeth.dev:9443"
+    assert config[:lakehouse_matrix][:homeserver_domain] == "jeeth.dev"
+    assert config[:lakehouse_iam][:public_url] == "https://iam.jeeth.dev"
+
+    for url <- [
+          "http://chat.jeeth.dev",
+          "https://user:pass@chat.jeeth.dev",
+          "https://chat.jeeth.dev/path",
+          "https://chat.jeeth.dev?query=1",
+          "https://chat.jeeth.dev#fragment",
+          "https://chat.jeeth.dev:70000"
+        ] do
+      System.put_env("MATRIX_PUBLIC_URL", url)
+      assert_raise RuntimeError, ~r/MATRIX_PUBLIC_URL/, &runtime/0
+    end
+  end
+
   test "Matrix runtime flags require an explicit signing identity and reject ambiguous booleans" do
     keys =
       ~w(MATRIX_NATIVE_EVENT_GRAPH MATRIX_FEDERATION_ENABLED MATRIX_SIGNING_KEY MATRIX_SIGNING_KEY_ID)

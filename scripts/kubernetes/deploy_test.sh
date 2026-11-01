@@ -24,6 +24,21 @@ fi
 if [[ "$*" == *'wait --for=condition=complete'* && "${IAM_TEST_FAIL_MIGRATION:-0}" == 1 ]]; then exit 1; fi
 MOCK
 chmod +x "$work/kubectl"
+cat > "$work/curl" <<'MOCK'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "${@: -1}" >> "$IAM_TEST_LOG"
+if [[ "${IAM_TEST_FAIL_PUBLIC:-0}" == 1 ]]; then exit 22; fi
+case "${@: -1}" in
+  https://gravitas.cool/.well-known/matrix/server) printf '{"m.server":"chat.gravitas.cool:443"}' ;;
+  https://gravitas.cool/.well-known/matrix/client) printf '{"m.homeserver":{"base_url":"https://chat.gravitas.cool"}}' ;;
+  https://chat.gravitas.cool/_matrix/key/v2/server) printf '{"server_name":"%s","signatures":{"gravitas.cool":{"ed25519:test":"signature"}}}' "${IAM_TEST_KEY_IDENTITY:-gravitas.cool}" ;;
+  https://chat.gravitas.cool/_matrix/client/versions) printf '{"versions":["v1.19"]}' ;;
+  https://chat.gravitas.cool/healthz) printf '{"app":"River"}' ;;
+  *) exit 22 ;;
+esac
+MOCK
+chmod +x "$work/curl"
 export PATH="$work:$PATH" KUBE_CONTEXT=disposable-mock-context
 image=registry.example.com/iam:commit-test
 "$root/scripts/kubernetes/deploy.sh" --render "$image" > "$work/rendered"
@@ -81,7 +96,14 @@ assert text.count('name: MATRIX_FEDERATION_ENABLED') == 2
 assert 'MATRIX_NATIVE_EVENT_GRAPH: "false"' in text
 assert 'MATRIX_FEDERATION_ENABLED: "false"' in text
 assert 'kind: Secret' not in text
+assert 'MATRIX_PUBLIC_URL: https://chat.gravitas.cool' in text
+assert 'MATRIX_DOMAIN: gravitas.cool' in text
+assert 'name: iam-matrix' in text
+assert 'path: /_matrix' in text
+assert 'path: /.well-known/matrix/client' in text
 PY
+if IAM_KUSTOMIZE_OVERLAY=gravitas IAM_TEST_FAIL_PUBLIC=1 "$root/scripts/kubernetes/deploy.sh" "$image" 2> "$work/error"; then echo 'Missing delegated Matrix API passed release checks'; exit 1; fi
+if IAM_KUSTOMIZE_OVERLAY=gravitas IAM_TEST_KEY_IDENTITY=chat.gravitas.cool "$root/scripts/kubernetes/deploy.sh" "$image" 2> "$work/error"; then echo 'Changed Matrix identity passed release checks'; exit 1; fi
 python3 "$root/scripts/kubernetes/test_matrix_signing_key.py"
 
 # Destructive room resets require a fresh validated archive and a one-use job.
