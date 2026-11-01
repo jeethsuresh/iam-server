@@ -18,8 +18,9 @@ Use `gravitas.cool` in the federation tester: it checks the signed identity and
 connects through its delegated chat host. User IDs, room IDs, persisted data and
 the dedicated signing key retain their existing domain and values. Deployment
 fails if public discovery, the delegated API, its signing identity or River's
-health route is wrong. Other installations can omit `MATRIX_PUBLIC_URL` to use
-their IAM public URL, or set it to a separate HTTPS origin.
+health route is wrong. Omitting `MATRIX_PUBLIC_URL` preserves the existing IAM
+client URL and federation HTTPS/443 target. Set it explicitly to use a separate
+HTTPS origin or transport port.
 
 The first installation starts fresh; Forge's accounts, groups and media are left untouched. Runtime credentials, the database CA and the first-install administrator login are kept locally under `.local/gravitas/` with owner-only permissions, excluded from Git and Docker contexts. `admin-login.env` contains the administrator login. Runtime secrets also exist in namespace `iam`; the app uses a non-superuser Postgres role. Database connections require TLS and verify a private CA; plaintext database connections are rejected.
 

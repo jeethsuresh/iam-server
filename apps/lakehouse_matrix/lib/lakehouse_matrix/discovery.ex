@@ -9,6 +9,8 @@ defmodule LakehouseMatrix.Discovery do
   def server_address do
     uri = URI.parse(public_url())
     host = if String.contains?(uri.host, ":"), do: "[#{uri.host}]", else: uri.host
-    "#{host}:#{uri.port}"
+    # Unconfigured installations retain their existing HTTPS/443 delegation.
+    port = if Application.get_env(:lakehouse_matrix, :public_url), do: uri.port, else: 443
+    "#{host}:#{port}"
   end
 end
