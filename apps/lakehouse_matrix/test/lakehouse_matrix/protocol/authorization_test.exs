@@ -126,6 +126,26 @@ defmodule LakehouseMatrix.Protocol.AuthorizationTest do
     end
   end
 
+  test "version 9 rejects the later knock_restricted join rule" do
+    chain = F.public_room("9")
+
+    {_, chain} =
+      F.append(chain, "m.room.join_rules", %{"join_rule" => "knock_restricted"}, key: "")
+
+    for membership <- ["join", "knock"] do
+      {event, _} =
+        F.append(
+          chain,
+          "m.room.member",
+          %{"membership" => membership, "join_authorised_via_users_server" => F.alice()},
+          key: F.bob(),
+          sender: F.bob()
+        )
+
+      assert {:error, :forbidden} = Authorization.check(event, chain.state, "9")
+    end
+  end
+
   test "version 9 accepts legacy integer strings without permitting power escalation" do
     chain = F.public_room("9")
 

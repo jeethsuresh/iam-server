@@ -237,9 +237,10 @@ defmodule LakehouseMatrix.Protocol.Authorization do
               prior in ~w(invite join)
 
             r when r in ~w(restricted knock_restricted) ->
-              prior in ~w(invite join) or
-                (is_binary(via) and membership(state, via) == "join" and
-                   gte?(power(state, via, version), level(state, "invite", 0)))
+              (r != "knock_restricted" or version != "9") and
+                (prior in ~w(invite join) or
+                   (is_binary(via) and membership(state, via) == "join" and
+                      gte?(power(state, via, version), level(state, "invite", 0))))
 
             _ ->
               false
@@ -273,7 +274,8 @@ defmodule LakehouseMatrix.Protocol.Authorization do
 
       member == "knock" ->
         allow(
-          rule in ~w(knock knock_restricted) and sender == target and
+          (rule == "knock" or (rule == "knock_restricted" and version != "9")) and
+            sender == target and
             membership(state, sender) not in ~w(ban invite join)
         )
 
