@@ -40,6 +40,9 @@ defmodule LakehouseMatrix.Federation.Media do
         {:error, {:http, 504, %{"errcode" => "M_NOT_YET_UPLOADED"}}} ->
           {:error, :not_yet_uploaded}
 
+        {:error, {:http, status, %{"errcode" => "M_UNRECOGNIZED"}}} when status in [400, 404] ->
+          legacy_download(server, id, thumbnail)
+
         {:error, {:http, 404, _}} ->
           {:error, :not_found}
 
@@ -48,6 +51,32 @@ defmodule LakehouseMatrix.Federation.Media do
       end
     else
       _ -> {:error, :invalid_param}
+    end
+  end
+
+  # Pre-authenticated-media peers have no federation media route. Fall back
+  # only for an unknown endpoint, never for a denied or missing modern object.
+  # Discovery, public-address checks, TLS and byte limits remain in Transport.
+  defp legacy_download(server, id, thumbnail) do
+    action = if thumbnail, do: "thumbnail", else: "download"
+    query = URI.encode_query(Map.put(thumbnail || %{}, "allow_remote", false))
+
+    path =
+      "/_matrix/media/v3/" <>
+        action <> "/" <> URI.encode(server, &URI.char_unreserved?/1) <> "/" <> id <> "?" <> query
+
+    with {:ok, raw} <- Transport.request_raw(server, path),
+         true <- byte_size(raw.body) <= @limit do
+      {:ok,
+       %{
+         body: raw.body,
+         content_type: safe_type(header(raw.headers, "content-type")),
+         filename: filename(header(raw.headers, "content-disposition"))
+       }}
+    else
+      {:error, {:http, 404, _}} -> {:error, :not_found}
+      false -> {:error, :too_large}
+      error -> error
     end
   end
 

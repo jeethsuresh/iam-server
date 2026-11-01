@@ -3,7 +3,7 @@ defmodule LakehouseMatrix.Protocol.AuthorizationTest do
   alias LakehouseMatrix.Protocol.{Authorization, Event}
   alias LakehouseMatrix.ProtocolFixtures, as: F
 
-  for version <- ["11", "12"] do
+  for version <- ["9", "11", "12"] do
     @version version
     test "#{version}: creator bootstraps and remote users follow membership authorization" do
       chain = F.room(@version)
@@ -124,6 +124,25 @@ defmodule LakehouseMatrix.Protocol.AuthorizationTest do
       event = put_in(event, ["content", "ban"], 1.0)
       assert {:error, :invalid_power_levels} = Authorization.check(event, chain.state, @version)
     end
+  end
+
+  test "version 9 accepts legacy integer strings without permitting power escalation" do
+    chain = F.public_room("9")
+
+    {levels, _} =
+      F.append(
+        chain,
+        "m.room.power_levels",
+        %{"users" => %{F.alice() => "100"}, "state_default" => "50"},
+        key: ""
+      )
+
+    assert :ok = Authorization.check(levels, chain.state, "9")
+    assert {:error, :invalid_power_levels} = Authorization.check(levels, chain.state, "11")
+    raised = put_in(levels, ["content", "users", F.alice()], "101")
+    assert {:error, :forbidden} = Authorization.check(raised, chain.state, "9")
+    invalid = put_in(levels, ["content", "state_default"], "not a number")
+    assert {:error, :invalid_power_levels} = Authorization.check(invalid, chain.state, "9")
   end
 
   test "version 12 creators have infinite power and cannot be demoted, banned or included in power levels" do

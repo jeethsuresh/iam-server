@@ -62,6 +62,8 @@ jobs:
           --entrypoint mix iam-tests:ci run scripts/test-subgroup-concurrency.exs
       - name: Verify native federation and encrypted client recovery against Synapse
         run: bash integration/matrix/run.sh iam-tests:ci
+      - name: Verify version-9 messaging and attachments against Synapse 1.56
+        run: bash integration/matrix/run.sh iam-tests:ci legacy
   image:
     needs: tests
     runs-on: ubuntu-24.04

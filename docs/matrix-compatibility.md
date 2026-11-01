@@ -1,7 +1,7 @@
 # Native Matrix compatibility
 
-Gravitas implements Matrix in Elixir. This branch adds native room versions 11
-and 12, signed event graphs, state resolution, room federation, and homeserver
+Gravitas implements Matrix in Elixir. The native backend supports room versions 9,
+11 and 12, signed event graphs, state resolution, room federation, and homeserver
 E2EE services. The native backend targets Matrix 1.19 and advertises it when
 `MATRIX_NATIVE_EVENT_GRAPH=true`. The older local backend retains its v1.1
 advertisement. The native release must pass the API/browser and independent
@@ -28,6 +28,43 @@ with the unmodified Synapse implementation. Focused tests cover malformed event
 signatures, historical key retention, auth/state rejection, soft failures,
 missing dependencies, replay, delivery leases, redaction authorization, private
 invitations, device revocation, backup merging and policy-server signatures.
+
+## Older peers and physical destinations
+
+The additional `integration/matrix/run.sh <test-image> legacy` gate runs the
+same pinned Rust-crypto JavaScript clients against Synapse 1.56.0. It checks
+private invitations and joins with either server hosting, then messages,
+replies, threads, reactions and removal, edits, redactions, files, images,
+thumbnails, typing, receipts, paginated history and leave authorization. Both
+plaintext and encrypted rooms are exercised; encrypted attachments are decrypted
+and their bytes compared on the receiving client.
+
+New client-created conversations inviting remote users default to room version
+9 for older peers. Explicit room-version choices and local room defaults remain
+available. Existing rooms retain their version and history. Version 9 uses its
+own create, redaction, hashing and legacy power-level rules; it does not reuse
+version-11 signature bytes.
+
+Federation accepts older X-Matrix headers without a `destination` parameter,
+while verifying signatures against this server's identity. Standard stripped
+invite previews remain untrusted display data until a verified join. Older
+media routes expose standard Matrix MXCs; private River uploads keep their
+authorization checks, and anonymous requests cannot proxy remote downloads.
+
+`MATRIX_FEDERATION_DESTINATIONS` optionally maps logical server names to explicit
+physical `host:port` destinations. For example,
+`{"matrix.jeethsuresh.com":"matrix.jeethsuresh.com:443"}` routes that peer through
+its valid HTTPS listener while its public discovery still points to 8448.
+Signatures continue using the logical server name. Public-address validation,
+DNS pinning, TLS hostname verification and response limits remain active. This
+operator setting affects this homeserver only. Normal federation discovery is
+unchanged for every unlisted peer; public `.well-known/matrix/server` delegation
+is preferable when the peer's web configuration can be repaired.
+
+The legacy script can also read `MATRIX_LIVE_SESSIONS` for the two explicitly
+allowed production endpoints, using only disposable `rqf<8 hex digits>` accounts.
+Keep this JSON session file private and outside the repository. Set
+`MATRIX_LIVE_REPORT` to record operation results without credentials.
 
 ## Shared River rooms
 

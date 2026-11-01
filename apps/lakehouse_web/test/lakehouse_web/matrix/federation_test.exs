@@ -125,6 +125,46 @@ defmodule LakehouseWeb.Matrix.FederationTest do
     assert_raise ArgumentError, fn -> Signing.canonical(%{atom: "key"}) end
   end
 
+  test "an operator route selects only the physical destination, retaining TLS and address validation" do
+    previous = Application.get_env(:lakehouse_matrix, :federation_destinations)
+
+    on_exit(fn ->
+      if previous,
+        do: Application.put_env(:lakehouse_matrix, :federation_destinations, previous),
+        else: Application.delete_env(:lakehouse_matrix, :federation_destinations)
+    end)
+
+    Application.put_env(:lakehouse_matrix, :federation_destinations, %{
+      "peer.example" => "peer.example:443"
+    })
+
+    assert {:ok,
+            [
+              %{
+                host: "peer.example",
+                port: 443,
+                tls_name: "peer.example",
+                authority: "peer.example:443"
+              }
+            ]} = Transport.resolve("peer.example")
+
+    assert {:ok, header} = Signing.authorization("GET", "/path", "peer.example")
+    assert {:ok, values} = Auth.parse(header)
+    assert values["destination"] == "peer.example"
+
+    Application.put_env(:lakehouse_matrix, :federation_destinations, %{
+      "peer.example" => "127.0.0.1:443"
+    })
+
+    assert {:error, :blocked_address} = Transport.get_json("peer.example", "/path")
+
+    Application.put_env(:lakehouse_matrix, :federation_destinations, %{
+      "peer.example" => "peer.example"
+    })
+
+    assert {:error, :invalid_server_name} = Transport.resolve("peer.example")
+  end
+
   test "server keys are self-signed and have the configured stable public key", ctx do
     body = build_conn() |> get("/_matrix/key/v2/server") |> json_response(200)
     assert body["server_name"] == "localhost"
@@ -162,6 +202,50 @@ defmodule LakehouseWeb.Matrix.FederationTest do
            |> put_req_header("authorization", header(ctx, "GET", uri <> "&field=displayname"))
            |> get(uri)
            |> json_response(401)
+  end
+
+  test "pre-1.3 headers omit destination but still sign this server's identity", ctx do
+    uri = "/_matrix/federation/v1/query/profile?user_id=@legacy:localhost"
+    signed = header(ctx, "GET", uri)
+    legacy = String.replace(signed, ~s(,destination="localhost"), "")
+
+    assert {:ok, ctx.remote} ==
+             Auth.verify("GET", uri, nil, [legacy], fn _, _ -> {:ok, ctx.keys} end)
+
+    assert {:error, :unauthorized} ==
+             Auth.verify("POST", uri, nil, [legacy], fn _, _ -> {:ok, ctx.keys} end)
+
+    wrong =
+      header(ctx, "GET", uri, nil, "other.example")
+      |> String.replace(~s(,destination="other.example"), "")
+
+    assert {:error, :unauthorized} ==
+             Auth.verify("GET", uri, nil, [wrong], fn _, _ -> {:ok, ctx.keys} end)
+  end
+
+  test "HTTP auth accepts case-insensitive names, tokens, escaped quotes and legacy colons",
+       ctx do
+    signed = header(ctx, "GET", "/path")
+
+    sig =
+      Signing.request_object("GET", "/path", ctx.remote, "localhost", nil)
+      |> Signing.sign(ctx.seed, ctx.key, ctx.remote)
+      |> get_in(["signatures", ctx.remote, ctx.key])
+
+    header =
+      ~s(x-matrix  ORIGIN=remote.example, KEY=ed25519:test1, destination=localhost, SIG="#{sig}")
+
+    assert Auth.verify("GET", "/path", nil, [header], fn _, _ -> {:ok, ctx.keys} end) ==
+             {:ok, ctx.remote}
+
+    assert {:ok, parsed} =
+             Auth.parse(
+               ~s(X-Matrix origin="remote.example",key="ed25519:test1",sig="escaped\\value")
+             )
+
+    assert parsed["sig"] == "escapedvalue"
+    assert {:error, :invalid_header} = Auth.parse(signed <> ~s(,ORIGIN=other.example))
+    assert {:error, :invalid_header} = Auth.parse(signed <> ",")
   end
 
   test "a client bearer token cannot authenticate as a federation server", ctx do

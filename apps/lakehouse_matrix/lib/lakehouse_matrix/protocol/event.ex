@@ -2,7 +2,7 @@ defmodule LakehouseMatrix.Protocol.Event do
   @moduledoc "Room-version 11/12 PDU encoding, redaction, hashing and signature checks."
   alias LakehouseMatrix.Federation.{Signing, Transport}
 
-  @versions ["11", "12"]
+  @versions ["9", "11", "12"]
   @maximum_integer 9_007_199_254_740_991
   @retained ~w(event_id type room_id sender state_key content hashes signatures depth prev_events auth_events origin_server_ts)
   @power_keys ~w(ban events events_default invite kick redact state_default users users_default)
@@ -30,12 +30,15 @@ defmodule LakehouseMatrix.Protocol.Event do
     kept =
       case event["type"] do
         "m.room.create" ->
-          content
+          if version == "9", do: Map.take(content, ["creator"]), else: content
 
         "m.room.member" ->
           content = Map.take(content, ~w(membership join_authorised_via_users_server))
 
-          case get_in(event, ["content", "third_party_invite", "signed"]) do
+          case if(version == "9",
+                 do: nil,
+                 else: get_in(event, ["content", "third_party_invite", "signed"])
+               ) do
             signed when is_map(signed) ->
               Map.put(content, "third_party_invite", %{"signed" => signed})
 
@@ -47,20 +50,31 @@ defmodule LakehouseMatrix.Protocol.Event do
           Map.take(content, ~w(join_rule allow))
 
         "m.room.power_levels" ->
-          Map.take(content, @power_keys)
+          Map.take(content, if(version == "9", do: @power_keys -- ["invite"], else: @power_keys))
 
         "m.room.history_visibility" ->
           Map.take(content, ["history_visibility"])
 
         "m.room.redaction" ->
-          Map.take(content, ["redacts"])
+          if version == "9", do: %{}, else: Map.take(content, ["redacts"])
 
         _ ->
           %{}
       end
 
-    event |> Map.take(@retained) |> Map.put("content", kept)
+    retained =
+      if version == "9", do: @retained ++ ~w(prev_state origin membership), else: @retained
+
+    event |> Map.take(retained) |> Map.put("content", kept)
   end
+
+  def redaction_target(event, "9"), do: event["redacts"]
+  def redaction_target(event, _version), do: get_in(event, ["content", "redacts"])
+
+  def client_content(%{"type" => "m.room.redaction"} = event, "9"),
+    do: Map.put(event["content"], "redacts", event["redacts"])
+
+  def client_content(event, _version), do: event["content"]
 
   def content_hash(event) do
     event |> Map.drop([:auth_rejected | ~w(unsigned signatures hashes event_id)]) |> digest()
@@ -150,7 +164,8 @@ defmodule LakehouseMatrix.Protocol.Event do
   defp valid_room?(event, "12"),
     do: is_binary(event["room_id"]) and Regex.match?(~r/\A![A-Za-z0-9_-]{43}\z/, event["room_id"])
 
-  defp valid_room?(%{"room_id" => "!" <> rest = room}, "11") when byte_size(room) <= 255 do
+  defp valid_room?(%{"room_id" => "!" <> rest = room}, version)
+       when version in ["9", "11"] and byte_size(room) <= 255 do
     case String.split(rest, ":", parts: 2) do
       [local, server] when local != "" ->
         String.valid?(local) and not String.contains?(local, "\x00") and

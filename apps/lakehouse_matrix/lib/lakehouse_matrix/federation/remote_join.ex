@@ -65,10 +65,10 @@ defmodule LakehouseMatrix.Federation.RemoteJoin do
   defp through(server, ref, user, params, request, lookup) do
     path =
       "/_matrix/federation/v1/make_join/" <>
-        escape(ref) <> "/" <> escape(user) <> "?ver=11&ver=12"
+        escape(ref) <> "/" <> escape(user) <> "?ver=9&ver=11&ver=12"
 
     with {:ok, response} <- request.(:get, server, path, nil),
-         version when version in ["11", "12"] <- response["room_version"],
+         version when version in ["9", "11", "12"] <- response["room_version"],
          template when is_map(template) <- response["event"],
          true <- is_map(template["content"]),
          true <-

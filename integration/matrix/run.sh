@@ -3,6 +3,12 @@ set -Eeuo pipefail
 # Run against independent Synapse and Rust-backed clients on a private Docker network.
 # Usage: bash integration/matrix/run.sh <image-built-from-Dockerfile.tests>
 image=${1:?Pass the image built from Dockerfile.tests}
+mode=${2:-modern}
+case "$mode" in
+  modern) reference_image=ghcr.io/element-hq/synapse@sha256:b497dc97929056f25401ad3f4e8c7e82cb374cfaba07d7348a3c4ea3d1ae950f; serve_only=0; client_script=crypto.mjs ;;
+  legacy) reference_image=docker.io/matrixdotorg/synapse@sha256:70fdddfcba9058d2471ae7764f887b6db781d7527debcb75a1b8083217c342f1; serve_only=1; client_script=legacy.mjs ;;
+  *) echo 'Expected modern or legacy interoperability mode' >&2; exit 1 ;;
+esac
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 fixture_dir=$(mktemp -d)
 name="gravitas-matrix-interop-$$"
@@ -53,14 +59,13 @@ grep 'RESET PASS' "$fixture_dir/reset.log"
 containers+=("$name-synapse")
 docker run -d --name "$name-synapse" --network "$name" --network-alias reference.test \
   --user 0 --security-opt label=disable --read-only --tmpfs /data:rw --tmpfs /tmp:rw \
-  -v "$fixture_dir:/fixtures:ro" --entrypoint python \
-  ghcr.io/element-hq/synapse@sha256:b497dc97929056f25401ad3f4e8c7e82cb374cfaba07d7348a3c4ea3d1ae950f \
-  -m synapse.app.homeserver --config-path /fixtures/homeserver.yaml >/dev/null
+  -v "$fixture_dir:/fixtures:ro" --entrypoint sh \
+  "$reference_image" -ec 'python -m synapse.app.homeserver --config-path /fixtures/homeserver.yaml --generate-keys; exec python -m synapse.app.homeserver --config-path /fixtures/homeserver.yaml' >/dev/null
 containers+=("$name-native")
 docker run -d --name "$name-native" --network "$name" --network-alias native.test --init \
   --security-opt label=disable -v "$fixture_dir:/fixtures:ro" \
   -e POSTGRES_HOST=postgres -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres \
-  -e WALLABY_SKIP=1 -e INTEROP_HOLD=1 \
+  -e WALLABY_SKIP=1 -e INTEROP_HOLD=1 -e INTEROP_SERVE_ONLY="$serve_only" \
   --entrypoint mix "$image" run --no-start integration/matrix/native.exs >/dev/null
 for attempt in $(seq 1 90); do
   if docker logs "$name-native" 2>&1 | grep -q 'INTEROP CRYPTO SERVER READY'; then break; fi
@@ -71,8 +76,8 @@ docker logs "$name-native" 2>&1 | grep 'INTEROP '
 docker build -f "$root/integration/matrix/Dockerfile.client" -t "$name-client" "$root"
 containers+=("$name-client")
 docker run --name "$name-client" --network "$name" --security-opt label=disable \
-  -v "$fixture_dir:/fixtures:ro" "$name-client" > "$fixture_dir/client.log" 2>&1 || {
+  -v "$fixture_dir:/fixtures:ro" "$name-client" node "$client_script" > "$fixture_dir/client.log" 2>&1 || {
     tail -100 "$fixture_dir/client.log"
     exit 1
   }
-grep 'CRYPTO ' "$fixture_dir/client.log"
+grep -E 'CRYPTO |LEGACY ' "$fixture_dir/client.log"

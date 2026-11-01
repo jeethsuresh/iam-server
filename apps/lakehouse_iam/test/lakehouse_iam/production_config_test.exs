@@ -30,6 +30,34 @@ defmodule LakehouseIam.ProductionConfigTest do
 
   defp runtime, do: Config.Reader.read!(Path.join(@root, "config/runtime.exs"), env: :prod)
 
+  test "federation destinations require explicit, valid transport addresses" do
+    previous = System.get_env("MATRIX_FEDERATION_DESTINATIONS")
+
+    on_exit(fn ->
+      if previous,
+        do: System.put_env("MATRIX_FEDERATION_DESTINATIONS", previous),
+        else: System.delete_env("MATRIX_FEDERATION_DESTINATIONS")
+    end)
+
+    System.put_env("MATRIX_FEDERATION_DESTINATIONS", ~s({"peer.example":"peer.example:443"}))
+
+    assert runtime()[:lakehouse_matrix][:federation_destinations] == %{
+             "peer.example" => "peer.example:443"
+           }
+
+    for invalid <- [
+          "[]",
+          "bad JSON",
+          ~s({"peer.example":"peer.example"}),
+          ~s({"peer.example":"peer.example:0"}),
+          ~s({"peer.example":"user@peer.example:443"}),
+          ~s({"peer.example":"peer.example:443/path"})
+        ] do
+      System.put_env("MATRIX_FEDERATION_DESTINATIONS", invalid)
+      assert_raise RuntimeError, ~r/MATRIX_FEDERATION_DESTINATIONS/, &runtime/0
+    end
+  end
+
   test "production uses secure sessions and the expected HTTPS websocket origin" do
     prod = Config.Reader.read!(Path.join(@root, "config/prod.exs"), env: :prod)
     assert prod[:lakehouse_web][:session_options][:secure]

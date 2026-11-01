@@ -76,6 +76,30 @@ defmodule LakehouseMatrix.FederationMediaTest do
     assert {:error, :invalid_media} = FederationMedia.decode(%{body: "garbage", headers: %{}})
   end
 
+  test "old peers use bounded local-only legacy media only when the federation route is unknown" do
+    for unknown_status <- [400, 404] do
+      Application.put_env(:lakehouse_matrix, :federation_media_requester, fn "remote.org", path ->
+        if String.starts_with?(path, "/_matrix/federation/") do
+          {:error, {:http, unknown_status, %{"errcode" => "M_UNRECOGNIZED"}}}
+        else
+          assert path == "/_matrix/media/v3/download/remote.org/legacy-id?allow_remote=false"
+          {:ok, %{body: <<0, 255, 2>>, headers: %{"content-type" => "application/octet-stream"}}}
+        end
+      end)
+
+      assert {:ok, %{body: <<0, 255, 2>>}} = FederationMedia.download("remote.org", "legacy-id")
+    end
+
+    for {status, code} <- [{403, "M_FORBIDDEN"}, {404, "M_NOT_FOUND"}, {500, "M_UNKNOWN"}] do
+      Application.put_env(:lakehouse_matrix, :federation_media_requester, fn "remote.org", path ->
+        assert String.starts_with?(path, "/_matrix/federation/")
+        {:error, {:http, status, %{"errcode" => code}}}
+      end)
+
+      assert {:error, _} = FederationMedia.download("remote.org", "legacy-id")
+    end
+  end
+
   test "remote media cannot be confused with local private media or escape the media path", ctx do
     alias LakehouseMatrix.Media
     {:ok, private} = Media.upload(ctx.alice.id, "local secret", filename: "secret.txt")

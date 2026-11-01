@@ -2,7 +2,7 @@ defmodule LakehouseMatrix.Protocol.Authorization do
   @moduledoc "Room-version 11/12 event authorization, independent of River's local IAM policy."
   alias LakehouseMatrix.Protocol.Event
   alias LakehouseMatrix.Federation.Signing
-  @versions ["11", "12"]
+  @versions ["9", "11", "12"]
   @scalar_power ~w(users_default events_default state_default ban redact kick invite)
 
   def key(event), do: {event["type"], event["state_key"]}
@@ -136,7 +136,7 @@ defmodule LakehouseMatrix.Protocol.Authorization do
 
     cond do
       version == "12" and user in creators(state) -> :infinity
-      is_map(levels) -> get_in(levels, ["users", user]) || levels["users_default"] || 0
+      is_map(levels) -> numeric(get_in(levels, ["users", user]) || levels["users_default"] || 0)
       create && create["sender"] == user -> 100
       true -> 0
     end
@@ -152,16 +152,18 @@ defmodule LakehouseMatrix.Protocol.Authorization do
     do: get_in(state, [{"m.room.member", user}, "content", "membership"])
 
   def level(state, name, default),
-    do: (content(state, "m.room.power_levels") || %{})[name] || default
+    do: numeric((content(state, "m.room.power_levels") || %{})[name] || default)
 
   defp required_power(state, event) do
     power = content(state, "m.room.power_levels") || %{}
 
-    get_in(power, ["events", event["type"]]) ||
-      if(Map.has_key?(event, "state_key"),
-        do: power["state_default"] || 50,
-        else: power["events_default"] || 0
-      )
+    numeric(
+      get_in(power, ["events", event["type"]]) ||
+        if(Map.has_key?(event, "state_key"),
+          do: power["state_default"] || 50,
+          else: power["events_default"] || 0
+        )
+    )
   end
 
   defp check_create(event, version) do
@@ -178,7 +180,8 @@ defmodule LakehouseMatrix.Protocol.Authorization do
                       content["additional_creators"],
                       &match?({:ok, _}, Event.user_domain(&1))
                     ))))) and
-        (version != "11" or same_domain?(event["room_id"], event["sender"]))
+        (version == "12" or same_domain?(event["room_id"], event["sender"])) and
+        (version != "9" or content["creator"] == event["sender"])
 
     allow(valid)
   end
@@ -221,7 +224,8 @@ defmodule LakehouseMatrix.Protocol.Authorization do
         {:error, :invalid_member}
 
       member == "join" ->
-        initial = target == create["sender"] and event["prev_events"] == [create["event_id"]]
+        creator = if version == "9", do: create["content"]["creator"], else: create["sender"]
+        initial = target == creator and event["prev_events"] == [create["event_id"]]
         via = event["content"]["join_authorised_via_users_server"]
 
         permitted =
@@ -308,8 +312,8 @@ defmodule LakehouseMatrix.Protocol.Authorization do
   end
 
   defp check_power(event, state, version) do
-    new = event["content"]
-    old = content(state, "m.room.power_levels")
+    new = if version == "9", do: numeric_levels(event["content"]), else: event["content"]
+    old = numeric_levels(content(state, "m.room.power_levels"))
     sender = event["sender"]
     power = power(state, sender, version)
 
@@ -356,6 +360,27 @@ defmodule LakehouseMatrix.Protocol.Authorization do
 
         allow(scalars and maps)
     end
+  end
+
+  defp numeric(value) when is_binary(value) do
+    case Integer.parse(String.trim(value)) do
+      {number, ""} -> number
+      _ -> value
+    end
+  end
+
+  defp numeric(value), do: value
+
+  defp numeric_levels(nil), do: nil
+
+  defp numeric_levels(levels) do
+    Map.new(levels, fn
+      {key, entries} when key in ~w(users events notifications) and is_map(entries) ->
+        {key, Map.new(entries, fn {name, value} -> {name, numeric(value)} end)}
+
+      {key, value} ->
+        {key, numeric(value)}
+    end)
   end
 
   defp same_domain?("!" <> room, user) do

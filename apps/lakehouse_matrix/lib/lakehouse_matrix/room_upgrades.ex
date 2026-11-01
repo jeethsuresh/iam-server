@@ -56,7 +56,7 @@ defmodule LakehouseMatrix.RoomUpgrades do
     # A v11 ID is known before its create event. V12 permits predecessor without
     # event_id, avoiding a circular hash between create and tombstone events.
     {predecessor, tombstone} =
-      if version == "11" do
+      if version in ["9", "11"] do
         target = "!#{id}:#{Identity.homeserver_domain()}"
 
         event =
@@ -83,7 +83,7 @@ defmodule LakehouseMatrix.RoomUpgrades do
     levels = (state[{"m.room.power_levels", ""}] || %{})["content"] || %{}
 
     levels =
-      if metadata.version == "11" and is_nil(state[{"m.room.power_levels", ""}]),
+      if metadata.version in ["9", "11"] and is_nil(state[{"m.room.power_levels", ""}]),
         do: Map.put(levels, "users", %{state[{"m.room.create", ""}]["sender"] => 100}),
         else: levels
 
@@ -96,7 +96,7 @@ defmodule LakehouseMatrix.RoomUpgrades do
           do: %{"type" => type, "state_key" => key, "content" => event["content"]}
 
     bootstrap =
-      if version == "11",
+      if version in ["9", "11"],
         do: Map.put(levels, "users", Map.put(levels["users"] || %{}, actor, maximum(levels))),
         else: %{}
 
@@ -172,7 +172,7 @@ defmodule LakehouseMatrix.RoomUpgrades do
     Map.put(levels, "users", Map.drop(levels["users"] || %{}, [actor | additional]))
   end
 
-  defp converted_levels(levels, state, "12", "11", _, _) do
+  defp converted_levels(levels, state, "12", version, _, _) when version in ["9", "11"] do
     Map.put(
       levels,
       "users",

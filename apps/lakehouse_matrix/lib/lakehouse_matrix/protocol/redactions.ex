@@ -10,7 +10,7 @@ defmodule LakehouseMatrix.Protocol.Redactions do
     record = Graph.event(id)
 
     if record.pdu["type"] == "m.room.redaction" do
-      with target when is_binary(target) <- get_in(record.pdu, ["content", "redacts"]),
+      with target when is_binary(target) <- Event.redaction_target(record.pdu, metadata.version),
            target when not is_nil(target) <- Graph.event(target),
            do: apply_one!(metadata, record, target)
     else
@@ -20,7 +20,8 @@ defmodule LakehouseMatrix.Protocol.Redactions do
                 where:
                   p.local_room_id == ^metadata.local_room_id and
                     fragment(
-                      "?->>'type' = 'm.room.redaction' AND ?->'content'->>'redacts' = ?",
+                      "?->>'type' = 'm.room.redaction' AND COALESCE(?->>'redacts', ?->'content'->>'redacts') = ?",
+                      p.pdu,
                       p.pdu,
                       p.pdu,
                       ^id

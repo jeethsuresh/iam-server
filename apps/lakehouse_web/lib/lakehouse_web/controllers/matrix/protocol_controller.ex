@@ -305,7 +305,7 @@ defmodule LakehouseWeb.Matrix.ProtocolController do
             "default" => if(LakehouseMatrix.Protocol.Rooms.enabled?(), do: "12", else: "11"),
             "available" =>
               if(LakehouseMatrix.Protocol.Rooms.enabled?(),
-                do: %{"11" => "stable", "12" => "stable"},
+                do: %{"9" => "stable", "11" => "stable", "12" => "stable"},
                 else: %{"11" => "stable"}
               )
           },

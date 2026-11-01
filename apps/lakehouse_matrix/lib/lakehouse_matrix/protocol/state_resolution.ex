@@ -4,7 +4,7 @@ defmodule LakehouseMatrix.Protocol.StateResolution do
 
   @doc "Resolve state maps of {type, state_key} => event_id against an authenticated event graph."
   def resolve(states, graph, version)
-      when version in ["11", "12"] and is_list(states) and is_map(graph) do
+      when version in ["9", "11", "12"] and is_list(states) and is_map(graph) do
     try do
       roots = states |> Enum.flat_map(&Map.values/1) |> Enum.uniq()
 
