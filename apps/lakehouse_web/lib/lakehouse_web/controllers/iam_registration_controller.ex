@@ -4,7 +4,12 @@ defmodule LakehouseWeb.IamRegistrationController do
   alias LakehouseWeb.IamAuth
 
   def create(conn, params) do
-    case IamAuth.register(params["username"], params["password"], params["registration_key"]) do
+    case IamAuth.register(
+           params["username"],
+           params["password"],
+           params["registration_key"],
+           params["full_name"]
+         ) do
       {:ok, principal} ->
         msg =
           if principal.active do

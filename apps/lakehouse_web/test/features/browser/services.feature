@@ -9,11 +9,12 @@ Feature: Gravitas service dashboard
   Scenario: Connected apps reuse the existing Gravitas session across domains
     Given the demo app is in the shared service catalog
     When I sign in through the browser as "dashboarduser" with password "password123"
+    And user "dashboarduser" has full name "Dashboard User"
     And I launch the demo from my available services
     And I allow all chats on the consent page
-    Then I should be signed in on the demo app as "dashboarduser"
+    Then I should be signed in on the demo app as "Dashboard User"
     When I sign out of only the demo app and reopen it from connected services
-    Then I should be signed in on the demo app as "dashboarduser"
+    Then I should be signed in on the demo app as "Dashboard User"
 
   Scenario: The dashboard and groups navigation work on a phone
     Given I use a phone-sized browser

@@ -34,7 +34,7 @@ defmodule LakehouseAppDemo.PageController do
   def launch(conn, %{"login_hint" => username}) when is_binary(username),
     do: start_login(conn, %{"username" => username})
 
-  def launch(conn, _params), do: redirect(conn, to: "/")
+  def launch(conn, _params), do: start_login(conn, %{"username" => nil})
 
   def start_login(conn, %{"username" => username_at}) do
     with {:ok, local, iam_base} <- resolve_iam(username_at),
@@ -93,6 +93,11 @@ defmodule LakehouseAppDemo.PageController do
       {:ok, _} -> redirect(conn, to: "/")
       {:error, msg} -> conn |> put_session(:flash_error, msg) |> redirect(to: "/")
     end
+  end
+
+  defp resolve_iam(nil) do
+    base = Application.get_env(:lakehouse_app_demo, :iam_base) || LakehouseIam.Discovery.public_url()
+    {:ok, nil, base}
   end
 
   defp resolve_iam(username_at) do

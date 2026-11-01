@@ -14,7 +14,7 @@ defmodule LakehouseWeb.DashboardController do
   def launch(conn, %{"id" => id}) do
     case Catalog.get(id) do
       nil -> conn |> put_status(:not_found) |> text("Service not found")
-      service -> redirect(conn, external: Catalog.launch_url(service, conn.assigns.username))
+      service -> redirect(conn, external: Catalog.launch_url(service))
     end
   end
 

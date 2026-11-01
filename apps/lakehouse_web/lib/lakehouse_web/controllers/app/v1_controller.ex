@@ -7,18 +7,37 @@ defmodule LakehouseWeb.App.V1Controller do
   alias LakehouseMatrix.{Events, Matrix, Memberships}
 
   def me(conn, _params) do
-    with :ok <- require_scope(conn, "profile.name"),
-         %Principal{} = p <- Repo.get(Principal, conn.assigns.principal_id) do
-      json(conn, %{
-        sub: p.id,
-        username: p.username,
-        domain: LakehouseIam.Identifier.domain(),
-        user_id: LakehouseIam.Identifier.format(p.username),
-        name: p.username
-      })
+    scopes = conn.assigns.app_grant.scopes
+
+    if Enum.any?(~w(profile.name profile.username profile.picture), &(&1 in scopes)) do
+      case Repo.get(Principal, conn.assigns.principal_id) do
+        %Principal{} = p ->
+          profile = %{sub: p.id, domain: LakehouseIam.Identifier.domain()}
+
+          profile =
+            if "profile.name" in scopes, do: Map.put(profile, :name, p.full_name), else: profile
+
+          profile =
+            if "profile.picture" in scopes,
+              do: Map.put(profile, :picture, LakehouseIam.Profiles.picture_url(p)),
+              else: profile
+
+          profile =
+            if "profile.username" in scopes,
+              do:
+                Map.merge(profile, %{
+                  username: p.username,
+                  user_id: LakehouseIam.Identifier.format(p.username)
+                }),
+              else: profile
+
+          conn |> put_resp_header("cache-control", "no-store") |> json(profile)
+
+        _ ->
+          conn |> put_status(404) |> json(%{error: "not_found"})
+      end
     else
-      {:error, :forbidden} -> forbidden(conn, "profile.name")
-      _ -> conn |> put_status(404) |> json(%{error: "not_found"})
+      forbidden(conn, "profile.name")
     end
   end
 

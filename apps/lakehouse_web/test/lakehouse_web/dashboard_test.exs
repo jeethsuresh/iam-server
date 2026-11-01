@@ -24,7 +24,7 @@ defmodule LakehouseWeb.DashboardTest do
     assert get(signed_in(alice), "/dashboard") |> html_response(200) =~ "Open service"
     assert get(signed_in(bob), "/dashboard") |> html_response(200) =~ "Connect service"
     launch = get(signed_in(alice), "/services/#{service.id}/launch")
-    assert redirected_to(launch) == Catalog.launch_url(service, alice.username)
+    assert redirected_to(launch) == Catalog.launch_url(service)
     refute redirected_to(launch) =~ "token"
     assert get(signed_in(alice), "/services/invalid/launch") |> response(404)
   end

@@ -1,7 +1,7 @@
 defmodule LakehouseWeb.OAuthBrowserStartTest do
   use LakehouseWeb.ConnCase
 
-  alias LakehouseIam.{Accounts, Federated, Identifier}
+  alias LakehouseIam.{Accounts, Federated}
   alias LakehouseIam.Apps.{Grants, Pkce}
   alias LakehouseIam.Schema.AppGrant
   alias LakehouseWeb.MatrixFixtures
@@ -145,7 +145,9 @@ defmodule LakehouseWeb.OAuthBrowserStartTest do
       |> get("/app/v1/me")
       |> json_response(200)
 
-    assert profile["user_id"] == Identifier.format(user.username)
+    assert profile["sub"] == user.id
+    refute Map.has_key?(profile, "user_id")
+    refute Map.has_key?(profile, "username")
   end
 
   test "explicit identity cannot silently select a different logged-in account", %{

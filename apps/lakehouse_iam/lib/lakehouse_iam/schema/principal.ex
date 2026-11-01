@@ -8,6 +8,9 @@ defmodule LakehouseIam.Schema.Principal do
   schema "principals" do
     field :type, Ecto.Enum, values: [:user, :service, :bot, :agent]
     field :username, :string
+    field :full_name, :string
+    field :picture, :string
+    field :picture_key, Ecto.UUID
     field :active, :boolean, default: false
     field :matrix_locked, :boolean, default: false
     field :matrix_suspended, :boolean, default: false
@@ -21,7 +24,11 @@ defmodule LakehouseIam.Schema.Principal do
 
   def registration_changeset(principal, attrs) do
     principal
-    |> cast(attrs, [:type, :username, :active, :meta])
+    |> cast(attrs, [:type, :username, :active, :meta, :full_name])
+    |> update_change(:full_name, fn value ->
+      if is_binary(value), do: String.trim(value), else: value
+    end)
+    |> validate_length(:full_name, max: 120)
     |> validate_required([:type])
     |> validate_username_if_user()
     |> unique_constraint(:username, name: :principals_username_index, message: "already taken")
