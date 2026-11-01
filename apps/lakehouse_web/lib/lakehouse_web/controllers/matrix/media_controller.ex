@@ -21,7 +21,7 @@ defmodule LakehouseWeb.Matrix.MediaController do
 
   def upload_reserved(conn, %{"serverName" => server, "mediaId" => id} = params) do
     filename = params["filename"] || "upload.bin"
-    {body, type} = extract_upload(conn, params, filename)
+    {body, type, conn} = extract_upload(conn, params, filename)
 
     if body == :too_large do
       matrix_error(conn, 413, "M_TOO_LARGE", "File exceeds 10MB limit")
@@ -51,7 +51,7 @@ defmodule LakehouseWeb.Matrix.MediaController do
   def upload(conn, params) do
     filename = Map.get(params, "filename") || conn.query_params["filename"] || "upload.bin"
 
-    {body, content_type} = extract_upload(conn, params, filename)
+    {body, content_type, conn} = extract_upload(conn, params, filename)
 
     opts =
       [filename: filename, matrix_public: conn.assigns.matrix_device_id != "legacy"]
@@ -87,12 +87,12 @@ defmodule LakehouseWeb.Matrix.MediaController do
     cond do
       match?(%Plug.Upload{}, params["file"]) ->
         upload = params["file"]
-        {File.read!(upload.path), upload.content_type || guess_from_name(filename)}
+        {File.read!(upload.path), upload.content_type || guess_from_name(filename), conn}
 
       is_binary(params["base64"]) ->
         case Base.decode64(params["base64"]) do
-          {:ok, bin} -> {bin, params["content_type"] || guess_from_name(filename)}
-          :error -> {"", nil}
+          {:ok, bin} -> {bin, params["content_type"] || guess_from_name(filename), conn}
+          :error -> {"", nil, conn}
         end
 
       true ->
@@ -104,9 +104,9 @@ defmodule LakehouseWeb.Matrix.MediaController do
             type -> type |> String.split(";", parts: 2) |> hd() |> String.trim()
           end
 
-        body =
+        {body, conn} =
           case conn.assigns[:raw_body] do
-            bin when is_binary(bin) -> bin
+            bin when is_binary(bin) -> {bin, conn}
             _ -> read_body_bytes(conn)
           end
 
@@ -117,7 +117,7 @@ defmodule LakehouseWeb.Matrix.MediaController do
              do: guess_from_name(filename),
              else: header_type
 
-        {body, type}
+        {body, type, conn}
     end
   end
 
@@ -259,9 +259,9 @@ defmodule LakehouseWeb.Matrix.MediaController do
 
   defp read_body_bytes(conn) do
     case Plug.Conn.read_body(conn, length: 11 * 1024 * 1024) do
-      {:ok, body, _conn} -> body
-      {:more, _, _} -> :too_large
-      {:error, _} -> ""
+      {:ok, body, next} -> {body, next}
+      {:more, _, next} -> {:too_large, next}
+      {:error, _} -> {"", conn}
     end
   end
 
