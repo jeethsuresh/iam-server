@@ -24,8 +24,8 @@
     <input type="hidden" name="_csrf_token" value={get_csrf_token()} />
     <label for="full_name">Full name</label>
     <input id="full_name" name="full_name" type="text" autocomplete="name" maxlength="120" value={@profile.full_name} />
-    <%= if @profile.picture do %>
-      <img src={@profile.picture} alt="Your profile picture" width="64" height="64" style="border-radius:50%;object-fit:cover" />
+    <%= if @profile.picture_key do %>
+      <img src={LakehouseIam.Profiles.picture_url(@profile)} alt="Your profile picture" width="64" height="64" style="border-radius:50%;object-fit:cover" />
       <label><input type="checkbox" name="remove_picture" value="true" /> Remove picture</label>
     <% end %>
     <label for="picture">Profile picture</label>

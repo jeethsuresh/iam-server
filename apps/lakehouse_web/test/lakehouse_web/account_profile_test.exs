@@ -42,6 +42,25 @@ defmodule LakehouseWeb.AccountProfileTest do
     assert {:ok, %{full_name: nil}} = Profiles.update(user.id, %{"full_name" => ""})
   end
 
+  test "Unicode full names fit the declared character limit without oversized account records", %{
+    user: user
+  } do
+    name = String.duplicate("कि", 120)
+    assert {:ok, updated} = Profiles.update(user.id, %{"full_name" => name})
+    assert updated.full_name == name
+
+    assert {:ok, created} =
+             LakehouseIam.Accounts.register_user("unicodeprofile", "password123",
+               approve: true,
+               full_name: name
+             )
+
+    assert created.full_name == name
+    oversized = "a" <> String.duplicate("́", 600)
+    assert {:error, _} = Profiles.update(user.id, %{"full_name" => oversized})
+    assert Repo.get!(Principal, user.id).full_name == name
+  end
+
   test "upload, serve and remove a picture through settings; links reveal no username", %{
     user: user
   } do
@@ -75,7 +94,23 @@ defmodule LakehouseWeb.AccountProfileTest do
     assert get_resp_header(image, "content-type") == ["image/png; charset=utf-8"]
     assert get_resp_header(image, "cache-control") == ["no-store"]
     assert html_response(get(browser(user), "/settings"), 200) =~ "Ada Lovelace"
+
+    assert {:error, _} =
+             Profiles.update(user.id, %{
+               "full_name" => String.duplicate("a", 121),
+               "picture" => upload
+             })
+
+    assert response(get(build_conn(), uri.path), 200) == bytes
+    assert {:ok, replacement} = Profiles.update(user.id, %{"picture" => upload})
+    assert replacement.picture_key != profile.picture_key
+    assert get(build_conn(), uri.path).status == 404
+    assert Repo.get(LakehouseIam.Schema.ProfilePicture, profile.picture_key) == nil
+    replacement_path = URI.parse(Profiles.picture_url(replacement)).path
+    assert response(get(build_conn(), replacement_path), 200) == bytes
     assert {:ok, _} = Profiles.update(user.id, %{"remove_picture" => "true"})
+    assert Repo.get(LakehouseIam.Schema.ProfilePicture, replacement.picture_key) == nil
+    assert get(build_conn(), replacement_path).status == 404
     assert get(build_conn(), uri.path).status == 404
   end
 

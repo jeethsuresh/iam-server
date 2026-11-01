@@ -3,11 +3,9 @@ defmodule LakehouseWeb.IamProfileController do
 
   def picture(conn, %{"key" => key}) do
     with {:ok, key} <- Ecto.UUID.cast(key),
-         %{picture: "data:" <> encoded} <-
-           LakehouseIam.Repo.get_by(LakehouseIam.Schema.Principal, picture_key: key),
-         [type, data] <- String.split(encoded, ";base64,", parts: 2),
-         true <- type in ["image/png", "image/jpeg", "image/webp"],
-         {:ok, bytes} <- Base.decode64(data) do
+         %{content_type: type, data: bytes} <-
+           LakehouseIam.Repo.get(LakehouseIam.Schema.ProfilePicture, key),
+         true <- type in ["image/png", "image/jpeg", "image/webp"] do
       conn
       |> put_resp_header("cache-control", "no-store")
       |> put_resp_header("x-content-type-options", "nosniff")
