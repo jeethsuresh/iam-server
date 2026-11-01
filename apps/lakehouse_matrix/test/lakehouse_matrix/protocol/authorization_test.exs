@@ -102,7 +102,8 @@ defmodule LakehouseMatrix.Protocol.AuthorizationTest do
           sender: F.bob()
         )
 
-      assert :ok = Authorization.check(knock, restricted.state, @version)
+      expected = if @version == "9", do: {:error, :forbidden}, else: :ok
+      assert Authorization.check(knock, restricted.state, @version) == expected
 
       {join, _} =
         F.append(knocked, "m.room.member", %{"membership" => "join"},
