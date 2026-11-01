@@ -4,7 +4,21 @@ defmodule LakehouseWeb.Matrix.SsoController do
 
   def start(conn, params) do
     conn = private_response(conn)
+    issuer = URI.parse(LakehouseIam.Discovery.public_url())
+    matrix = URI.parse(LakehouseMatrix.Discovery.public_url())
 
+    if conn.host == matrix.host and
+         (matrix.host != issuer.host or (matrix.port != issuer.port and conn.port == matrix.port)) do
+      # Browser sessions and consent pages belong to IAM. Redirect before
+      # creating a host-bound SSO request on the delegated Matrix API host.
+      query = if conn.query_string == "", do: "", else: "?" <> conn.query_string
+      redirect(conn, external: LakehouseIam.Discovery.public_url() <> conn.request_path <> query)
+    else
+      start_request(conn, params)
+    end
+  end
+
+  defp start_request(conn, params) do
     if params["idpId"] in [nil, "gravitas"] and params["action"] in [nil, "login", "register"] do
       case ClientSso.start(params["redirectUrl"]) do
         {:ok, id} ->

@@ -127,6 +127,20 @@ if config_env() == :prod do
   end
 end
 
+if matrix_url = System.get_env("MATRIX_PUBLIC_URL") do
+  matrix_url = String.trim_trailing(matrix_url, "/")
+  matrix_uri = URI.parse(matrix_url)
+
+  unless matrix_uri.scheme == "https" and is_binary(matrix_uri.host) and matrix_uri.host != "" and
+           matrix_uri.port in 1..65535 and matrix_uri.path in [nil, ""] and
+           is_nil(matrix_uri.userinfo) and is_nil(matrix_uri.query) and
+           is_nil(matrix_uri.fragment) do
+    raise "MATRIX_PUBLIC_URL must be an HTTPS origin"
+  end
+
+  config :lakehouse_matrix, :public_url, matrix_url
+end
+
 if media_root = System.get_env("LAKEHOUSE_MEDIA_ROOT") do
   config :lakehouse_matrix, :media_root, media_root
 end

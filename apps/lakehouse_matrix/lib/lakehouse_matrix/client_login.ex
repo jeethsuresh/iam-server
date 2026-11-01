@@ -73,7 +73,7 @@ defmodule LakehouseMatrix.ClientLogin do
           "expires_in_ms" => lifetime,
           "home_server" => Identity.homeserver_domain(),
           "well_known" => %{
-            "m.homeserver" => %{"base_url" => LakehouseIam.Discovery.public_url()}
+            "m.homeserver" => %{"base_url" => LakehouseMatrix.Discovery.public_url()}
           }
         }
         |> then(fn body ->

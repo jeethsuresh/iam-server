@@ -24,12 +24,19 @@ defmodule LakehouseWeb.DiscoveryController do
   def webfinger(conn, _), do: conn |> put_status(400) |> json(%{error: "resource required"})
 
   def matrix_client(conn, _),
-    do: public(conn) |> json(%{"m.homeserver" => %{"base_url" => Discovery.public_url()}})
+    do:
+      public(conn)
+      |> json(%{"m.homeserver" => %{"base_url" => LakehouseMatrix.Discovery.public_url()}})
 
   def matrix_server(conn, _) do
     case LakehouseMatrix.Federation.Signing.config() do
-      {:ok, _, _} -> public(conn) |> json(%{"m.server" => (URI.parse(Discovery.public_url()).host || LakehouseMatrix.Identity.homeserver_domain()) <> ":443"})
-      _ -> conn |> put_status(404) |> json(%{"errcode" => "M_NOT_FOUND", "error" => "Matrix signing is not configured"})
+      {:ok, _, _} ->
+        public(conn) |> json(%{"m.server" => LakehouseMatrix.Discovery.server_address()})
+
+      _ ->
+        conn
+        |> put_status(404)
+        |> json(%{"errcode" => "M_NOT_FOUND", "error" => "Matrix signing is not configured"})
     end
   end
 

@@ -50,6 +50,54 @@ defmodule LakehouseWeb.Matrix.LoginTest do
     assert api(fresh, :get, "/_matrix/client/v3/account/whoami").status == 200
   end
 
+  test "delegated Matrix login advertises its API address while retaining the user identity", %{
+    user: user
+  } do
+    old = Application.get_env(:lakehouse_matrix, :public_url)
+    Application.put_env(:lakehouse_matrix, :public_url, "https://chat.example.com")
+
+    on_exit(fn ->
+      if old,
+        do: Application.put_env(:lakehouse_matrix, :public_url, old),
+        else: Application.delete_env(:lakehouse_matrix, :public_url)
+    end)
+
+    session = login(user)
+    assert session["user_id"] == Identity.user_id(user.username)
+    assert session["home_server"] == Identity.homeserver_domain()
+    assert session["well_known"]["m.homeserver"]["base_url"] == "https://chat.example.com"
+
+    assert api(session, :get, "/_matrix/client/v3/account/whoami")
+           |> json_response(200)
+           |> Map.fetch!("user_id") == session["user_id"]
+  end
+
+  test "SSO on the delegated host returns to IAM before creating a browser-bound request" do
+    old = Application.get_env(:lakehouse_matrix, :public_url)
+    Application.put_env(:lakehouse_matrix, :public_url, "https://chat.example.com")
+
+    on_exit(fn ->
+      if old,
+        do: Application.put_env(:lakehouse_matrix, :public_url, old),
+        else: Application.delete_env(:lakehouse_matrix, :public_url)
+    end)
+
+    query =
+      URI.encode_query(%{
+        "redirectUrl" => "https://client.example/cb?state=a&state=b",
+        "action" => "register"
+      })
+
+    path = "/_matrix/client/v3/login/sso/redirect/gravitas?" <> query
+    delegated = get(build_conn(), "https://chat.example.com" <> path)
+    assert redirected_to(delegated) == LakehouseIam.Discovery.public_url() <> path
+    assert get_session(delegated, :matrix_sso_request) == nil
+    assert get_resp_header(delegated, "cache-control") == ["no-store"]
+    canonical = get(build_conn(), LakehouseIam.Discovery.public_url() <> path)
+    assert redirected_to(canonical) == "/register"
+    assert is_binary(get_session(canonical, :matrix_sso_request))
+  end
+
   test "expired access tokens soft log out, refresh responses can be retried and logout revokes refresh",
        %{user: user} do
     session = login(user)

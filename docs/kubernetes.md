@@ -4,6 +4,24 @@ The deployed overlay is `deploy/kubernetes/gravitas`: the existing shared Traefi
 
 IAM is at **https://gravitas.cool**. Traefik owns the shared apex/wildcard certificate in its own namespace; the IAM Ingress references the apex host without a certificate secret. Keep Namecheap credentials out of IAM and Kubernetes. Shared certificate and DNS management is maintained with the RSS/Office infrastructure.
 
+Matrix keeps `gravitas.cool` as its server name and signing identity. The Gravitas
+overlay sets `MATRIX_DOMAIN=gravitas.cool` and
+`MATRIX_PUBLIC_URL=https://chat.gravitas.cool`: apex client discovery advertises
+that API URL, and federation discovery delegates to `chat.gravitas.cool:443`.
+The `iam-matrix` Ingress routes `/_matrix` and the exact Matrix client discovery
+path on `chat.gravitas.cool` to IAM. River's own Ingress continues to serve its
+web application and `/healthz` on that host. Matrix browser SSO redirects to the
+IAM origin before creating its browser-bound request; consent and login remain
+at `gravitas.cool`. Existing apex Matrix API URLs continue to work.
+
+Use `gravitas.cool` in the federation tester: it checks the signed identity and
+connects through its delegated chat host. User IDs, room IDs, persisted data and
+the dedicated signing key retain their existing domain and values. Deployment
+fails if public discovery, the delegated API, its signing identity or River's
+health route is wrong. Omitting `MATRIX_PUBLIC_URL` preserves the existing IAM
+client URL and federation HTTPS/443 target. Set it explicitly to use a separate
+HTTPS origin or transport port.
+
 The first installation starts fresh; Forge's accounts, groups and media are left untouched. Runtime credentials, the database CA and the first-install administrator login are kept locally under `.local/gravitas/` with owner-only permissions, excluded from Git and Docker contexts. `admin-login.env` contains the administrator login. Runtime secrets also exist in namespace `iam`; the app uses a non-superuser Postgres role. Database connections require TLS and verify a private CA; plaintext database connections are rejected.
 
 The base manifests reserve and limit **100m CPU / 256Mi memory**. The Gravitas overlay keeps those reservations and memory limits, while allowing Phoenix and Postgres to burst up to **1 CPU** after profiling identified CPU throttling. The migration job retains its base limits. The database uses a retained 10Gi volume, and private media uses a retained 1Gi volume. A replacement pod can reattach these volumes; there is a recovery interruption. Back up and test restoring these volumes and a logical database export; automated off-cluster backups are not yet configured. The database leaf certificate needs renewal before its one-year expiry using the retained CA; replace `iam-db-server-tls` and restart Postgres after renewal.
