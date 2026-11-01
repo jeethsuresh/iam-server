@@ -197,6 +197,72 @@ defmodule LakehouseMatrix.Protocol.UpgradesTest do
     end
   end
 
+  test "repairing an unjoined remote direct preserves encrypted history and moves only its owner's mapping",
+       ctx do
+    peer = "@legacy:remote.example"
+
+    {:ok, %{"room_id" => old}} =
+      ClientRooms.create(ctx.alice.id, %{"room_version" => "12", "invite" => [peer]})
+
+    {:ok, old_id} = Identity.parse_room_id(old)
+
+    {:ok, history} =
+      Graph.send(old_id, Identity.user_id("alice"), "m.room.encrypted", %{
+        "algorithm" => "m.megolm.v1.aes-sha2",
+        "ciphertext" => "preserved ciphertext"
+      })
+
+    {:ok, _} =
+      ClientRooms.put_state(ctx.alice.id, old, "m.room.encryption", "", %{
+        "algorithm" => "m.megolm.v1.aes-sha2"
+      })
+
+    {:ok, _} =
+      ClientStore.put_data(ctx.alice.id, "", "m.direct", %{
+        peer => [old],
+        "@other:remote.example" => ["!unchanged:remote.example"]
+      })
+
+    assert {:error, :invalid_param} = RoomUpgrades.repair_unjoined_direct(ctx.bob.id, old, peer)
+
+    assert {:error, :invalid_param} =
+             RoomUpgrades.repair_unjoined_direct(ctx.alice.id, old, "@wrong:remote.example")
+
+    assert {:ok, %{"replacement_room" => replacement} = result} =
+             RoomUpgrades.repair_unjoined_direct(ctx.alice.id, old, peer)
+
+    assert Graph.room_by_id(replacement).version == "9"
+
+    assert state(replacement)[{"m.room.encryption", ""}]["content"]["algorithm"] ==
+             "m.megolm.v1.aes-sha2"
+
+    assert state(replacement)[{"m.room.create", ""}]["content"]["predecessor"]["room_id"] == old
+    assert Graph.event(history["event_id"]).pdu["content"]["ciphertext"] == "preserved ciphertext"
+    assert state(replacement)[{"m.room.member", peer}]["content"]["membership"] == "invite"
+
+    assert ClientStore.get_data(ctx.alice.id, "", "m.direct") == %{
+             peer => [replacement],
+             "@other:remote.example" => ["!unchanged:remote.example"]
+           }
+
+    assert {:ok, ^result} = RoomUpgrades.repair_unjoined_direct(ctx.alice.id, old, peer)
+  end
+
+  test "direct repair refuses rooms where another participant has joined", ctx do
+    peer = "@legacy:remote.example"
+
+    {:ok, %{"room_id" => old}} =
+      ClientRooms.create(ctx.alice.id, %{
+        "room_version" => "12",
+        "invite" => [peer, Identity.user_id("bob")]
+      })
+
+    {:ok, _} = Matrix.join_room(ctx.bob.id, old)
+    {:ok, _} = ClientStore.put_data(ctx.alice.id, "", "m.direct", %{peer => [old]})
+    assert {:error, :invalid_param} = RoomUpgrades.repair_unjoined_direct(ctx.alice.id, old, peer)
+    refute state(old)[{"m.room.tombstone", ""}]
+  end
+
   test "only authorized members upgrade, and additional creators are not copied implicitly",
        ctx do
     bob = Identity.user_id("bob")

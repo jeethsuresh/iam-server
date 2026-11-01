@@ -8,6 +8,51 @@ defmodule LakehouseMatrix.RoomUpgrades do
 
   @transfer ~w(m.room.server_acl m.room.encryption m.room.name m.room.avatar m.room.topic m.room.guest_access m.room.history_visibility m.room.join_rules m.space.child)
 
+  @doc "Explicit repair for a version-12 direct conversation whose remote invitee never joined."
+  def repair_unjoined_direct(principal, ref, peer) do
+    Policy.transaction(fn ->
+      ClientStore.lock!()
+      actor = Repo.get!(LakehouseIam.Schema.Principal, principal).username |> Identity.user_id()
+      metadata = Graph.room_by_id(ref) || Repo.rollback(:not_found)
+      state = RoomAccess.state(metadata)
+      direct = ClientStore.get_data(principal, "", "m.direct") || %{}
+      prior_target = get_in(state, [{"m.room.tombstone", ""}, "content", "replacement_room"])
+      references = if is_map(direct), do: direct[peer], else: nil
+
+      members =
+        for {{"m.room.member", user}, event} <- state,
+            into: %{},
+            do: {user, event["content"]["membership"]}
+
+      unless metadata.version == "12" and is_list(references) and
+               (ref in references or (is_binary(prior_target) and prior_target in references)) and
+               members == %{actor => "join", peer => "invite"} and
+               match?({:ok, _}, Event.user_domain(peer)) and
+               Event.user_domain(peer) != Event.user_domain(actor),
+             do: Repo.rollback(:invalid_param)
+
+      replacement =
+        require_ok!(upgrade(principal, ref, %{"new_version" => "9"}))["replacement_room"]
+
+      target = Graph.room_by_id(replacement)
+      target_state = RoomAccess.state(target)
+
+      unless get_in(target_state, [{"m.room.member", peer}, "content", "membership"]) in [
+               "invite",
+               "join"
+             ],
+             do: require_ok!(Rooms.invite(principal, target.local_room_id, peer))
+
+      # The predecessor retains history; only this account's broken direct-room
+      # reference moves. Other conversations and other accounts are untouched.
+      updated =
+        Map.put(direct, peer, Enum.uniq([replacement | Enum.reject(references, &(&1 == ref))]))
+
+      require_ok!(ClientStore.put_data(principal, "", "m.direct", updated))
+      %{"old_room" => ref, "replacement_room" => replacement, "room_version" => "9"}
+    end)
+  end
+
   def upgrade(principal, ref, params) do
     id = Ecto.UUID.generate()
     version = params["new_version"]

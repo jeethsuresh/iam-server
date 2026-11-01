@@ -61,6 +61,15 @@ operator setting affects this homeserver only. Normal federation discovery is
 unchanged for every unlisted peer; public `.well-known/matrix/server` delegation
 is preferable when the peer's web configuration can be repaired.
 
+An explicitly confirmed, broken version-12 direct can be moved with
+`LakehouseMatrix.RoomUpgrades.repair_unjoined_direct(principal_id, room_id, peer)`.
+The repair requires the owner's `m.direct` reference, that owner as the sole
+joined member, and exactly the intended remote invitee. It creates a version-9
+replacement, preserves encryption and predecessor history, invites the same
+peer, and moves only that owner's direct reference. Repeating it returns the
+same replacement. It refuses rooms in which another participant already joined.
+It does not run automatically during deployment.
+
 The legacy script can also read `MATRIX_LIVE_SESSIONS` for the two explicitly
 allowed production endpoints, using only disposable `rqf<8 hex digits>` accounts.
 Keep this JSON session file private and outside the repository. Set
