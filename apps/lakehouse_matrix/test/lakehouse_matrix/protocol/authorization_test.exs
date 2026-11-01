@@ -3,7 +3,7 @@ defmodule LakehouseMatrix.Protocol.AuthorizationTest do
   alias LakehouseMatrix.Protocol.{Authorization, Event}
   alias LakehouseMatrix.ProtocolFixtures, as: F
 
-  for version <- ["11", "12"] do
+  for version <- ["9", "11", "12"] do
     @version version
     test "#{version}: creator bootstraps and remote users follow membership authorization" do
       chain = F.room(@version)
@@ -93,8 +93,8 @@ defmodule LakehouseMatrix.Protocol.AuthorizationTest do
       {unban, _} = F.append(banned, "m.room.member", %{"membership" => "leave"}, key: F.bob())
       assert :ok = Authorization.check(unban, banned.state, @version)
 
-      {_, restricted} =
-        F.append(chain, "m.room.join_rules", %{"join_rule" => "knock_restricted"}, key: "")
+      rule = if @version == "9", do: "restricted", else: "knock_restricted"
+      {_, restricted} = F.append(chain, "m.room.join_rules", %{"join_rule" => rule}, key: "")
 
       {knock, knocked} =
         F.append(restricted, "m.room.member", %{"membership" => "knock"},
@@ -102,7 +102,8 @@ defmodule LakehouseMatrix.Protocol.AuthorizationTest do
           sender: F.bob()
         )
 
-      assert :ok = Authorization.check(knock, restricted.state, @version)
+      expected = if @version == "9", do: {:error, :forbidden}, else: :ok
+      assert Authorization.check(knock, restricted.state, @version) == expected
 
       {join, _} =
         F.append(knocked, "m.room.member", %{"membership" => "join"},
@@ -124,6 +125,45 @@ defmodule LakehouseMatrix.Protocol.AuthorizationTest do
       event = put_in(event, ["content", "ban"], 1.0)
       assert {:error, :invalid_power_levels} = Authorization.check(event, chain.state, @version)
     end
+  end
+
+  test "version 9 rejects the later knock_restricted join rule" do
+    chain = F.public_room("9")
+
+    {_, chain} =
+      F.append(chain, "m.room.join_rules", %{"join_rule" => "knock_restricted"}, key: "")
+
+    for membership <- ["join", "knock"] do
+      {event, _} =
+        F.append(
+          chain,
+          "m.room.member",
+          %{"membership" => membership, "join_authorised_via_users_server" => F.alice()},
+          key: F.bob(),
+          sender: F.bob()
+        )
+
+      assert {:error, :forbidden} = Authorization.check(event, chain.state, "9")
+    end
+  end
+
+  test "version 9 accepts legacy integer strings without permitting power escalation" do
+    chain = F.public_room("9")
+
+    {levels, _} =
+      F.append(
+        chain,
+        "m.room.power_levels",
+        %{"users" => %{F.alice() => "100"}, "state_default" => "50"},
+        key: ""
+      )
+
+    assert :ok = Authorization.check(levels, chain.state, "9")
+    assert {:error, :invalid_power_levels} = Authorization.check(levels, chain.state, "11")
+    raised = put_in(levels, ["content", "users", F.alice()], "101")
+    assert {:error, :forbidden} = Authorization.check(raised, chain.state, "9")
+    invalid = put_in(levels, ["content", "state_default"], "not a number")
+    assert {:error, :invalid_power_levels} = Authorization.check(invalid, chain.state, "9")
   end
 
   test "version 12 creators have infinite power and cannot be demoted, banned or included in power levels" do

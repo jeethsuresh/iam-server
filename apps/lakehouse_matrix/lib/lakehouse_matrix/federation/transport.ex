@@ -24,6 +24,21 @@ defmodule LakehouseMatrix.Federation.Transport do
   def server_name(_), do: {:error, :invalid_server_name}
 
   def resolve(server) do
+    case Map.fetch(Application.get_env(:lakehouse_matrix, :federation_destinations, %{}), server) do
+      {:ok, destination} ->
+        with {:ok, _identity} <- server_name(server),
+             {:ok, %{explicit: true} = target} <- server_name(destination) do
+          {:ok, delegated_endpoints(target)}
+        else
+          _ -> {:error, :invalid_server_name}
+        end
+
+      :error ->
+        resolve_discovery(server)
+    end
+  end
+
+  defp resolve_discovery(server) do
     with {:ok, target} <- server_name(server) do
       if target.explicit or ip_literal?(target.host) do
         {:ok,

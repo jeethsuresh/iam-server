@@ -22,6 +22,9 @@ patches:
         path: /data/MATRIX_PUBLIC_URL
         value: https://chat.gravitas.cool
       - op: add
+        path: /data/MATRIX_FEDERATION_DESTINATIONS
+        value: '{"matrix.jeethsuresh.com":"matrix.jeethsuresh.com:443"}'
+      - op: add
         path: /data/MATRIX_DOMAIN
         value: gravitas.cool
       - op: add

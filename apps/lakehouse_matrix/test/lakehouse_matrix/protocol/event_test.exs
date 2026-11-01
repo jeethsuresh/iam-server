@@ -3,7 +3,7 @@ defmodule LakehouseMatrix.Protocol.EventTest do
   alias LakehouseMatrix.Protocol.Event
   alias LakehouseMatrix.ProtocolFixtures, as: F
 
-  for version <- ["11", "12"] do
+  for version <- ["9", "11", "12"] do
     @version version
     test "#{version}: signed messages survive transport, altered content is redacted" do
       chain = F.public_room(@version)
@@ -79,6 +79,25 @@ defmodule LakehouseMatrix.Protocol.EventTest do
       signed = Event.add_signature(join, @version, F.seed(), "ed25519:test", "example.org")
       assert {:ok, _} = Event.verify(signed, @version, &F.lookup/3)
     end
+  end
+
+  test "version 9 uses the old redaction, create and signature hash rules" do
+    create = F.room("9", %{"custom" => "removed"}).create
+    assert Event.redact(create, "9")["content"] == %{"creator" => F.alice()}
+
+    assert Event.redact(
+             %{
+               "type" => "m.room.redaction",
+               "content" => %{"reason" => "gone"},
+               "redacts" => "$target"
+             },
+             "9"
+           ) == %{"type" => "m.room.redaction", "content" => %{}}
+
+    assert Event.redact(
+             %{"type" => "m.room.power_levels", "content" => %{"invite" => 10, "kick" => 50}},
+             "9"
+           )["content"] == %{"kick" => 50}
   end
 
   test "version 12 derives the room ID from the create PDU without a room_id field" do

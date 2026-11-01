@@ -23,7 +23,8 @@ defmodule LakehouseMatrix.ProtocolFixtures do
       "origin_server_ts" => 1_000_000
     }
 
-    create = if version == "11", do: Map.put(create, "room_id", "!test:example.org"), else: create
+    create = if version == "9", do: put_in(create, ["content", "creator"], @alice), else: create
+    create = if version != "12", do: Map.put(create, "room_id", "!test:example.org"), else: create
     create = Event.sign(create, version, @seed, "ed25519:test", "example.org")
     create = Map.put(create, "event_id", Event.id(create, version))
 
@@ -72,7 +73,7 @@ defmodule LakehouseMatrix.ProtocolFixtures do
   def public_room(version) do
     chain = room(version)
     {_, chain} = append(chain, "m.room.member", %{"membership" => "join"}, key: @alice)
-    users = if version == "11", do: %{@alice => 100}, else: %{}
+    users = if version != "12", do: %{@alice => 100}, else: %{}
 
     {_, chain} =
       append(chain, "m.room.power_levels", %{"users" => users, "state_default" => 50}, key: "")

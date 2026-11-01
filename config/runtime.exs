@@ -141,6 +141,38 @@ if matrix_url = System.get_env("MATRIX_PUBLIC_URL") do
   config :lakehouse_matrix, :public_url, matrix_url
 end
 
+# Operator-selected physical destinations never change the signed server name.
+# Targets still use public-address checks, verified TLS and the normal limits.
+if destinations = System.get_env("MATRIX_FEDERATION_DESTINATIONS") do
+  valid_name = fn name, explicit ->
+    if is_binary(name) do
+      uri = URI.parse("https://" <> name)
+
+      is_binary(uri.host) and uri.host != "" and uri.port in 1..65535 and
+        uri.path in [nil, ""] and is_nil(uri.query) and is_nil(uri.fragment) and
+        is_nil(uri.userinfo) and (not explicit or Regex.match?(~r/:\d+\z/, name))
+    else
+      false
+    end
+  end
+
+  case Jason.decode(destinations) do
+    {:ok, routes} when is_map(routes) and map_size(routes) <= 100 ->
+      unless Enum.all?(routes, fn {server, target} ->
+               valid_name.(server, false) and valid_name.(target, true)
+             end),
+             do:
+               raise(
+                 "MATRIX_FEDERATION_DESTINATIONS must map server names to explicit host:port destinations"
+               )
+
+      config :lakehouse_matrix, :federation_destinations, routes
+
+    _ ->
+      raise "MATRIX_FEDERATION_DESTINATIONS must be a JSON object"
+  end
+end
+
 if media_root = System.get_env("LAKEHOUSE_MEDIA_ROOT") do
   config :lakehouse_matrix, :media_root, media_root
 end
@@ -229,24 +261,35 @@ config :lakehouse_matrix, native_event_graph: matrix_native, federation_enabled:
 if config_env() == :prod do
   protocol_services = Jason.decode!(System.get_env("PROTOCOL_SERVICES", "{}"))
   protocol_owners = Jason.decode!(System.get_env("PROTOCOL_OWNERS", "{}"))
+
   canonical_origin? = fn origin ->
     uri = URI.parse(origin)
+
     uri.scheme == "https" and is_binary(uri.host) and uri.host != "" and
       origin == "https://" <> uri.host and uri.port == 443
   end
+
   unless is_map(protocol_services) and is_map(protocol_owners),
     do: raise("PROTOCOL_SERVICES and PROTOCOL_OWNERS must be JSON objects")
+
   Enum.each(protocol_services, fn {origin, service} ->
     unless canonical_origin?.(origin) and is_map(service) and
-      is_binary(service["key"]) and byte_size(service["key"]) >= 32 and
-      is_list(service["permissions"]) and Enum.all?(service["permissions"], &is_binary/1),
-      do: raise("Invalid PROTOCOL_SERVICES entry")
+             is_binary(service["key"]) and byte_size(service["key"]) >= 32 and
+             is_list(service["permissions"]) and Enum.all?(service["permissions"], &is_binary/1),
+           do: raise("Invalid PROTOCOL_SERVICES entry")
   end)
+
   unless Enum.all?(protocol_owners, fn {name, origin} ->
-    is_binary(name) and canonical_origin?.(origin) and Map.has_key?(protocol_services, origin)
-  end), do: raise("Protocol owners must be configured services")
+           is_binary(name) and canonical_origin?.(origin) and
+             Map.has_key?(protocol_services, origin)
+         end),
+         do: raise("Protocol owners must be configured services")
+
   keys = Enum.map(protocol_services, fn {_, s} -> s["key"] end)
-  unless length(Enum.uniq(keys)) == length(keys), do: raise("Protocol service keys must be distinct")
+
+  unless length(Enum.uniq(keys)) == length(keys),
+    do: raise("Protocol service keys must be distinct")
+
   config :lakehouse_iam,
     protocol_services: protocol_services,
     protocol_owners: protocol_owners,

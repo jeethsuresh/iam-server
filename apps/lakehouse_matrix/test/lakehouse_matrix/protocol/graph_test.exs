@@ -45,6 +45,43 @@ defmodule LakehouseMatrix.Protocol.GraphTest do
     |> Event.sign(metadata.version, @remote_seed, "ed25519:test", "remote.org")
   end
 
+  test "version 9 signs and applies legacy redaction targets in both directions", ctx do
+    {:ok, room} = Rooms.create_room_record(%{name: "Version nine"})
+    {:ok, create} = Graph.create(room.id, ctx.sender, "9")
+    assert create["content"]["creator"] == ctx.sender
+    assert create["room_id"] == "!#{room.id}:example.org"
+    join_and_open(room, ctx.sender)
+    join = remote_event(room, "m.room.member", %{"membership" => "join"}, @remote)
+    assert {:ok, _} = Graph.receive_pdu(room.id, join, &lookup/3)
+
+    for author <- [ctx.sender, @remote] do
+      {:ok, message} =
+        Graph.send(room.id, ctx.sender, "m.room.message", %{
+          "msgtype" => "m.text",
+          "body" => "remove me"
+        })
+
+      if author == ctx.sender do
+        assert {:ok, redaction} =
+                 Graph.send(room.id, author, "m.room.redaction", %{
+                   "redacts" => message["event_id"]
+                 })
+
+        assert redaction["redacts"] == message["event_id"]
+        assert redaction["content"] == %{}
+      else
+        remote_message =
+          remote_event(room, "m.room.message", %{"msgtype" => "m.text", "body" => "remote remove"})
+
+        assert {:ok, received} = Graph.receive_pdu(room.id, remote_message, &lookup/3)
+        redaction = remote_event(room, "m.room.redaction", %{"redacts" => received["event_id"]})
+        assert {:ok, _} = Graph.receive_pdu(room.id, redaction, &lookup/3)
+        assert Graph.event(received["event_id"]).redacted_by
+        assert Repo.get_by!(RoomEvent, event_id: received["event_id"]).content == %{}
+      end
+    end
+  end
+
   test "promoting an outlier preserves an intact stored body when the received copy is pruned",
        ctx do
     join_and_open(ctx.room, ctx.sender)

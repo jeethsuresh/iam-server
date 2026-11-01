@@ -242,7 +242,7 @@ defmodule LakehouseMatrix.Protocol.ImportTest do
   end
 
   for version <- ["11", "12"] do
-    test "#{version}: invitation previews require the create PDU, signatures and the same room",
+    test "#{version}: signed preview PDUs require valid signatures and the same room",
          ctx do
       version = unquote(version)
       remote = F.public_room(version)
@@ -266,9 +266,6 @@ defmodule LakehouseMatrix.Protocol.ImportTest do
         )
 
       for bad <- [
-            [],
-            Enum.map(preview, &Map.take(&1, ~w(type sender state_key content))),
-            Enum.reject(preview, &(&1["type"] == "m.room.create")),
             [invalid_signature],
             preview ++ [foreign]
           ] do
@@ -307,6 +304,40 @@ defmodule LakehouseMatrix.Protocol.ImportTest do
       pending = Invites.pending(metadata.local_room_id, ctx.mxid)
       assert Enum.any?(pending.state["events"], &(&1["type"] == "m.room.create"))
       refute Enum.any?(pending.state["events"], &Map.has_key?(&1, "auth_events"))
+    end
+  end
+
+  for version <- ["9", "11", "12"] do
+    test "#{version}: standard stripped and absent invite previews never become resolved state",
+         ctx do
+      version = unquote(version)
+      remote = F.public_room(version)
+      {invite, _} = F.append(remote, "m.room.member", %{"membership" => "invite"}, key: ctx.mxid)
+
+      preview =
+        Enum.map(remote.state, fn {_, event} ->
+          Map.take(event, ~w(type sender state_key content))
+        end)
+
+      for stripped <- [[], preview] do
+        assert {:ok, _} =
+                 Invites.receive(
+                   "example.org",
+                   remote.room,
+                   invite["event_id"],
+                   %{
+                     "room_version" => version,
+                     "event" => wire(invite),
+                     "invite_room_state" => stripped
+                   },
+                   &F.lookup/3
+                 )
+
+        metadata = Graph.room_by_id(remote.room)
+        assert metadata.current_state == %{}
+        assert metadata.extremities == []
+        assert Graph.event(remote.create["event_id"]) == nil
+      end
     end
   end
 
