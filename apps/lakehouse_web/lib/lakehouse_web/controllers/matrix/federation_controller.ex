@@ -6,6 +6,8 @@ defmodule LakehouseWeb.Matrix.FederationController do
   def version(conn, _),
     do: json(conn, %{"server" => %{"name" => "Gravitas", "version" => "0.1.0"}})
 
+  def room_versions(conn, _), do: json(conn, LakehouseMatrix.RoomVersions.advertised())
+
   def server_keys(conn, _) do
     case Signing.server_keys() do
       {:ok, keys} ->

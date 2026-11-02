@@ -139,6 +139,12 @@ defmodule LakehouseMatrix.Protocol.UpgradesTest do
     assert is_nil(ClientStore.get_data(ctx.bob.id, replacement, "m.tag"))
     {:ok, _} = Matrix.join_room(ctx.bob.id, replacement)
 
+    assert {:ok, %{"chunk" => members}} =
+             LakehouseMatrix.ClientContext.members(ctx.bob.id, "device", replacement, %{})
+
+    assert Enum.sort(Enum.map(members, & &1["state_key"])) == Enum.sort([alice, bob])
+    assert Enum.all?(members, &(&1["room_id"] == replacement))
+
     assert {:ok, %{"actions" => []}} =
              LakehouseMatrix.PushRules.fetch(ctx.bob.id, "room", replacement, "actions")
 

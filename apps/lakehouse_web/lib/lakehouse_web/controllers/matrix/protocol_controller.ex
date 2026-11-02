@@ -303,11 +303,7 @@ defmodule LakehouseWeb.Matrix.ProtocolController do
         "capabilities" => %{
           "m.room_versions" => %{
             "default" => if(LakehouseMatrix.Protocol.Rooms.enabled?(), do: "12", else: "11"),
-            "available" =>
-              if(LakehouseMatrix.Protocol.Rooms.enabled?(),
-                do: %{"9" => "stable", "11" => "stable", "12" => "stable"},
-                else: %{"11" => "stable"}
-              )
+            "available" => LakehouseMatrix.RoomVersions.available()
           },
           "m.change_password" => %{"enabled" => false},
           "m.get_login_token" => %{"enabled" => true},

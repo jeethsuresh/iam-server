@@ -173,6 +173,44 @@ if destinations = System.get_env("MATRIX_FEDERATION_DESTINATIONS") do
   end
 end
 
+if sources = System.get_env("MATRIX_ROOM_VERSION_SOURCES") do
+  sources =
+    case Jason.decode(sources) do
+      {:ok, sources} -> sources
+      _ -> raise "MATRIX_ROOM_VERSION_SOURCES must be a JSON object"
+    end
+
+  valid_origin = fn url ->
+    if is_binary(url) do
+      uri = URI.parse(url)
+
+      uri.scheme == "https" and is_binary(uri.host) and uri.host != "" and
+        uri.port in 1..65535 and uri.path in [nil, ""] and is_nil(uri.userinfo) and
+        is_nil(uri.query) and is_nil(uri.fragment)
+    else
+      false
+    end
+  end
+
+  unless is_map(sources) and map_size(sources) <= 100 and
+           Enum.all?(sources, fn
+             {server, %{"base_url" => url, "access_token" => token}} ->
+               is_binary(server) and byte_size(server) in 1..255 and
+                 valid_origin.("https://" <> server) and valid_origin.(url) and
+                 is_binary(token) and byte_size(token) in 1..8192 and
+                 not String.contains?(token, ["\r", "\n"])
+
+             _ ->
+               false
+           end),
+         do:
+           raise(
+             "MATRIX_ROOM_VERSION_SOURCES must contain HTTPS origins and capability account tokens"
+           )
+
+  config :lakehouse_matrix, :room_version_sources, sources
+end
+
 if media_root = System.get_env("LAKEHOUSE_MEDIA_ROOT") do
   config :lakehouse_matrix, :media_root, media_root
 end
@@ -255,7 +293,10 @@ if (matrix_native or matrix_federation) and is_nil(System.get_env("MATRIX_SIGNIN
 if matrix_federation and not matrix_native,
   do: raise("Matrix federation requires MATRIX_NATIVE_EVENT_GRAPH=true")
 
-config :lakehouse_matrix, native_event_graph: matrix_native, federation_enabled: matrix_federation
+config :lakehouse_matrix,
+  native_event_graph: matrix_native,
+  federation_enabled: matrix_federation,
+  automatic_room_versions: System.get_env("MATRIX_AUTOMATIC_ROOM_VERSIONS", "false") == "true"
 
 # Provider routes and credentials are operator configuration, never PCR fields.
 if config_env() == :prod do

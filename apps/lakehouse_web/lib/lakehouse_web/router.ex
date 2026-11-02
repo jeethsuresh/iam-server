@@ -411,6 +411,7 @@ defmodule LakehouseWeb.Router do
 
   scope "/_matrix/federation", LakehouseWeb.Matrix do
     pipe_through [:api, LakehouseWeb.Plugs.FederationAuth]
+    get "/unstable/cool.gravitas/room_versions", FederationController, :room_versions
     get "/v1/media/download/:mediaId", MediaController, :federation
     get "/v1/media/thumbnail/:mediaId", MediaController, :federation
     get "/v1/query/profile", FederationController, :profile

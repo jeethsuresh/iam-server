@@ -187,6 +187,34 @@ Ecto.Migrator.run(
   log: false
 )
 
+if System.get_env("INTEROP_AUTO_VERSIONS") == "1" do
+  {:ok, probe} =
+    Interop.http(:post, "reference.test:8448", "/_matrix/client/v3/register", %{
+      "username" => "versionprobe",
+      "password" => "isolated-capabilities-only",
+      "auth" => %{"type" => "m.login.dummy"}
+    })
+
+  Application.put_env(:lakehouse_matrix, :automatic_room_versions, true)
+  Application.put_env(:lakehouse_matrix, :room_version_refresh_seconds, 2)
+  Application.put_env(:lakehouse_matrix, :room_version_check_seconds, 2)
+
+  Application.put_env(:lakehouse_matrix, :room_version_fetcher, fn "reference.test:8448" ->
+    with {:ok, body} <-
+           Interop.http(
+             :get,
+             "reference.test:8448",
+             "/_matrix/client/v3/capabilities",
+             nil,
+             probe["access_token"]
+           ),
+         available when is_map(available) <-
+           get_in(body, ["capabilities", "m.room_versions", "available"]),
+         do: {:ok, for({version, "stable"} <- available, do: version)},
+         else: (_ -> {:error, :unavailable})
+  end)
+end
+
 {:ok, _} = Application.ensure_all_started(:lakehouse_matrix)
 Application.put_env(:lakehouse_web, LakehouseWeb.Endpoint, Keyword.put(endpoint, :server, true))
 {:ok, _} = Application.ensure_all_started(:lakehouse_web)

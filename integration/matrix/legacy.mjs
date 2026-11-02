@@ -1,6 +1,7 @@
 // Real two-server regression for the oldest supported peer (Synapse 1.56 / v9).
 // The optional session file uses only explicitly provisioned disposable actors.
 import assert from 'node:assert/strict';
+import {pathToFileURL} from 'node:url';
 import {readFileSync, writeFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {isDeepStrictEqual} from 'node:util';
@@ -19,8 +20,8 @@ async function api(actor, path, data, method) {
   return body;
 }
 function pass(label) {passed.push(label);console.log('LEGACY PASS '+label);}
-async function until(label, check) {
-  const end = Date.now() + 45000;
+async function until(label, check, timeout = 45000) {
+  const end = Date.now() + timeout;
   while (Date.now() < end) {if (await check()) {pass(label);return;} await new Promise(resolve=>setTimeout(resolve,250));}
   throw new Error('Timed out: '+label);
 }
@@ -98,6 +99,7 @@ async function operations(source,target,room,encrypted) {
   await source.client.redactEvent(room,original);
   await until(prefix+' message deletion',async()=> (await event(target,room,original))?.isRedacted());
 }
+async function main() {
 let actors;
 try {
   if(process.env.MATRIX_LIVE_SESSIONS){
@@ -140,4 +142,6 @@ try {
   for(const client of clients)client.stopClient();
   if(process.env.MATRIX_LIVE_REPORT)writeFileSync(process.env.MATRIX_LIVE_REPORT,JSON.stringify({passed,rooms},null,2));
 }
-process.exit(0);
+}
+export {api, start, deliver, file, operations, until, event, clients, passed, pass};
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {await main();process.exit(0);}

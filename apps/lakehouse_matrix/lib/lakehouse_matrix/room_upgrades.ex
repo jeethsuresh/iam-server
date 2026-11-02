@@ -6,7 +6,7 @@ defmodule LakehouseMatrix.RoomUpgrades do
   alias LakehouseMatrix.Protocol.{Authorization, Event, Graph, Policy, Rooms}
   alias LakehouseMatrix.Federation.RoomAccess
 
-  @transfer ~w(m.room.server_acl m.room.encryption m.room.name m.room.avatar m.room.topic m.room.guest_access m.room.history_visibility m.room.join_rules m.space.child)
+  @transfer ~w(m.room.server_acl m.room.encryption m.room.name m.room.avatar m.room.topic m.room.guest_access m.room.history_visibility m.room.join_rules m.space.child m.space.parent cool.gravitas.river.group.v1)
 
   @doc "Explicit repair for a version-12 direct conversation whose remote invitee never joined."
   def repair_unjoined_direct(principal, ref, peer) do
@@ -166,23 +166,23 @@ defmodule LakehouseMatrix.RoomUpgrades do
         do: require_ok!(Graph.send(id, actor, "m.space.child", event["content"], key))
 
     # Generate new invitations rather than impersonating any user's join.
-    rule = get_in(state, [{"m.room.join_rules", ""}, "content", "join_rule"]) || "invite"
+    for {{"m.room.member", user}, event} <- state,
+        event["content"]["membership"] in ["join", "invite"] and user != actor do
+      case Identity.parse_user_id(user) do
+        {:ok, name} ->
+          case LakehouseIam.Accounts.fetch_user(name) do
+            {:ok, %{active: true}} -> require_ok!(Rooms.invite(principal, id, user))
+            _ -> :ok
+          end
 
-    if rule in ["invite", "knock"] do
-      for {{"m.room.member", user}, event} <- state,
-          event["content"]["membership"] == "join" and user != actor do
-        case Identity.parse_user_id(user) do
-          {:ok, name} ->
-            case LakehouseIam.Accounts.fetch_user(name) do
-              {:ok, %{active: true}} -> require_ok!(Rooms.invite(principal, id, user))
-              _ -> :ok
-            end
-
-          _ ->
-            require_ok!(Rooms.invite(principal, id, user))
-        end
+        _ ->
+          require_ok!(Rooms.invite(principal, id, user))
       end
     end
+
+    for {{"m.room.member", user}, event} <- state,
+        event["content"]["membership"] == "ban",
+        do: require_ok!(Graph.send(id, actor, "m.room.member", event["content"], user))
 
     # Set final power levels after transferring state and issuing invitations.
     require_ok!(Graph.send(id, actor, "m.room.power_levels", levels, ""))
@@ -335,7 +335,10 @@ defmodule LakehouseMatrix.RoomUpgrades do
         updated =
           Map.new(direct, fn {user, rooms} ->
             {user,
-             if(is_list(rooms) and source in rooms, do: Enum.uniq(rooms ++ [target]), else: rooms)}
+             if(is_list(rooms) and source in rooms,
+               do: Enum.uniq([target | Enum.reject(rooms, &(&1 == source))]),
+               else: rooms
+             )}
           end)
 
         if updated != direct,
