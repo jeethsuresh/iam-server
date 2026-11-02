@@ -16,6 +16,9 @@ patches:
       name: iam-config
     patch: |-
       - op: replace
+        path: /data/POOL_SIZE
+        value: "10"
+      - op: replace
         path: /data/IAM_EPHEMERAL_DISK
         value: "false"
       - op: add
