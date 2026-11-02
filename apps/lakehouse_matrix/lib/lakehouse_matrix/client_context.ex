@@ -2,7 +2,7 @@ defmodule LakehouseMatrix.ClientContext do
   @moduledoc "State and event context at authenticated native pagination positions."
   import Ecto.Query
   alias LakehouseIam.Repo
-  alias LakehouseMatrix.{ClientHistory, ClientRooms, ClientSync, Cursor}
+  alias LakehouseMatrix.{ClientHistory, ClientRooms, ClientSync, Cursor, Identity}
   alias LakehouseMatrix.Protocol.Graph
   alias LakehouseMatrix.Schema.Pdu
 
@@ -26,6 +26,10 @@ defmodule LakehouseMatrix.ClientContext do
               true -> true
             end
         end)
+        # /members returns full room events, unlike the sync state section.
+        # Strict clients discard membership events without their room_id and
+        # would then have nobody to share encryption keys with.
+        |> Enum.map(&Map.put(&1, "room_id", Identity.room_id(room.id)))
 
       {:ok, %{"chunk" => chunk}}
     else
