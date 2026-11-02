@@ -64,6 +64,8 @@ jobs:
         run: bash integration/matrix/run.sh iam-tests:ci
       - name: Verify version-9 messaging and attachments against Synapse 1.56
         run: bash integration/matrix/run.sh iam-tests:ci legacy
+      - name: Verify automatic room upgrades across a real Synapse server update
+        run: bash integration/matrix/run.sh iam-tests:ci upgrade
   image:
     needs: tests
     runs-on: ubuntu-24.04

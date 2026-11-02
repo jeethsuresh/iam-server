@@ -19,6 +19,9 @@ patches:
         path: /data/IAM_EPHEMERAL_DISK
         value: "false"
       - op: add
+        path: /data/MATRIX_AUTOMATIC_ROOM_VERSIONS
+        value: "true"
+      - op: add
         path: /data/MATRIX_PUBLIC_URL
         value: https://chat.gravitas.cool
       - op: add

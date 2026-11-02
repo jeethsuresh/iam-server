@@ -26,6 +26,11 @@ defmodule LakehouseMatrix.Application do
         do: children ++ [LakehouseMatrix.Ephemeral, LakehouseMatrix.Pushers],
         else: children
 
+    children =
+      if LakehouseMatrix.Protocol.Rooms.enabled?() and LakehouseMatrix.RoomVersions.enabled?(),
+        do: children ++ [LakehouseMatrix.RoomVersionWorker],
+        else: children
+
     Supervisor.start_link(children, strategy: :one_for_one, name: LakehouseMatrix.Supervisor)
   end
 end

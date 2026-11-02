@@ -4,10 +4,12 @@ set -Eeuo pipefail
 # Usage: bash integration/matrix/run.sh <image-built-from-Dockerfile.tests>
 image=${1:?Pass the image built from Dockerfile.tests}
 mode=${2:-modern}
+automatic=0
 case "$mode" in
   modern) reference_image=ghcr.io/element-hq/synapse@sha256:b497dc97929056f25401ad3f4e8c7e82cb374cfaba07d7348a3c4ea3d1ae950f; serve_only=0; client_script=crypto.mjs ;;
   legacy) reference_image=docker.io/matrixdotorg/synapse@sha256:70fdddfcba9058d2471ae7764f887b6db781d7527debcb75a1b8083217c342f1; serve_only=1; client_script=legacy.mjs ;;
-  *) echo 'Expected modern or legacy interoperability mode' >&2; exit 1 ;;
+  upgrade) reference_image=docker.io/matrixdotorg/synapse@sha256:70fdddfcba9058d2471ae7764f887b6db781d7527debcb75a1b8083217c342f1; serve_only=1; client_script=room_versions.mjs; automatic=1 ;;
+  *) echo 'Expected modern, legacy or upgrade interoperability mode' >&2; exit 1 ;;
 esac
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 fixture_dir=$(mktemp -d)
@@ -57,12 +59,17 @@ docker run --name "$name-reset" --network "$name" --init \
   > "$fixture_dir/reset.log" 2>&1 || { cat "$fixture_dir/reset.log"; exit 1; }
 grep 'RESET PASS' "$fixture_dir/reset.log"
 synapse_start='exec python -m synapse.app.homeserver --config-path /fixtures/homeserver.yaml'
-if [[ "$mode" == legacy ]]; then
+if [[ "$mode" != modern ]]; then
   synapse_start="python -m synapse.app.homeserver --config-path /fixtures/homeserver.yaml --generate-keys; $synapse_start"
+fi
+data_mount=(--tmpfs /data:rw)
+if [[ "$mode" == upgrade ]]; then
+  mkdir -p "$fixture_dir/synapse-data" "$fixture_dir/results"
+  data_mount=(-v "$fixture_dir/synapse-data:/data:rw")
 fi
 containers+=("$name-synapse")
 docker run -d --name "$name-synapse" --network "$name" --network-alias reference.test \
-  --user 0 --security-opt label=disable --read-only --tmpfs /data:rw --tmpfs /tmp:rw \
+  --user 0 --security-opt label=disable --read-only "${data_mount[@]}" --tmpfs /tmp:rw \
   -v "$fixture_dir:/fixtures:ro" --entrypoint sh \
   "$reference_image" -ec "$synapse_start" >/dev/null
 for attempt in $(seq 1 90); do
@@ -74,7 +81,7 @@ containers+=("$name-native")
 docker run -d --name "$name-native" --network "$name" --network-alias native.test --init \
   --security-opt label=disable -v "$fixture_dir:/fixtures:ro" \
   -e POSTGRES_HOST=postgres -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres \
-  -e WALLABY_SKIP=1 -e INTEROP_HOLD=1 -e INTEROP_SERVE_ONLY="$serve_only" \
+  -e WALLABY_SKIP=1 -e INTEROP_HOLD=1 -e INTEROP_SERVE_ONLY="$serve_only" -e INTEROP_AUTO_VERSIONS="$automatic" \
   --entrypoint mix "$image" run --no-start integration/matrix/native.exs >/dev/null
 for attempt in $(seq 1 90); do
   if docker logs "$name-native" 2>&1 | grep -q 'INTEROP CRYPTO SERVER READY'; then break; fi
@@ -84,9 +91,28 @@ done
 docker logs "$name-native" 2>&1 | grep 'INTEROP '
 docker build -f "$root/integration/matrix/Dockerfile.client" -t "$name-client" "$root"
 containers+=("$name-client")
-docker run --name "$name-client" --network "$name" --security-opt label=disable \
-  -v "$fixture_dir:/fixtures:ro" "$name-client" node "$client_script" > "$fixture_dir/client.log" 2>&1 || {
-    tail -100 "$fixture_dir/client.log"
-    exit 1
-  }
-grep -E 'CRYPTO |LEGACY ' "$fixture_dir/client.log"
+if [[ "$mode" == upgrade ]]; then
+  docker run -d --name "$name-client" --network "$name" --security-opt label=disable \
+    -v "$fixture_dir:/fixtures:ro" -v "$fixture_dir/results:/results:rw" "$name-client" node "$client_script" >/dev/null
+  for attempt in $(seq 1 180); do
+    [[ -f "$fixture_dir/results/upgrade-peer" ]] && break
+    if [[ $(docker inspect -f '{{.State.Running}}' "$name-client") != true ]] || (( attempt == 180 )); then exit 1; fi
+    sleep 1
+  done
+  docker stop --time 20 "$name-synapse" >/dev/null
+  docker rm "$name-synapse" >/dev/null
+  docker run -d --name "$name-synapse" --network "$name" --network-alias reference.test \
+    --user 0 --security-opt label=disable --read-only "${data_mount[@]}" --tmpfs /tmp:rw \
+    -v "$fixture_dir:/fixtures:ro" --entrypoint sh \
+    ghcr.io/element-hq/synapse@sha256:b497dc97929056f25401ad3f4e8c7e82cb374cfaba07d7348a3c4ea3d1ae950f \
+    -ec 'exec python -m synapse.app.homeserver --config-path /fixtures/homeserver.yaml' >/dev/null
+  [[ $(docker wait "$name-client") == 0 ]] || exit 1
+  docker logs "$name-client" > "$fixture_dir/client.log" 2>&1
+else
+  docker run --name "$name-client" --network "$name" --security-opt label=disable \
+    -v "$fixture_dir:/fixtures:ro" "$name-client" node "$client_script" > "$fixture_dir/client.log" 2>&1 || {
+      tail -100 "$fixture_dir/client.log"
+      exit 1
+    }
+fi
+grep -E 'CRYPTO |LEGACY |ROOM VERSIONS ' "$fixture_dir/client.log"

@@ -310,3 +310,63 @@ References: [Matrix 1.19](https://spec.matrix.org/v1.19/),
 [server API](https://spec.matrix.org/v1.19/server-server-api/),
 [room version 12](https://spec.matrix.org/v1.19/rooms/v12/), and
 [MSC4186](https://github.com/matrix-org/matrix-spec-proposals/blob/main/proposals/4186-simplified-sliding-sync.md).
+
+## Automatic room compatibility
+
+The Gravitas overlay enables `MATRIX_AUTOMATIC_ROOM_VERSIONS=true`. New native
+Matrix conversations select the highest locally implemented stable version in
+all participating servers' confirmed capabilities. Joined, invited and knocking
+users constrain the intersection; departed and banned users do not. Local-only
+rooms use the highest local version. Explicit Matrix create-room version choices
+remain valid, and the periodic policy subsequently reconciles existing rooms.
+Confirmed disjoint capabilities reject incompatible creation instead of inventing
+support. Unknown peers start at the local compatibility floor (currently v9) and
+are not automatically migrated without confirmed support.
+
+The worker scans due rooms in bounded batches every ten seconds and rechecks
+capabilities and rooms every five minutes. Its observations and per-room status
+are durable across restarts. A failed lookup retains the last good observation;
+observations older than one hour cannot authorize a migration. Fresh stable
+capabilities take priority over a subset of versions in a particular join.
+
+Matrix has no standard public endpoint listing another server's complete room
+versions. Gravitas learns authenticated peers' `make_join`/`make_knock` version
+advertisements, and advertises its own stable versions at the authenticated
+`/_matrix/federation/unstable/cool.gravitas/room_versions` extension. For servers
+without that extension, configure an operator-owned non-admin capability account
+using the runtime secret `MATRIX_ROOM_VERSION_SOURCES`:
+
+```json
+{"peer.example":{"base_url":"https://matrix.peer.example","access_token":"CAPABILITY_READER_TOKEN"}}
+```
+
+The account needs no joined rooms or administrative role. Its token is used only
+for `GET /_matrix/client/v3/capabilities` at the explicitly configured HTTPS
+origin. Tokens never enter peer capability rows, room events, logs or source
+control. Normal public-address checks, DNS pinning, verified TLS, response size
+limits and redirect refusal apply. There is no inference from software banners,
+trial invitation or synthetic room sent to a user. Rotate the secret if this
+account is revoked; failed authentication cannot trigger a version downgrade.
+
+A version change creates a normal Matrix replacement room; it cannot rewrite an
+existing room's immutable version. The worker requires an active local joined
+user with existing tombstone/create authority. It preserves encryption,
+predecessor history links, aliases, group metadata, bans and pending invitations,
+and moves direct-chat settings to the current replacement. Other participants
+receive real replacement invitations rather than forged joins. Historical rooms
+and their encrypted events remain available. Rechecks are idempotent and record
+`current`, `upgraded`, `replaced` or a retry/block reason in
+`matrix_room_version_checks`. An active policy-server rule or a join rule absent
+from the target format blocks automatic migration instead of weakening access.
+Servers or rooms for which there is no common version, no fresh capability data,
+or no authorized local administrator remain unchanged with an explicit status.
+
+Regression coverage includes a persistent real Synapse 1.56 database upgraded to
+the pinned modern Synapse release while both clients stay active. It verifies
+v9-to-v12 automatic migration of plaintext and encrypted conversations, old
+history, direct routing, all message relations, attachments, receipts and
+idempotent periodic reconciliation:
+
+```sh
+bash integration/matrix/run.sh iam-tests:ci upgrade
+```

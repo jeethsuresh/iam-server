@@ -20,6 +20,7 @@ config :lakehouse_web, LakehouseWeb.Endpoint,
 
 config :logger, level: :warning
 config :lakehouse_matrix, :account_worker_enabled, false
+config :lakehouse_matrix, :automatic_room_versions, false
 
 config :lakehouse_iam,
   admin_username: "admin",

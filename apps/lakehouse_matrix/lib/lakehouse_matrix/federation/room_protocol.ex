@@ -29,6 +29,7 @@ defmodule LakehouseMatrix.Federation.RoomProtocol do
     with metadata when not is_nil(metadata) <- Graph.room_by_id(ref),
          true <- RoomAccess.allowed?(metadata, origin),
          {:ok, ^origin} <- Event.user_domain(user),
+         :ok <- observe_versions(origin, membership, versions),
          :ok <- compatible(metadata, membership, versions),
          event <-
            Graph.template(
@@ -59,6 +60,11 @@ defmodule LakehouseMatrix.Federation.RoomProtocol do
       _ -> {:error, :forbidden}
     end
   end
+
+  defp observe_versions(origin, membership, versions) when membership in ["join", "knock"],
+    do: LakehouseMatrix.RoomVersions.observe(origin, versions)
+
+  defp observe_versions(_, _, _), do: :ok
 
   def send_membership(origin, ref, id, membership, wire, lookup \\ &Keyring.key/3) do
     with metadata when not is_nil(metadata) <- Graph.room_by_id(ref),

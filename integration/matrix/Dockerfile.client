@@ -3,6 +3,6 @@ RUN mkdir -p /app
 WORKDIR /app
 COPY integration/matrix/package.json integration/matrix/package-lock.json ./
 RUN npm ci --ignore-scripts
-COPY integration/matrix/crypto.mjs integration/matrix/legacy.mjs ./
+COPY integration/matrix/crypto.mjs integration/matrix/legacy.mjs integration/matrix/room_versions.mjs ./
 ENV NODE_EXTRA_CA_CERTS=/fixtures/ca.pem
 CMD ["node", "crypto.mjs"]
