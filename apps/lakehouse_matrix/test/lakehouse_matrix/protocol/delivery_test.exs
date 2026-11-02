@@ -66,6 +66,24 @@ defmodule LakehouseMatrix.Federation.DeliveryTest do
       "edus" => edus
     }
 
+  test "committed queue wakeups cancel idle waits and discard obsolete timers" do
+    for {worker, queue, operation} <- [{Outbox, "outbox", :deliver}, {Inbox, "inbox", :recover}] do
+      idle = :erlang.start_timer(60_000, self(), operation)
+      state = %{timer: idle}
+
+      assert {:noreply, awake} =
+               worker.handle_info({:gravitas_change, %{"federation_queue" => queue}}, state)
+
+      assert Process.read_timer(idle) == false
+      timer = awake.timer
+      assert_receive {:timeout, ^timer, ^operation}, 500
+      assert {:noreply, ^awake} = worker.handle_info({:timeout, idle, operation}, awake)
+
+      assert {:noreply, ^awake} =
+               worker.handle_info({:gravitas_change, %{"principal_id" => "unrelated"}}, awake)
+    end
+  end
+
   test "reverse-order PDU batches resolve dependencies and transaction replays have no extra effects",
        ctx do
     first = remote(ctx.room.id, "m.room.message", %{"body" => "first"})

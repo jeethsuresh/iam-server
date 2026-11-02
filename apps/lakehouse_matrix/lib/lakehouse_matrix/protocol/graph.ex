@@ -835,6 +835,8 @@ defmodule LakehouseMatrix.Protocol.Graph do
           on_conflict: :nothing,
           conflict_target: [:destination, :event_id]
         )
+
+        LakehouseIam.Changes.notify(%{"federation_queue" => "outbox"})
       end
 
       if event["type"] == "m.room.member" and get_in(event, ["content", "membership"]) == "invite" do
@@ -870,6 +872,8 @@ defmodule LakehouseMatrix.Protocol.Graph do
             on_conflict: [set: [kind: "invite", payload: payload]],
             conflict_target: [:destination, :event_id]
           )
+
+          LakehouseIam.Changes.notify(%{"federation_queue" => "outbox"})
         end
       end
     end

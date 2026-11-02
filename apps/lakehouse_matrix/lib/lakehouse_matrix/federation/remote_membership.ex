@@ -103,6 +103,8 @@ defmodule LakehouseMatrix.Federation.RemoteMembership do
           }
         ])
 
+        LakehouseIam.Changes.notify(%{"federation_queue" => "outbox"})
+
         %{}
       end)
     else
