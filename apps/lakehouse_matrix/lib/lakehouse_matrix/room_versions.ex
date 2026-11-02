@@ -42,10 +42,11 @@ defmodule LakehouseMatrix.RoomVersions do
     end)
   end
 
+  def preferred(invites) when is_list(invites) and length(invites) > 100, do: hd(Event.versions())
+
   def preferred(invites) do
     if enabled?() do
       servers = domains(invites)
-      Enum.each(servers, &refresh/1)
 
       case common(servers) do
         {:ok, version} -> version
@@ -88,10 +89,55 @@ defmodule LakehouseMatrix.RoomVersions do
     )
   end
 
+  def track(server) do
+    Repo.insert_all(
+      "matrix_peer_room_versions",
+      [
+        %{
+          server_name: server,
+          versions: [],
+          confirmed_at: nil,
+          retry_at: ClientStore.now(),
+          source: "pending"
+        }
+      ],
+      on_conflict: :nothing,
+      conflict_target: [:server_name]
+    )
+
+    :ok
+  end
+
+  def refresh_due(servers) do
+    now = ClientStore.now()
+
+    due =
+      Repo.all(
+        from r in "matrix_peer_room_versions",
+          where: r.server_name in ^servers and r.retry_at <= ^now,
+          order_by: [asc: r.retry_at, asc: r.server_name],
+          limit: 8,
+          select: r.server_name
+      )
+
+    due
+    |> Task.async_stream(&refresh/1, max_concurrency: 4, timeout: 10_000, on_timeout: :kill_task)
+    |> Stream.run()
+  end
+
   def refresh(server, force \\ false) do
     row = snapshot(server)
 
     if force or is_nil(row) or DateTime.compare(row.retry_at, ClientStore.now()) != :gt do
+      track(server)
+      # Claim the retry window before network I/O; a timed-out task cannot
+      # create an immediate retry loop or hold a room/event transaction open.
+      retry_at = DateTime.add(ClientStore.now(), refresh_interval(), :second)
+
+      Repo.update_all(from(r in "matrix_peer_room_versions", where: r.server_name == ^server),
+        set: [retry_at: retry_at]
+      )
+
       result =
         case Application.get_env(:lakehouse_matrix, :room_version_fetcher) do
           fetcher when is_function(fetcher, 1) -> fetcher.(server)

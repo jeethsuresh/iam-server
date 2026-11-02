@@ -324,7 +324,10 @@ support. Unknown peers start at the local compatibility floor (currently v9) and
 are not automatically migrated without confirmed support.
 
 The worker scans due rooms in bounded batches every ten seconds and rechecks
-capabilities and rooms every five minutes. Its observations and per-room status
+capabilities every five minutes and room policy every thirty seconds.
+Capability fetching is limited to eight peers per batch, with at most four
+concurrent requests and ten-second task deadlines. Room creation reads the
+confirmed cache and never waits for a peer HTTP request. Its observations and per-room status
 are durable across restarts. A failed lookup retains the last good observation;
 observations older than one hour cannot authorize a migration. Fresh stable
 capabilities take priority over a subset of versions in a particular join.

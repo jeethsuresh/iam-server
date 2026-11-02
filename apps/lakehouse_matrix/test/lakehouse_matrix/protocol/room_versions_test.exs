@@ -245,4 +245,19 @@ defmodule LakehouseMatrix.Protocol.RoomVersionsTest do
     assert RoomVersions.available() == %{"11" => "stable"}
     assert RoomVersions.best([["9", "11", "12"]]) == "11"
   end
+
+  test "new room creation never fetches capabilities or tracks rejected invite lists", ctx do
+    Application.put_env(:lakehouse_matrix, :room_version_fetcher, fn _ ->
+      flunk("Creation must not call a remote server")
+    end)
+
+    {:ok, %{"room_id" => room}} =
+      ClientRooms.create(ctx.alice.id, %{"invite" => ["@peer:new.test"]})
+
+    assert Graph.room_by_id(room).version == "9"
+    assert is_nil(RoomVersions.snapshot("new.test"))
+    invites = for n <- 1..101, do: "@peer:peer#{n}.test"
+    assert {:error, :invalid_param} = ClientRooms.create(ctx.alice.id, %{"invite" => invites})
+    assert is_nil(RoomVersions.snapshot("peer1.test"))
+  end
 end

@@ -31,14 +31,25 @@ defmodule LakehouseMatrix.RoomVersionWorker do
           select: r.room_id
       )
 
+    peers =
+      rooms
+      |> Enum.flat_map(fn ref ->
+        state = RoomAccess.state(Graph.room_by_id(ref))
+        if tombstoned?(state), do: [], else: servers(state)
+      end)
+      |> Enum.uniq()
+
+    Enum.each(peers, &RoomVersions.track/1)
+    RoomVersions.refresh_due(peers)
+
     Enum.map(rooms, fn ref ->
-      result = reconcile(ref)
+      result = reconcile(ref, false)
       save_check(ref, result)
       result
     end)
   end
 
-  def reconcile(ref) do
+  def reconcile(ref, refresh \\ true) do
     case Graph.room_by_id(ref) do
       nil ->
         {:error, :not_found}
@@ -46,7 +57,7 @@ defmodule LakehouseMatrix.RoomVersionWorker do
       room ->
         state = RoomAccess.state(room)
         servers = servers(state)
-        unless tombstoned?(state), do: Enum.each(servers, &RoomVersions.refresh/1)
+        if refresh and not tombstoned?(state), do: Enum.each(servers, &RoomVersions.refresh/1)
         # All network I/O finishes before taking the global event stream lock.
         Policy.transaction(fn ->
           ClientStore.lock!()
@@ -159,7 +170,7 @@ defmodule LakehouseMatrix.RoomVersionWorker do
         next_check_at:
           DateTime.add(
             ClientStore.now(),
-            Application.get_env(:lakehouse_matrix, :room_version_check_seconds, 300),
+            Application.get_env(:lakehouse_matrix, :room_version_check_seconds, 30),
             :second
           ),
         status: status,
