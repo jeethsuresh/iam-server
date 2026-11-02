@@ -9,19 +9,26 @@ defmodule LakehouseMatrix.Federation.Outbox do
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   @impl true
-  def init(_),
-    do:
-      (
-        send(self(), :deliver)
-        {:ok, %{}}
-      )
+  def init(_) do
+    :ok = LakehouseIam.Changes.subscribe(nil, "matrix_federation_outbox")
+    {:ok, %{timer: :erlang.start_timer(0, self(), :deliver)}}
+  end
 
   @impl true
-  def handle_info(:deliver, state) do
+  def handle_info({:timeout, timer, :deliver}, %{timer: timer} = state) do
     result = deliver_once()
-    Process.send_after(self(), :deliver, if(result == :idle, do: 1000, else: 10))
-    {:noreply, state}
+    delay = if result == :idle, do: 1000, else: 0
+    {:noreply, %{state | timer: :erlang.start_timer(delay, self(), :deliver)}}
   end
+
+  # Changes uses PostgreSQL NOTIFY: a wakeup cannot escape a rolled-back write.
+  # Keep a fallback poll for restarts, missed notifications and retry deadlines.
+  def handle_info({:gravitas_change, %{"federation_queue" => "outbox"}}, state) do
+    Process.cancel_timer(state.timer)
+    {:noreply, %{state | timer: :erlang.start_timer(0, self(), :deliver)}}
+  end
+
+  def handle_info(_, state), do: {:noreply, state}
 
   def deliver_once(request \\ &Transport.request/4, lookup \\ &Keyring.key/3) do
     case claim() do

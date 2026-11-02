@@ -45,6 +45,8 @@ defmodule LakehouseMatrix.Federation.Transactions do
       )
     end
 
+    if pending != [], do: LakehouseIam.Changes.notify(%{"federation_queue" => "inbox"})
+
     Enum.each(edus, &Edus.receive(origin, &1))
     response = %{"pdus" => results}
 

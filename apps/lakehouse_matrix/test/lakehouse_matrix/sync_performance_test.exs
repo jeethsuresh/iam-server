@@ -1,6 +1,7 @@
 defmodule LakehouseMatrix.SyncPerformanceTest do
   use LakehouseMatrix.DataCase, async: false
-  alias LakehouseMatrix.{ClientRooms, ClientSync, Fixtures, ReadSnapshot}
+  alias LakehouseMatrix.{ClientHistory, ClientRooms, ClientSync, Fixtures, Identity, ReadSnapshot}
+  alias LakehouseMatrix.Protocol.Graph
 
   test "snapshot cache is scoped, bounded and cleared after failures" do
     Process.put(:loads, 0)
@@ -75,6 +76,55 @@ defmodule LakehouseMatrix.SyncPerformanceTest do
     try do
       assert {:ok, _} = ClientSync.sync(alice.id, "PROFILE", %{})
       assert Process.get(:queries) < 1000
+    after
+      :telemetry.detach(handler)
+    end
+  end
+
+  test "refreshing the latest history page does not render the room's entire backlog" do
+    alice = Fixtures.user_fixture("historybudget")
+    assert {:ok, created} = ClientRooms.create(alice.id, %{})
+    {:ok, room} = Identity.parse_room_id(created["room_id"])
+    sender = Identity.user_id(alice.username)
+
+    for n <- 1..25 do
+      assert {:ok, _} = Graph.send(room, sender, "m.room.message", %{"body" => "message #{n}"})
+    end
+
+    page = fn ->
+      assert {:ok, result} = ClientHistory.page(alice.id, "HISTORY", room, %{"limit" => 10})
+      assert length(result["chunk"]) == 10
+      assert result["end"]
+    end
+
+    small = count_queries(page)
+
+    for n <- 26..100 do
+      assert {:ok, _} = Graph.send(room, sender, "m.room.message", %{"body" => "message #{n}"})
+    end
+
+    large = count_queries(page)
+    IO.puts("HISTORY_REFRESH_QUERIES small=#{small} large=#{large}")
+    assert large <= small + 20
+  end
+
+  defp count_queries(callback) do
+    owner = self()
+    handler = "history-query-budget-#{System.unique_integer()}"
+    Process.put(:history_queries, 0)
+
+    :telemetry.attach(
+      handler,
+      [:lakehouse_iam, :repo, :query],
+      fn _, _, _, _ ->
+        if self() == owner, do: Process.put(:history_queries, Process.get(:history_queries) + 1)
+      end,
+      nil
+    )
+
+    try do
+      callback.()
+      Process.get(:history_queries)
     after
       :telemetry.detach(handler)
     end

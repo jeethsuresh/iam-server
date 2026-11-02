@@ -9,19 +9,24 @@ defmodule LakehouseMatrix.Federation.Inbox do
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   @impl true
-  def init(_),
-    do:
-      (
-        send(self(), :recover)
-        {:ok, %{}}
-      )
+  def init(_) do
+    :ok = LakehouseIam.Changes.subscribe(nil, "matrix_federation_inbox")
+    {:ok, %{timer: :erlang.start_timer(0, self(), :recover)}}
+  end
 
   @impl true
-  def handle_info(:recover, state) do
+  def handle_info({:timeout, timer, :recover}, %{timer: timer} = state) do
     result = recover_once()
-    Process.send_after(self(), :recover, if(result == :idle, do: 1000, else: 10))
-    {:noreply, state}
+    delay = if result == :idle, do: 1000, else: 0
+    {:noreply, %{state | timer: :erlang.start_timer(delay, self(), :recover)}}
   end
+
+  def handle_info({:gravitas_change, %{"federation_queue" => "inbox"}}, state) do
+    Process.cancel_timer(state.timer)
+    {:noreply, %{state | timer: :erlang.start_timer(0, self(), :recover)}}
+  end
+
+  def handle_info(_, state), do: {:noreply, state}
 
   def recover_once(request \\ &Transport.request/4, lookup \\ &Keyring.key/3) do
     case claim() do

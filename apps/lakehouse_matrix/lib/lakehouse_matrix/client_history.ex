@@ -73,8 +73,12 @@ defmodule LakehouseMatrix.ClientHistory do
       selected =
         visible(safe, metadata, principal)
         |> Enum.filter(&(Map.has_key?(&1.pdu, "state_key") or &1.pdu["sender"] not in ignored))
-        |> Enum.map(&client_event(&1, principal))
-        |> ClientSync.filter_events(Map.delete(filter, "limit"))
+        # River refreshes this page after each sync. Render only enough matching
+        # events for the page and its continuation, rather than the 1,000-event
+        # scan window. Apply filters to the same visibility/erasure-safe content.
+        |> Stream.map(&client_event(&1, principal))
+        |> Stream.filter(&(ClientSync.filter_events([&1], Map.delete(filter, "limit")) != []))
+        |> Enum.take(limit + 1)
 
       chunk = Enum.take(selected, limit)
       start = params["from"] || Cursor.encode("topology", principal, device, lower, room)

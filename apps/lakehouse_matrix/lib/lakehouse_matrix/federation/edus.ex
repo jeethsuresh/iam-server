@@ -38,21 +38,25 @@ defmodule LakehouseMatrix.Federation.Edus do
   end
 
   def outgoing!(destination, type, content) do
-    Repo.insert_all("matrix_federation_outbox", [
-      %{
-        destination: destination,
-        kind: "edu",
-        payload: %{
-          "origin" => Identity.homeserver_domain(),
-          "origin_server_ts" => System.system_time(:millisecond),
-          "pdus" => [],
-          "edus" => [%{"edu_type" => type, "content" => content}]
-        },
-        attempts: 0,
-        available_at: ClientStore.now(),
-        transaction_id: ClientStore.random()
-      }
-    ])
+    result =
+      Repo.insert_all("matrix_federation_outbox", [
+        %{
+          destination: destination,
+          kind: "edu",
+          payload: %{
+            "origin" => Identity.homeserver_domain(),
+            "origin_server_ts" => System.system_time(:millisecond),
+            "pdus" => [],
+            "edus" => [%{"edu_type" => type, "content" => content}]
+          },
+          attempts: 0,
+          available_at: ClientStore.now(),
+          transaction_id: ClientStore.random()
+        }
+      ])
+
+    LakehouseIam.Changes.notify(%{"federation_queue" => "outbox"})
+    result
   end
 
   def broadcast!(metadata, type, content) do
