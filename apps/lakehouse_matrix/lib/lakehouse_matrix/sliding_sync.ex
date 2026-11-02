@@ -99,7 +99,7 @@ defmodule LakehouseMatrix.SlidingSync do
 
   defp poll(principal, device, params, previous, format, deadline) do
     with {:ok, {response, state, high}} <-
-           Repo.transaction(fn ->
+           LakehouseMatrix.ReadSnapshot.transaction(fn ->
              LakehouseMatrix.ReadSnapshot.run(fn ->
                build(principal, device, params, previous, format)
              end)
@@ -156,7 +156,7 @@ defmodule LakehouseMatrix.SlidingSync do
   end
 
   defp build(principal, device, params, previous, format) do
-    high = ClientStore.lock!()
+    high = ClientStore.position()
     LakehouseMatrix.AccountModeration.require!(principal, :read)
     since = if previous, do: previous.position, else: 0
     known = (previous && previous.state["rooms"]) || %{}

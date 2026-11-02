@@ -48,8 +48,8 @@ defmodule LakehouseMatrix.ClientSync do
 
   def snapshot(principal, device, since, full, filter \\ %{}) do
     LakehouseMatrix.ReadSnapshot.run(fn ->
-      Repo.transaction(fn ->
-        high = ClientStore.lock!() |> delivery_position(principal, device, since)
+      LakehouseMatrix.ReadSnapshot.transaction(fn ->
+        high = ClientStore.position() |> delivery_position(principal, device, since)
         LakehouseMatrix.AccountModeration.require!(principal, :read)
         memberships = memberships_at(principal, high)
         room_filter = filter["room"] || %{}
