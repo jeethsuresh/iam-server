@@ -279,8 +279,8 @@ defmodule LakehouseMatrix.AppstorePushTest do
 
     assert queued() == 1
 
-    Repo.update_all("matrix_notifications",
-      set: [ts: System.system_time(:millisecond) - 8 * 24 * 60 * 60 * 1000]
+    Repo.update_all("matrix_appstore_outbox",
+      set: [expires_at: DateTime.add(ClientStore.now(), -1, :second)]
     )
 
     assert :idle = AppstorePush.deliver_once()

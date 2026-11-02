@@ -59,9 +59,17 @@ defmodule LakehouseMatrix.AppstorePush do
   def queue!(principal, notification) do
     if current = sender() do
       if subscribed?(principal, current) do
+        now = ClientStore.now()
+
         Repo.insert_all(
           "matrix_appstore_outbox",
-          [%{notification_id: notification, available_at: ClientStore.now()}],
+          [
+            %{
+              notification_id: notification,
+              available_at: now,
+              expires_at: DateTime.add(now, 7 * 86400, :second)
+            }
+          ],
           on_conflict: :nothing
         )
 
@@ -103,14 +111,8 @@ defmodule LakehouseMatrix.AppstorePush do
     {:ok, item} =
       Repo.transaction(fn ->
         now = ClientStore.now()
-        expired = System.system_time(:millisecond) - 7 * 24 * 60 * 60 * 1000
-
-        Repo.delete_all(
-          from o in "matrix_appstore_outbox",
-            join: n in "matrix_notifications",
-            on: n.id == o.notification_id,
-            where: n.ts < ^expired
-        )
+        # Bound cleanup to the indexed live queue, never the notification archive.
+        Repo.delete_all(from o in "matrix_appstore_outbox", where: o.expires_at <= ^now)
 
         item =
           Repo.one(
