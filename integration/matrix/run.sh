@@ -22,6 +22,7 @@ cleanup() {
   fi
   for container in "${containers[@]}"; do docker rm -fv "$container" >/dev/null 2>&1 || true; done
   docker network rm "$name" >/dev/null 2>&1 || true
+  docker volume rm "$name-synapse-data" >/dev/null 2>&1 || true
   docker image rm "$name-client" >/dev/null 2>&1 || true
   rm -rf "$fixture_dir"
   exit "$status"
@@ -64,8 +65,9 @@ if [[ "$mode" != modern ]]; then
 fi
 data_mount=(--tmpfs /data:rw)
 if [[ "$mode" == upgrade ]]; then
-  mkdir -p "$fixture_dir/synapse-data" "$fixture_dir/results"
-  data_mount=(-v "$fixture_dir/synapse-data:/data:rw")
+  mkdir -p "$fixture_dir/results"
+  docker volume create "$name-synapse-data" >/dev/null
+  data_mount=(-v "$name-synapse-data:/data:rw")
 fi
 containers+=("$name-synapse")
 docker run -d --name "$name-synapse" --network "$name" --network-alias reference.test \
