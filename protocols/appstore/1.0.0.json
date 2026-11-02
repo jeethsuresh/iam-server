@@ -1,0 +1,106 @@
+{
+  "protocol": "appstore",
+  "version": "1.0.0",
+  "capabilities": [
+    {
+      "id": "push.send",
+      "permissions": [
+        "appstore.push"
+      ],
+      "input": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z][a-z0-9-]{0,63}$"
+          },
+          "device": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "minLength": 64,
+            "maxLength": 64
+          },
+          "payload": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "app",
+          "device",
+          "payload"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "accepted"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "status"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "id": "push.broadcast",
+      "permissions": [
+        "appstore.push",
+        "appstore.push.broadcast"
+      ],
+      "input": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z][a-z0-9-]{0,63}$"
+          },
+          "payload": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "app",
+          "payload"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "accepted"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "status"
+        ],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

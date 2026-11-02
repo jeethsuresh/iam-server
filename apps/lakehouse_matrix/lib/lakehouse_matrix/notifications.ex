@@ -99,7 +99,10 @@ defmodule LakehouseMatrix.Notifications do
           returning: [:id]
         )
 
-      if count > 0, do: LakehouseMatrix.Pushers.queue!(principal.id, hd(rows).id)
+      if count > 0 do
+        LakehouseMatrix.Pushers.queue!(principal.id, hd(rows).id)
+        LakehouseMatrix.AppstorePush.queue!(principal.id, hd(rows).id)
+      end
     end
   end
 

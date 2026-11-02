@@ -236,6 +236,8 @@ defmodule LakehouseIam.Protocols do
             available_at: now
           })
         end)
+
+        LakehouseIam.Changes.notify(%{"protocol_delivery" => true})
       end
 
       %{"id" => params["id"], "status" => "accepted"}
