@@ -236,4 +236,13 @@ defmodule LakehouseMatrix.Protocol.RoomVersionsTest do
 
     assert state[{"cool.gravitas.river.group.v1", ""}]["content"]["kind"] == "channel"
   end
+
+  test "capability advertisements reflect enabled local support and retain future peer versions" do
+    RoomVersions.observe("remote.test", ["9", "11", "12", "13"])
+    assert "13" in RoomVersions.snapshot("remote.test").versions
+    assert {:ok, "12"} = RoomVersions.common(["remote.test"])
+    Application.put_env(:lakehouse_matrix, :native_event_graph, false)
+    assert RoomVersions.available() == %{"11" => "stable"}
+    assert RoomVersions.best([["9", "11", "12"]]) == "11"
+  end
 end

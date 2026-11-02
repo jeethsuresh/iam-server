@@ -14,7 +14,14 @@ defmodule LakehouseMatrix.RoomVersions do
     do: Application.get_env(:lakehouse_matrix, :room_version_refresh_seconds, @refresh)
 
   def enabled?, do: Application.get_env(:lakehouse_matrix, :automatic_room_versions, false)
-  def available, do: Map.new(Event.versions(), &{&1, "stable"})
+
+  def available,
+    do:
+      Map.new(
+        if(LakehouseMatrix.Protocol.Rooms.enabled?(), do: Event.versions(), else: ["11"]),
+        &{&1, "stable"}
+      )
+
   def advertised, do: %{"server_name" => Identity.homeserver_domain(), "available" => available()}
 
   def domains(users) when is_list(users) do
@@ -31,7 +38,7 @@ defmodule LakehouseMatrix.RoomVersions do
   # are never sorted numerically or mistaken for implemented stable versions.
   def best(lists) do
     Enum.find(Enum.reverse(Event.versions()), fn version ->
-      Enum.all?(lists, &(version in &1))
+      Map.has_key?(available(), version) and Enum.all?(lists, &(version in &1))
     end)
   end
 
@@ -124,7 +131,7 @@ defmodule LakehouseMatrix.RoomVersions do
            is_list(versions) and length(versions) <= 128 and
              Enum.all?(versions, &(is_binary(&1) and byte_size(&1) in 1..128)) do
       now = ClientStore.now()
-      versions = Enum.filter(Event.versions(), &(&1 in versions))
+      versions = Enum.uniq(versions)
 
       values = %{
         server_name: server,
