@@ -54,6 +54,27 @@ jobs:
           -e POSTGRES_HOST=127.0.0.1 -e POSTGRES_PORT=5432
           -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres
           iam-tests:ci
+      - name: Check out the pinned Store protocol fixture
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: jeethsuresh/appstore
+          ref: bbe6b9afedee9e9512256d3d0a4276005031dd67
+          path: .appstore-push
+          persist-credentials: false
+      - name: Build the pinned Private Store notification fixture
+        run: |
+          mkdir -p "$RUNNER_TEMP/matrix-push"
+          docker run --rm -v "$PWD/.appstore-push/backend:/src:ro" -v "$RUNNER_TEMP/matrix-push:/out" -w /src golang:1.25-bookworm \
+            go test -c -mod=readonly -ldflags '-linkmode external -extldflags "-static"' -o /out/appstore.test ./internal/store
+      - name: Verify encrypted Matrix alerts through the real Store stream and acknowledgement
+        run: >-
+          docker run --rm --network host
+          -e POSTGRES_HOST=127.0.0.1 -e POSTGRES_PORT=5432
+          -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres
+          -e MATRIX_PUSH_INTEROP_APPSTORE_BINARY=/fixtures/appstore.test
+          -v "$RUNNER_TEMP/matrix-push:/fixtures:ro"
+          --entrypoint mix iam-tests:ci test
+          apps/lakehouse_matrix/test/lakehouse_matrix/appstore_push_test.exs
       - name: Verify concurrent subgroup registration and membership revisions
         run: >-
           docker run --rm --network host

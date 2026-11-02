@@ -294,6 +294,7 @@ if matrix_federation and not matrix_native,
   do: raise("Matrix federation requires MATRIX_NATIVE_EVENT_GRAPH=true")
 
 config :lakehouse_matrix,
+  appstore_push_origin: System.get_env("MATRIX_APPSTORE_PUSH_ORIGIN"),
   native_event_graph: matrix_native,
   federation_enabled: matrix_federation,
   automatic_room_versions: System.get_env("MATRIX_AUTOMATIC_ROOM_VERSIONS", "false") == "true"

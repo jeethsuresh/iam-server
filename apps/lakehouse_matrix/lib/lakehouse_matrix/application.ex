@@ -23,7 +23,9 @@ defmodule LakehouseMatrix.Application do
 
     children =
       if LakehouseMatrix.Protocol.Rooms.enabled?(),
-        do: children ++ [LakehouseMatrix.Ephemeral, LakehouseMatrix.Pushers],
+        do:
+          children ++
+            [LakehouseMatrix.Ephemeral, LakehouseMatrix.Pushers, LakehouseMatrix.AppstorePush],
         else: children
 
     children =
