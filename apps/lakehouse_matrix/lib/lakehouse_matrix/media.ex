@@ -8,7 +8,9 @@ defmodule LakehouseMatrix.Media do
   alias LakehouseMatrix.Media.Image
   alias LakehouseMatrix.Schema.MediaObject
 
-  @max_bytes 10 * 1024 * 1024
+  @max_bytes 32 * 1024 * 1024
+
+  def max_bytes, do: @max_bytes
 
   @type upload_result :: %{
           media_id: String.t(),

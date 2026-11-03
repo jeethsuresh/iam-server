@@ -43,8 +43,15 @@ defmodule LakehouseMatrix.MediaTest do
     assert type == "text/plain"
   end
 
-  test "rejects uploads over 10MB", %{user: user} do
-    huge = :crypto.strong_rand_bytes(10 * 1024 * 1024 + 1)
+  test "uploads exactly 32 MiB and downloads the original bytes", %{user: user} do
+    bytes = :binary.copy(<<0, 255>>, 16 * 1024 * 1024)
+    assert {:ok, result} = Media.upload(user.id, bytes, filename: "boundary.bin")
+    assert result.info["size"] == 32 * 1024 * 1024
+    assert {:ok, %{body: ^bytes}} = Media.download(user.id, "localhost", result.media_id)
+  end
+
+  test "rejects uploads over 32 MiB", %{user: user} do
+    huge = :crypto.strong_rand_bytes(32 * 1024 * 1024 + 1)
     assert {:error, :too_large} = Media.upload(user.id, huge, filename: "big.bin")
   end
 

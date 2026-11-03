@@ -650,6 +650,13 @@ defmodule LakehouseMatrix.DelegatedGroups do
     end
   end
 
+  defp standard_attachments_only(content) do
+    case Map.get(content, "cool.gravitas.river.attachments") do
+      files when files in [nil, []] -> :ok
+      _ -> {:error, :invalid_attachment}
+    end
+  end
+
   def send(grant, id, type, txn, content) do
     with :ok <- scope(grant, "chats.write"),
          :ok <- access(grant, id),
@@ -658,7 +665,7 @@ defmodule LakehouseMatrix.DelegatedGroups do
          true <- byte_size(Jason.encode!(content)) <= 250_000,
          true <- IAM.can?(grant.principal_id, "matrix.room.send", Identity.resource_arn(id)),
          :ok <- validate(type, content),
-         :ok <- LakehouseMatrix.RiverFiles.validate(content, id),
+         :ok <- standard_attachments_only(content),
          true <-
            LakehouseMatrix.RiverPublishing.valid_send?(id, type, content, grant.principal_id) do
       transact(fn ->
@@ -697,7 +704,6 @@ defmodule LakehouseMatrix.DelegatedGroups do
               Events.to_client_event(e)
           end
 
-        LakehouseMatrix.RiverFiles.register!(grant, id, result, content)
         result
       end)
     else

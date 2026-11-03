@@ -47,3 +47,12 @@ Apply migration 20261023150000 after the contacts migration. Keep automatic depl
 maintenance adapter when a manual release is requested. The Gravitas overlay
 configures MATRIX_RTC_URL=wss://rtc.gravitas.cool; the matching River media
 resources and protected runtime configuration live in its deploy/media directory.
+
+## Attachments
+
+River uses standard Matrix media uploads, with a 32 MiB limit per file on both
+client and homeserver. Raw, reserved, legacy multipart/base64 and federated media
+share the same payload limit. Encrypted rooms upload ciphertext and distribute
+keys through their encrypted messages. The retired peer-file manifest endpoint
+is no longer served, and delegated sends reject new peer manifests. Historical
+message metadata and database records remain intact.

@@ -397,7 +397,7 @@ defmodule LakehouseMatrix.ErasureTest do
     assert Erasure.pdu(Graph.event(id), c.later.id).pdu["content"] == %{}
   end
 
-  test "River attachment listings use the same erasure and redaction view as their source events",
+  test "historical peer attachment metadata still obeys erasure and redaction",
        c do
     file = %{
       "id" => Ecto.UUID.generate(),
@@ -415,48 +415,22 @@ defmodule LakehouseMatrix.ErasureTest do
         "cool.gravitas.river.attachments" => [file]
       })
 
-    Repo.insert!(%LakehouseMatrix.Schema.RiverFile{
-      id: file["id"],
-      room_id: c.local,
-      uploader_id: c.author.id,
-      event_id: source["event_id"],
-      manifest: file
-    })
-
-    {:ok, prior} =
-      LakehouseIam.Apps.Grants.upsert(
-        c.before.id,
-        "https://chat.gravitas.cool",
-        ["chats.read"],
-        :all,
-        []
-      )
-
-    {:ok, fresh} =
-      LakehouseIam.Apps.Grants.upsert(
-        c.later.id,
-        "https://chat.gravitas.cool",
-        ["chats.read"],
-        :all,
-        []
-      )
-
     assert {:ok, :ok} = Repo.transaction(fn -> Erasure.erase!(c.author.id) end)
     {:ok, _} = Matrix.join_room(c.later.id, c.ref)
-    assert {:ok, %{attachments: [^file]}} = LakehouseMatrix.RiverFiles.list(prior, c.local, %{})
+    record = Repo.get_by!(RoomEvent, event_id: source["event_id"])
+    raw = Events.to_client_event(record)
 
-    assert {:ok, %{attachment: ^file}} =
-             LakehouseMatrix.RiverFiles.list(prior, c.local, %{"file_id" => file["id"]})
+    assert Erasure.client(raw, c.before.id)["content"]["cool.gravitas.river.attachments"] == [
+             file
+           ]
 
-    assert {:ok, %{attachments: []}} = LakehouseMatrix.RiverFiles.list(fresh, c.local, %{})
-
-    assert {:error, :not_found} =
-             LakehouseMatrix.RiverFiles.list(fresh, c.local, %{"file_id" => file["id"]})
+    assert Erasure.client(raw, c.later.id)["content"] == %{}
 
     assert {:ok, _} =
              ClientRooms.redact(c.author.id, "A", c.ref, source["event_id"], "erase-file", %{})
 
-    assert {:ok, %{attachments: []}} = LakehouseMatrix.RiverFiles.list(prior, c.local, %{})
+    record = Repo.get_by!(RoomEvent, event_id: source["event_id"])
+    assert Erasure.client(Events.to_client_event(record), c.before.id)["content"] == %{}
   end
 
   test "River read models restore prior edits, replies and reactions while hiding erased content from later members",

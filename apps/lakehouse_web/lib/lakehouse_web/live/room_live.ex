@@ -35,14 +35,14 @@ defmodule LakehouseWeb.RoomLive do
       |> allow_upload(:chat_file,
         accept: :any,
         max_entries: 1,
-        max_file_size: 10_000_000,
+        max_file_size: Media.max_bytes(),
         auto_upload: true,
         progress: &handle_chat_progress/3
       )
       |> allow_upload(:room_avatar,
         accept: ~w(.jpg .jpeg .png .gif .webp),
         max_entries: 1,
-        max_file_size: 10_000_000,
+        max_file_size: Media.max_bytes(),
         auto_upload: true,
         progress: &handle_avatar_progress/3
       )
@@ -386,7 +386,7 @@ defmodule LakehouseWeb.RoomLive do
              end
            end) do
         {:postpone, :too_large} ->
-          put_flash(socket, :error, "File exceeds the 10MB limit.")
+          put_flash(socket, :error, "File exceeds the 32 MiB limit.")
 
         {:postpone, :no_send_permission} ->
           put_flash(socket, :error, "Your account cannot send messages yet.")
@@ -433,7 +433,7 @@ defmodule LakehouseWeb.RoomLive do
              end
            end) do
         {:postpone, :too_large} ->
-          put_flash(socket, :error, "File exceeds the 10MB limit.")
+          put_flash(socket, :error, "File exceeds the 32 MiB limit.")
 
         {:postpone, _} ->
           put_flash(socket, :error, "Could not update room photo.")
