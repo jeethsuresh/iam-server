@@ -76,6 +76,32 @@ defmodule LakehouseMatrix.FederationMediaTest do
     assert {:error, :invalid_media} = FederationMedia.decode(%{body: "garbage", headers: %{}})
   end
 
+  test "federated multipart and legacy downloads accept 32 MiB and reject an extra byte" do
+    bytes = :binary.copy(<<0, 255>>, 16 * 1024 * 1024)
+    media = %{body: bytes, content_type: "application/octet-stream", filename: "boundary.bin"}
+    {type, body} = FederationMedia.encode(media)
+
+    assert {:ok, ^media} =
+             FederationMedia.decode(%{body: body, headers: %{"content-type" => type}})
+
+    {type, body} = FederationMedia.encode(%{media | body: bytes <> <<1>>})
+
+    assert {:error, :too_large} =
+             FederationMedia.decode(%{body: body, headers: %{"content-type" => type}})
+
+    for {data, expected} <- [{bytes, :ok}, {bytes <> <<1>>, :too_large}] do
+      Application.put_env(:lakehouse_matrix, :federation_media_requester, fn "remote.org", path ->
+        if String.starts_with?(path, "/_matrix/federation/"),
+          do: {:error, {:http, 404, %{"errcode" => "M_UNRECOGNIZED"}}},
+          else: {:ok, %{body: data, headers: %{"content-type" => "application/octet-stream"}}}
+      end)
+
+      if expected == :ok,
+        do: assert({:ok, %{body: ^data}} = FederationMedia.download("remote.org", "boundary")),
+        else: assert({:error, :too_large} = FederationMedia.download("remote.org", "boundary"))
+    end
+  end
+
   test "old peers use bounded local-only legacy media only when the federation route is unknown" do
     for unknown_status <- [400, 404] do
       Application.put_env(:lakehouse_matrix, :federation_media_requester, fn "remote.org", path ->

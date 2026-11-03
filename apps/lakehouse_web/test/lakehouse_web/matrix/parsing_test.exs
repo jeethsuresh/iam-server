@@ -156,6 +156,74 @@ defmodule LakehouseWeb.Matrix.ParsingTest do
     assert raw(:get, path, "", auth).resp_body == bytes
   end
 
+  test "raw, reserved and legacy uploads share the advertised 32 MiB boundary", ctx do
+    session =
+      raw(:post, "/_matrix/client/v3/login", Jason.encode!(ctx.params)) |> json_response(200)
+
+    auth = [{"authorization", "Bearer " <> session["access_token"]}]
+    headers = auth ++ [{"content-type", "application/octet-stream"}]
+    limit = 32 * 1024 * 1024
+    bytes = :binary.copy(<<0, 255>>, div(limit, 2))
+
+    assert raw(:get, "/_matrix/client/v1/media/config", "", auth) |> json_response(200) == %{
+             "m.upload.size" => limit
+           }
+
+    upload =
+      raw(:post, "/_matrix/media/v3/upload?filename=boundary.bin", bytes, headers)
+      |> json_response(200)
+
+    [server, id] =
+      upload["content_uri"] |> String.replace_prefix("mxc://", "") |> String.split("/")
+
+    assert raw(:get, "/_matrix/client/v1/media/download/#{server}/#{id}", "", auth).resp_body ==
+             bytes
+
+    assert raw(:post, "/_matrix/media/v3/upload", bytes <> <<1>>, headers)
+           |> json_response(413)
+           |> Map.fetch!("errcode") == "M_TOO_LARGE"
+
+    reservation = raw(:post, "/_matrix/media/v1/create", "{}", auth) |> json_response(200)
+
+    [server, id] =
+      reservation["content_uri"] |> String.replace_prefix("mxc://", "") |> String.split("/")
+
+    path = "/_matrix/media/v3/upload/#{server}/#{id}"
+
+    assert raw(:put, path, bytes <> <<1>>, headers) |> json_response(413) |> Map.fetch!("errcode") ==
+             "M_TOO_LARGE"
+
+    assert raw(:put, path, bytes, headers) |> json_response(200) == %{}
+
+    assert raw(:get, "/_matrix/client/v1/media/download/#{server}/#{id}", "", auth).resp_body ==
+             bytes
+
+    legacy = MatrixFixtures.browser_token(ctx.user.username)
+
+    legacy_headers = [
+      {"authorization", "Bearer " <> legacy},
+      {"content-type", "application/json"}
+    ]
+
+    body =
+      Jason.encode!(%{
+        "base64" => Base.encode64(bytes),
+        "content_type" => "application/octet-stream"
+      })
+
+    assert raw(:post, "/_matrix/media/v3/upload", body, legacy_headers) |> json_response(200)
+
+    body =
+      Jason.encode!(%{
+        "base64" => Base.encode64(bytes <> <<1>>),
+        "content_type" => "application/octet-stream"
+      })
+
+    assert raw(:post, "/_matrix/media/v3/upload", body, legacy_headers)
+           |> json_response(413)
+           |> Map.fetch!("errcode") == "M_TOO_LARGE"
+  end
+
   test "authentication accepts case-insensitive Bearer and query tokens but ignores body credentials",
        ctx do
     session =

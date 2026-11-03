@@ -24,7 +24,7 @@ defmodule LakehouseWeb.Matrix.MediaController do
     {body, type, conn} = extract_upload(conn, params, filename)
 
     if body == :too_large do
-      matrix_error(conn, 413, "M_TOO_LARGE", "File exceeds 10MB limit")
+      matrix_error(conn, 413, "M_TOO_LARGE", "File exceeds 32 MiB limit")
     else
       result =
         LakehouseMatrix.AsyncMedia.put(conn.assigns.principal_id, server, id, body,
@@ -34,7 +34,7 @@ defmodule LakehouseWeb.Matrix.MediaController do
 
       case result do
         {:error, :too_large} ->
-          matrix_error(conn, 413, "M_TOO_LARGE", "File exceeds 10MB limit")
+          matrix_error(conn, 413, "M_TOO_LARGE", "File exceeds 32 MiB limit")
 
         {:error, :invalid_upload} ->
           matrix_error(conn, 400, "M_BAD_JSON", "Invalid upload")
@@ -61,7 +61,7 @@ defmodule LakehouseWeb.Matrix.MediaController do
 
     case body do
       :too_large ->
-        matrix_error(conn, 413, "M_TOO_LARGE", "File exceeds 10MB limit")
+        matrix_error(conn, 413, "M_TOO_LARGE", "File exceeds 32 MiB limit")
 
       body when is_binary(body) ->
         case Media.upload(conn.assigns.principal_id, body, opts) do
@@ -72,7 +72,7 @@ defmodule LakehouseWeb.Matrix.MediaController do
             })
 
           {:error, :too_large} ->
-            matrix_error(conn, 413, "M_TOO_LARGE", "File exceeds 10MB limit")
+            matrix_error(conn, 413, "M_TOO_LARGE", "File exceeds 32 MiB limit")
 
           {:error, :invalid_upload} ->
             matrix_error(conn, 400, "M_BAD_JSON", "Empty upload")
@@ -258,7 +258,7 @@ defmodule LakehouseWeb.Matrix.MediaController do
     do: matrix_error(conn, 400, "M_UNKNOWN", "Cannot retrieve this media")
 
   defp read_body_bytes(conn) do
-    case Plug.Conn.read_body(conn, length: 11 * 1024 * 1024) do
+    case Plug.Conn.read_body(conn, length: Media.max_bytes() + 1) do
       {:ok, body, next} -> {body, next}
       {:more, _, next} -> {:too_large, next}
       {:error, _} -> {"", conn}

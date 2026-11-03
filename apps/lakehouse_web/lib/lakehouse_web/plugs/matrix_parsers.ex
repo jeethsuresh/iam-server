@@ -3,11 +3,14 @@ defmodule LakehouseWeb.Plugs.MatrixParsers do
   import Plug.Conn
 
   def init(opts) do
+    # Legacy JSON uploads encode bytes as base64. Allow the 32 MiB payload plus
+    # its encoding and multipart envelope without increasing ordinary JSON limits.
     {Plug.Parsers.init(opts),
-     Plug.Parsers.init(Keyword.put(opts, :body_reader, {__MODULE__, :read_body, []}))}
+     Plug.Parsers.init(Keyword.put(opts, :body_reader, {__MODULE__, :read_body, []})),
+     Plug.Parsers.init(Keyword.put(opts, :length, 45 * 1024 * 1024))}
   end
 
-  def call(conn, {ordinary, matrix}) do
+  def call(conn, {ordinary, matrix, media}) do
     if matrix_api?(conn.request_path) do
       conn = conn |> fetch_query_params() |> put_private(:phoenix_format, "json")
 
@@ -16,7 +19,7 @@ defmodule LakehouseWeb.Plugs.MatrixParsers do
           token = LakehouseWeb.Plugs.MatrixAuth.token(conn)
 
           if is_binary(token) and not String.starts_with?(token, "mtx_"),
-            do: Plug.Parsers.call(conn, ordinary),
+            do: Plug.Parsers.call(conn, media),
             else: conn
 
         conn.method in ["POST", "PUT", "DELETE"] ->

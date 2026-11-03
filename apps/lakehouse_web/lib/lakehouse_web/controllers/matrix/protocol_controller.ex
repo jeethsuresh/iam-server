@@ -588,7 +588,8 @@ defmodule LakehouseWeb.Matrix.ProtocolController do
     end
   end
 
-  def media_config(conn, _), do: json(conn, %{"m.upload.size" => 10 * 1024 * 1024})
+  def media_config(conn, _),
+    do: json(conn, %{"m.upload.size" => LakehouseMatrix.Media.max_bytes()})
 
   def pushrules(conn, params) do
     result =

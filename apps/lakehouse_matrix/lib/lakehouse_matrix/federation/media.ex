@@ -1,7 +1,7 @@
 defmodule LakehouseMatrix.Federation.Media do
   @moduledoc "Bounded Matrix multipart media, fetched with authenticated, DNS-pinned federation requests."
   alias LakehouseMatrix.Federation.Transport
-  @limit 10 * 1024 * 1024
+  @limit LakehouseMatrix.Media.max_bytes()
   @inline ~w(text/css text/plain text/csv application/json application/ld+json image/jpeg image/gif image/png image/apng image/webp image/avif video/mp4 video/webm video/ogg video/quicktime audio/mp4 audio/webm audio/aac audio/mpeg audio/ogg audio/wave audio/wav audio/x-wav audio/x-pn-wav audio/flac audio/x-flac)
 
   def valid_id?(id),

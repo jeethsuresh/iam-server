@@ -153,7 +153,6 @@ defmodule LakehouseWeb.Router do
     get "/rtc", RtcController, :capabilities
     get "/calls", RtcController, :index
     post "/groups/:id/rtc", RtcController, :update
-    get "/groups/:id/files", WorkspaceController, :files
     get "/home", WorkspaceController, :home
     post "/conversations", WorkspaceController, :conversation
     post "/groups/:id/invitations", WorkspaceController, :invite

@@ -101,7 +101,7 @@ defmodule LakehouseMatrix.Federation.Transport do
 
       fetch(%{host: uri.host, port: uri.port, tls_name: uri.host, authority: authority}, path,
         raw: true,
-        max_bytes: Keyword.get(opts, :max_bytes, 10_551_296)
+        max_bytes: Keyword.get(opts, :max_bytes, LakehouseMatrix.Media.max_bytes())
       )
     else
       _ -> {:error, :blocked_address}
@@ -124,7 +124,7 @@ defmodule LakehouseMatrix.Federation.Transport do
         content: content,
         headers: [{"authorization", authorization}, {"content-type", "application/json"}],
         raw: raw,
-        max_bytes: if(raw, do: 10_551_296, else: 33_554_432)
+        max_bytes: if(raw, do: LakehouseMatrix.Media.max_bytes() + 65_536, else: 33_554_432)
       ]
 
       Enum.reduce_while(endpoints, {:error, :unavailable}, fn endpoint, _ ->
