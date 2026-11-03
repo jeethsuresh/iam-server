@@ -54,7 +54,7 @@ Successful no-store JSON contains `code`, `state`, `issuer`, `app_origin`,
 The code is single-use, S256-bound, target-specific, and belongs to the broker's
 existing IAM login family. Existing target `profile.name` consent is required;
 this endpoint cannot create/expand grants, delegate `native.broker`, or request
-chat scopes. Exchange uses the existing `/oauth/token` authorization-code grant
+arbitrary chat scopes. The fixed River target described below can reuse existing full River consent. Exchange uses the existing `/oauth/token` authorization-code grant
 with the exact redirect URI and child verifier. Resulting tokens/proof remain
 bound to the original family. The backend validates issuer, origin, subject,
 family and proof before issuing its normal local native session.
@@ -112,3 +112,20 @@ No client positively caches revocation status for protected requests. Existing
 store-only logout clears the store account/broker credentials and device session;
 it does not silently broaden to unrelated browser/device sign-out. A later
 reauthentication cannot revive a previously revoked family.
+
+## River target
+
+The signed River package `cool.gravitas.river`, certificate
+`6559956b5cf6b2f796824995b31da7fa2c176ba652e8fcb40741686d850bb6b0`,
+uses token type `gravitas_code:river:v1:<challenge>:<state>`. The Store selects
+`https://chat.gravitas.cool` and `/auth/gravitas/callback` from its fixed client
+mapping after verifying the actual caller UID and release signer. The requested
+scopes are exactly River's existing profile, full Matrix, chat, group, channel,
+contact, call and publishing scopes. IAM permits that set only for River's exact
+origin and callback, requires an existing grant covering every scope with room
+mode `all`, and never creates or expands consent. Other targets remain limited
+to `profile.name`. River exchanges the child code and verifier at
+`POST /api/native/broker`; the backend checks returned identity, family, scopes
+and live status before issuing its ordinary encrypted app session. Missing
+consent and unavailable brokers use browser sign-in. Matrix device approval is
+still separate. Neither path extends the Store's original login family.
