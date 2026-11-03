@@ -157,7 +157,7 @@ defmodule LakehouseMatrix.ClientHistory do
       where:
         p.local_room_id == ^room and not p.outlier and not p.auth_rejected and
           not p.state_rejected and not p.soft_failed and
-          fragment("?->>'type' <> 'm.room.redaction' OR ?", p.pdu, p.redaction_applied)
+          fragment("(?->>'type' <> 'm.room.redaction' OR ?)", p.pdu, p.redaction_applied)
   end
 
   defp records(room, lower, upper, direction, principal),

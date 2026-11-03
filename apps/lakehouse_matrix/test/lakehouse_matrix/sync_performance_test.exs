@@ -108,6 +108,81 @@ defmodule LakehouseMatrix.SyncPerformanceTest do
     assert large <= small + 20
   end
 
+  test "applied redactions in another private room cannot enter history or displace its latest message" do
+    alice = Fixtures.user_fixture("historyreader")
+    bob = Fixtures.user_fixture("privateredactor")
+    assert {:ok, created} = ClientRooms.create(alice.id, %{})
+    {:ok, room} = Identity.parse_room_id(created["room_id"])
+
+    assert {:ok, message} =
+             Graph.send(room, Identity.user_id(alice.username), "m.room.message", %{
+               "msgtype" => "m.text",
+               "body" => "Latest message 👋🏽🙂"
+             })
+
+    assert {:ok, private} = ClientRooms.create(bob.id, %{})
+    {:ok, other_room} = Identity.parse_room_id(private["room_id"])
+
+    for n <- 1..8 do
+      assert {:ok, other} =
+               Graph.send(other_room, Identity.user_id(bob.username), "m.room.message", %{
+                 "body" => "Private message #{n}"
+               })
+
+      assert {:ok, removed} =
+               ClientRooms.redact(
+                 bob.id,
+                 "REDACTOR",
+                 private["room_id"],
+                 other["event_id"],
+                 "remove-#{n}",
+                 %{}
+               )
+
+      assert Graph.event(removed["event_id"]).redaction_applied
+    end
+
+    records = Repo.all(ClientHistory.query(room, alice.id))
+    assert Enum.all?(records, &(&1.local_room_id == room))
+
+    assert {:ok, page} = ClientHistory.page(alice.id, "HISTORY", room, %{"limit" => 1})
+    assert Enum.map(page["chunk"], & &1["event_id"]) == [message["event_id"]]
+    assert hd(page["chunk"])["content"]["body"] == "Latest message 👋🏽🙂"
+  end
+
+  test "an applied redaction must still satisfy every history acceptance flag" do
+    import Ecto.Query
+    alias LakehouseMatrix.Schema.Pdu
+    alice = Fixtures.user_fixture("redactionflags")
+    assert {:ok, created} = ClientRooms.create(alice.id, %{})
+    {:ok, room} = Identity.parse_room_id(created["room_id"])
+
+    assert {:ok, message} =
+             Graph.send(room, Identity.user_id(alice.username), "m.room.message", %{
+               "body" => "remove"
+             })
+
+    assert {:ok, removed} =
+             ClientRooms.redact(
+               alice.id,
+               "HISTORY",
+               created["room_id"],
+               message["event_id"],
+               "remove",
+               %{}
+             )
+
+    id = removed["event_id"]
+    assert Graph.event(id).redaction_applied
+    assert Enum.any?(Repo.all(ClientHistory.query(room, alice.id)), &(&1.event_id == id))
+
+    for flag <- [:outlier, :auth_rejected, :state_rejected, :soft_failed] do
+      Repo.update_all(from(p in Pdu, where: p.event_id == ^id), set: [{flag, true}])
+      refute Enum.any?(Repo.all(ClientHistory.query(room, alice.id)), &(&1.event_id == id))
+      Repo.update_all(from(p in Pdu, where: p.event_id == ^id), set: [{flag, false}])
+    end
+  end
+
   defp count_queries(callback) do
     owner = self()
     handler = "history-query-budget-#{System.unique_integer()}"
