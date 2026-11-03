@@ -108,6 +108,38 @@ defmodule LakehouseMatrix.SyncPerformanceTest do
     assert large <= small + 20
   end
 
+  test "ordinary history does not run per-event erasure lookups while filtering and sorting" do
+    alice = Fixtures.user_fixture("erasurebudget")
+    assert {:ok, created} = ClientRooms.create(alice.id, %{})
+    {:ok, room} = Identity.parse_room_id(created["room_id"])
+
+    for n <- 1..40 do
+      assert {:ok, _} =
+               Graph.send(room, Identity.user_id(alice.username), "m.room.message", %{
+                 "body" => "Ordinary history #{n}"
+               })
+    end
+
+    # Transaction-local PostgreSQL counters measure the hidden queries inside
+    # SQL functions too, unlike the application query-count budget above.
+    Repo.query!("SET LOCAL track_functions = 'all'")
+
+    calls = fn ->
+      %{rows: [[count]]} =
+        Repo.query!("""
+        SELECT COALESCE(sum(calls), 0)::bigint FROM pg_stat_xact_user_functions
+        WHERE funcname IN ('matrix_view_pdu', 'matrix_view_content', 'matrix_erasure_access')
+        """)
+
+      count
+    end
+
+    before = calls.()
+    assert {:ok, page} = ClientHistory.page(alice.id, "BUDGET", room, %{"limit" => 10})
+    assert length(page["chunk"]) == 10
+    assert calls.() - before == 0
+  end
+
   test "applied redactions in another private room cannot enter history or displace its latest message" do
     alice = Fixtures.user_fixture("historyreader")
     bob = Fixtures.user_fixture("privateredactor")

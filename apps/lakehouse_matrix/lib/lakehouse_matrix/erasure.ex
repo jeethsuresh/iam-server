@@ -356,18 +356,45 @@ defmodule LakehouseMatrix.Erasure do
   def event_query(principal) do
     base =
       from e in RoomEvent,
+        left_join: a in "matrix_erased_events",
+        on: a.event_id == e.event_id,
         select_merge: %{
-          content: fragment("matrix_view_content(?, ?)", e.event_id, type(^principal, :binary_id))
+          content:
+            fragment(
+              "CASE WHEN ? IS NULL THEN ? ELSE COALESCE(CASE WHEN matrix_erasure_access(?, ?) THEN ? END, ?) END",
+              a.event_id,
+              e.content,
+              e.event_id,
+              type(^principal, :binary_id),
+              a.original_content,
+              e.content
+            )
         }
 
     from(e in subquery(base))
   end
 
   def pdu_query(principal) do
+    # Most rooms contain no erased events. Keep their view in this query instead
+    # of executing a SQL function (and re-reading the PDU) for every predicate,
+    # sort key and returned row. Only archived events need the access check.
     base =
       from p in Pdu,
+        left_join: a in "matrix_erased_events",
+        on: a.event_id == p.event_id,
         select_merge: %{
-          pdu: fragment("matrix_view_pdu(?, ?)", p.event_id, type(^principal, :binary_id))
+          pdu:
+            fragment(
+              "CASE WHEN ? IS NULL THEN ? ELSE COALESCE(CASE WHEN matrix_erasure_access(?, ?) THEN ? END, CASE WHEN ? IS NULL THEN ? END, ?) END",
+              a.event_id,
+              p.pdu,
+              p.event_id,
+              type(^principal, :binary_id),
+              a.original_pdu,
+              p.redacted_by,
+              a.pruned_pdu,
+              p.pdu
+            )
         }
 
     from(p in subquery(base))

@@ -124,6 +124,55 @@ defmodule LakehouseMatrix.ErasureTest do
            ] == %{}
   end
 
+  test "joined event views preserve erasure, redaction and missing-archive semantics", c do
+    assert_views = fn ->
+      for viewer <- [c.before.id, c.later.id, nil] do
+        pdus = Repo.all(from p in Erasure.pdu_query(viewer), where: p.local_room_id == ^c.local)
+
+        for p <- pdus do
+          assert %{rows: [[expected]]} =
+                   Repo.query!("SELECT matrix_view_pdu($1, $2::uuid)", [
+                     p.event_id,
+                     viewer && Ecto.UUID.dump!(viewer)
+                   ])
+
+          assert p.pdu == expected
+        end
+
+        events = Repo.all(from e in Erasure.event_query(viewer), where: e.room_id == ^c.local)
+
+        for e <- events do
+          assert %{rows: [[expected]]} =
+                   Repo.query!("SELECT matrix_view_content($1, $2::uuid)", [
+                     e.event_id,
+                     viewer && Ecto.UUID.dump!(viewer)
+                   ])
+
+          assert e.content == expected
+        end
+      end
+    end
+
+    assert_views.()
+    assert {:ok, :ok} = Repo.transaction(fn -> Erasure.erase!(c.author.id) end)
+    assert {:ok, _} = Matrix.join_room(c.later.id, c.ref)
+    assert_views.()
+
+    # Imported projections can be archived before their canonical PDU arrives.
+    Repo.update_all(
+      from(a in "matrix_erased_events", where: a.event_id == ^c.event["event_id"]),
+      set: [original_pdu: nil, pruned_pdu: nil]
+    )
+
+    assert_views.()
+    assert {:ok, :ok} = Repo.transaction(fn -> Erasure.erase!(c.author.id) end)
+
+    assert {:ok, _} =
+             ClientRooms.redact(c.author.id, "D", c.ref, c.event["event_id"], "view", %{})
+
+    assert_views.()
+  end
+
   test "search and relation indexes restore prior copies without exposing erased content to later joiners",
        c do
     alias LakehouseMatrix.{ClientRelations, ClientSearch}
@@ -417,6 +466,7 @@ defmodule LakehouseMatrix.ErasureTest do
         "preset" => "public_chat",
         "creation_content" => %{"type" => "m.space"}
       })
+
     {:ok, _} = Matrix.join_room(c.before.id, space_ref)
     {:ok, space} = Identity.parse_room_id(space_ref)
     c = %{c | local: space, ref: space_ref}
