@@ -119,7 +119,7 @@ jobs:
           file: Dockerfile.release
           platforms: linux/amd64
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ghcr.io/jeethsuresh/iam-server:${{ github.sha }}
+          tags: ghcr.io/jeethsuresh/iam-server-private:${{ github.sha }}
           labels: org.opencontainers.image.source=https://github.com/jeethsuresh/iam-server
           cache-from: type=gha,scope=iam-release
           cache-to: type=gha,mode=max,scope=iam-release
@@ -127,7 +127,7 @@ jobs:
         env:
           IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
         run: |
-          printf 'IAM release image: ghcr.io/jeethsuresh/iam-server@%s\n' "$IMAGE_DIGEST" >> "$GITHUB_STEP_SUMMARY"
+          printf 'IAM release image: ghcr.io/jeethsuresh/iam-server-private@%s\n' "$IMAGE_DIGEST" >> "$GITHUB_STEP_SUMMARY"
   deploy:
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.GRAVITAS_DEPLOY_ENABLED == 'true'
     needs: image
@@ -152,5 +152,5 @@ jobs:
         uses: ./.gravitas-runtime
         with:
           config: .gravitas/deploy.json
-          image: ghcr.io/jeethsuresh/iam-server@${{ needs.image.outputs.digest }}
+          image: ghcr.io/jeethsuresh/iam-server-private@${{ needs.image.outputs.digest }}
           kubeconfig: ${{ secrets.GRAVITAS_KUBECONFIG }}

@@ -66,7 +66,7 @@ jobs:
           file: Dockerfile.release
           platforms: linux/amd64
           push: true
-          tags: ghcr.io/jeethsuresh/iam-server:${{ github.sha }}
+          tags: ghcr.io/jeethsuresh/iam-server-private:${{ github.sha }}
           cache-from: type=gha,scope=iam-release
           cache-to: type=gha,mode=max,scope=iam-release
-      - run: echo 'ghcr.io/jeethsuresh/iam-server@${{ steps.image.outputs.digest }}' >> "$GITHUB_STEP_SUMMARY"
+      - run: echo 'ghcr.io/jeethsuresh/iam-server-private@${{ steps.image.outputs.digest }}' >> "$GITHUB_STEP_SUMMARY"

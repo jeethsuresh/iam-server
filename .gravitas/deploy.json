@@ -4,7 +4,7 @@
   "namespace": "iam",
   "host": "gravitas.cool",
   "health_path": "/healthz",
-  "image_repository": "ghcr.io/jeethsuresh/iam-server",
+  "image_repository": "ghcr.io/jeethsuresh/iam-server-private",
   "release": {
     "command": [
       "bash",

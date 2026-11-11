@@ -11,6 +11,7 @@ patches:
   - path: cpu-burst.yaml
   - path: app-storage.yaml
   - path: matrix-signing.patch.yaml
+  - path: image-pull-secret.patch.yaml
   - target:
       kind: ConfigMap
       name: iam-config
