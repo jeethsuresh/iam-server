@@ -134,6 +134,7 @@ defmodule LakehouseWeb.Router do
   scope "/protocols/v1", LakehouseWeb do
     pipe_through [:api, LakehouseWeb.Plugs.ProtocolAuth]
     put "/registry", ProtocolController, :register_service
+    put "/registry/appstore", ProtocolController, :register_appstore
     get "/specifications", ProtocolController, :specifications
     get "/users/:subject", ProtocolController, :subscriptions
     post "/users/:subject/invoke", ProtocolController, :invoke
