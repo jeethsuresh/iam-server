@@ -123,7 +123,7 @@ Additional administrators keep their existing passwords and may change them norm
 - `POST /oauth/token` → opaque access/refresh tokens
 - `GET/POST /app/v1/*` → third-party profile, chats, events
 - `POST /login` JSON or urlencoded `username`, `password`, optional `sessionID` for federated completion
-- `POST /register` signup (pending activation unless registering as configured admin username)
+- `POST /register` signup with `full_name`, `username`, `password`, and `registration_key` (pending activation unless registering as configured admin username)
 - `GET /logout` (with session + `Accept: application/json` for API-style response, or use browser for redirect)
 - `GET /profile` with `Authorization: Bearer <HS256 JWT>` or browser session after `/web/login`
 

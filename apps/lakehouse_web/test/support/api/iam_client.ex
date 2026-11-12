@@ -5,12 +5,13 @@ defmodule LakehouseWeb.Test.Api.IamClient do
 
   @endpoint LakehouseWeb.Endpoint
 
-  def register(username, password, registration_key \\ nil) do
+  def register(username, password, registration_key \\ nil, full_name \\ nil) do
     build_conn()
     |> put_req_header("content-type", "application/json")
     |> post("/register", %{
       "username" => username,
       "password" => password,
+      "full_name" => full_name,
       "registration_key" => registration_key
     })
   end

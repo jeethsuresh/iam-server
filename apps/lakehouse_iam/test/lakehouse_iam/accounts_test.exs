@@ -15,12 +15,23 @@ defmodule LakehouseIam.AccountsTest do
   test "register pending then approve then password valid" do
     assert {:ok, pending} = Accounts.register_user("pendinguser", "password123", approve: false)
     refute pending.active
+    assert pending.full_name == "pendinguser"
     refute Accounts.password_valid?("pendinguser", "wrong")
 
     assert {:ok, active} = Accounts.approve_user("admin", "pendinguser")
     assert active.active
     assert Accounts.password_valid?("pendinguser", "password123")
     assert IAM.roles_for(active.id) != []
+  end
+
+  test "registration trims full names and rejects an explicitly blank name" do
+    assert {:ok, %{full_name: "Ada Lovelace"}} =
+             Accounts.register_user("nameduser", "password123", full_name: "  Ada Lovelace  ")
+
+    assert {:error, %Ecto.Changeset{errors: [full_name: {_, _}]}} =
+             Accounts.register_user("blankname", "password123", full_name: " \t")
+
+    refute Accounts.user_exists?("blankname")
   end
 
   test "non-admin cannot approve" do
@@ -75,7 +86,7 @@ defmodule LakehouseIam.AccountsTest do
   end
 
   test "username collision after validation returns a changeset instead of raising" do
-    attrs = %{type: :user, username: "racesignup", active: false}
+    attrs = %{type: :user, username: "racesignup", full_name: "Race Signup", active: false}
     first = Principal.registration_changeset(%Principal{}, attrs)
     overlapping = Principal.registration_changeset(%Principal{}, attrs)
 

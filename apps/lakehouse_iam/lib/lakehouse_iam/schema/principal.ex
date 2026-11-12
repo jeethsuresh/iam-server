@@ -32,15 +32,15 @@ defmodule LakehouseIam.Schema.Principal do
       if is_binary(value) and byte_size(value) > 1024, do: [full_name: "is too long"], else: []
     end)
     |> validate_required([:type])
-    |> validate_username_if_user()
+    |> validate_user_fields()
     |> unique_constraint(:username, name: :principals_username_index, message: "already taken")
   end
 
-  defp validate_username_if_user(changeset) do
+  defp validate_user_fields(changeset) do
     case get_field(changeset, :type) do
       :user ->
         changeset
-        |> validate_required([:username])
+        |> validate_required([:username, :full_name])
         |> validate_length(:username, max: 20)
 
       _ ->

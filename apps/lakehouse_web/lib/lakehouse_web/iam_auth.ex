@@ -193,9 +193,9 @@ defmodule LakehouseWeb.IamAuth do
     end
   end
 
-  @spec register(String.t(), String.t(), term()) ::
+  @spec register(String.t(), String.t(), term(), term()) ::
           {:ok, LakehouseIam.Schema.Principal.t()} | error()
-  def register(username, password, registration_key, full_name \\ nil) do
+  def register(username, password, registration_key, full_name) do
     with :ok <- LakehouseIam.Registration.authorize(registration_key) do
       create_account(username, password, full_name)
     else
@@ -225,6 +225,9 @@ defmodule LakehouseWeb.IamAuth do
         String.replace(acc, "%{#{key}}", to_string(value))
       end)
     end)
-    |> Enum.map_join("; ", fn {k, v} -> "#{k} #{Enum.join(v, ", ")}" end)
+    |> Enum.map_join("; ", fn {field, messages} ->
+      label = if field == :full_name, do: "Full name", else: field
+      "#{label} #{Enum.join(messages, ", ")}"
+    end)
   end
 end

@@ -195,12 +195,15 @@ defmodule LakehouseWeb.OAuthBrowserStartTest do
     signup =
       post(build_conn(), "/web/register", %{
         "username" => "continuedsignup",
+        "full_name" => "Continued Signup",
         "password" => "password123",
         "registration_key" => "test-invitation-key",
         "sessionID" => sid
       })
 
-    assert {:ok, %{active: false}} = Accounts.fetch_user("continuedsignup")
+    assert {:ok, %{active: false, full_name: "Continued Signup"}} =
+             Accounts.fetch_user("continuedsignup")
+
     assert Federated.fetch(sid).username == "continuedsignup"
     assert redirected_to(signup) =~ "sessionID=#{sid}"
 

@@ -72,7 +72,7 @@ defmodule LakehouseIam.Accounts do
             type: :user,
             username: canonical,
             active: active,
-            full_name: Keyword.get(opts, :full_name)
+            full_name: Keyword.get(opts, :full_name, canonical)
           })
 
         hash = Argon2.hash_pwd_salt(password)

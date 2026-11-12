@@ -177,6 +177,7 @@ defmodule LakehouseWeb.Bdd.SessionSteps do
   step "I register from the application flow as {string}", %{args: [username]} = context do
     session =
       context.session
+      |> fill_in(Query.text_field("Full name"), with: "Pending User")
       |> fill_in(Query.text_field("Username"), with: username)
       |> fill_in(Query.text_field("Password"), with: "password123")
       |> fill_in(Query.text_field("Registration key"), with: "test-invitation-key")
