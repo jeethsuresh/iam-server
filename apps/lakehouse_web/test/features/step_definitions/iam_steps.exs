@@ -53,9 +53,9 @@ defmodule LakehouseWeb.Bdd.IamSteps do
      Map.merge(context, %{last_conn: conn, last_username: username, last_password: password})}
   end
 
-  step "I register via API as {string} with password {string} and key {string}",
-       %{args: [username, password, key]} = context do
-    conn = IamClient.register(username, password, key)
+  step "I register via API as {string} with password {string}, full name {string} and key {string}",
+       %{args: [username, password, full_name, key]} = context do
+    conn = IamClient.register(username, password, key, full_name)
     {:ok, Map.put(context, :last_conn, conn)}
   end
 
@@ -64,11 +64,17 @@ defmodule LakehouseWeb.Bdd.IamSteps do
     :ok
   end
 
+  step "account {string} should have full name {string}", %{args: [username, full_name]} do
+    assert {:ok, %{full_name: ^full_name}} = Accounts.fetch_user(username)
+    :ok
+  end
+
   step "I submit overlapping API registrations for {string} with key {string}",
        %{args: [username, key]} = context do
     responses =
       1..2
-      |> Task.async_stream(fn _ -> IamClient.register(username, "password123", key) end,
+      |> Task.async_stream(
+        fn _ -> IamClient.register(username, "password123", key, "Race Signup") end,
         max_concurrency: 2,
         timeout: 15_000
       )

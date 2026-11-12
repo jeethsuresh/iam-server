@@ -50,7 +50,7 @@ defmodule LakehouseWeb.OAuthPkceTest do
     assert %{"access_token" => access, "refresh_token" => _} = json_response(tok, 200)
 
     me = OAuthClient.me(access)
-    assert %{"sub" => subject, "name" => nil} = json_response(me, 200)
+    assert %{"sub" => subject, "name" => "oauthuser"} = json_response(me, 200)
     assert subject == user.id
     refute Map.has_key?(json_response(me, 200), "username")
     refute Map.has_key?(json_response(me, 200), "user_id")

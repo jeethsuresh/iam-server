@@ -19,11 +19,12 @@ defmodule LakehouseWeb.Bdd.BrowserSteps do
     :ok
   end
 
-  step "I sign up in the browser as {string} with key {string}",
-       %{args: [username, key]} = context do
+  step "I sign up in the browser as {string} with full name {string} and key {string}",
+       %{args: [username, full_name, key]} = context do
     session =
       context.session
       |> visit("/register")
+      |> fill_in(Query.text_field("Full name"), with: full_name)
       |> fill_in(Query.text_field("Username"), with: username)
       |> fill_in(Query.text_field("Password"), with: "password123")
       |> fill_in(Query.text_field("Registration key"), with: key)
