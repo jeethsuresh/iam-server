@@ -15,6 +15,7 @@ defmodule LakehouseIam.Protocols.Registration do
   schema "protocol_registrations" do
     field :grant_id, :binary_id
     field :spec_id, :binary_id
+    field :provider_origin, :string, default: ""
   end
 end
 

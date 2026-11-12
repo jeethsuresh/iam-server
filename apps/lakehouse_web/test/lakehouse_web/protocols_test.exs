@@ -10,13 +10,20 @@ defmodule LakehouseWeb.ProtocolsTest do
   @store "https://apps.example"
   @sender "https://calendar.example"
   @key String.duplicate("s", 48)
+  @sender_key String.duplicate("n", 48)
+  @other_key String.duplicate("o", 48)
 
   setup do
     prior = Application.get_env(:lakehouse_iam, :protocol_services)
     owners = Application.get_env(:lakehouse_iam, :protocol_owners)
 
     Application.put_env(:lakehouse_iam, :protocol_services, %{
-      @store => %{"key" => @key, "permissions" => ["protocols.read", "appstore.push"]}
+      @store => %{"key" => @key, "permissions" => ["protocols.read", "appstore.push"]},
+      @sender => %{"key" => @sender_key, "permissions" => ["protocols.read", "appstore.push"]},
+      "https://other.example" => %{
+        "key" => @other_key,
+        "permissions" => ["protocols.read", "appstore.push"]
+      }
     })
 
     Application.put_env(:lakehouse_iam, :protocol_owners, %{"appstore" => @store})
@@ -36,6 +43,64 @@ defmodule LakehouseWeb.ProtocolsTest do
     {:ok, family} = Sessions.issue(p.username, :api)
     {:ok, tokens} = Tokens.issue(grant, session_id(family))
     {:ok, p: p, grant: grant, tokens: tokens}
+  end
+
+  test "AppStore receives pushes for an iOS-only login from its originating app" do
+    {:ok, user} = Accounts.register_user("iosprotocol", "password123", approve: true)
+    {:ok, grant} = Grants.upsert(user.id, @sender, ["profile.name"], :all, [])
+    {:ok, family} = Sessions.issue(user.username, :api)
+    {:ok, tokens} = Tokens.issue(grant, session_id(family))
+    path = "/protocols/v1/registry/appstore"
+    body = %{"session_proof" => tokens.session_check_token, "specification" => @appstore}
+
+    assert req(:put, path, @sender_key, body).status == 403
+    assert req(:put, path, @key, %{body | "session_proof" => tokens.access_token}).status == 403
+    assert req(:put, path, @key, %{body | "specification" => %{"protocol" => "other"}}).status == 400
+
+    assert %{"sub" => subject, "app_origin" => @sender} =
+             req(:put, path, @key, body) |> json_response(200)
+
+    assert subject == user.id
+    assert req(:put, path, @key, body).status == 200
+    user_path = "/protocols/v1/users/#{subject}"
+    assert %{"protocols" => [%{"protocol" => "appstore"}]} =
+             req(:get, user_path, @sender_key) |> json_response(200)
+
+    assert %{"protocols" => []} = req(:get, user_path, @other_key) |> json_response(200)
+
+    invocation = %{
+      "id" => "ios-invite",
+      "protocol" => "appstore",
+      "version" => "1.0.0",
+      "capability" => "push.send",
+      "input" => %{
+        "app" => "spacetime",
+        "device" => String.duplicate("a", 64),
+        "payload" => %{"title" => "Dinner"}
+      }
+    }
+
+    assert req(:post, user_path <> "/invoke", @sender_key, invocation).status == 202
+    parent = self()
+
+    Protocols.deliver_once(fn url, {key, envelope} ->
+      send(parent, {:delivery, url, key, envelope})
+      :ok
+    end)
+
+    assert_received {:delivery, "https://apps.example/api/protocols/invoke", @key,
+                     %{"subject" => ^subject, "sender" => @sender}}
+
+    # A Store login for the same account still produces one relay envelope.
+    {:ok, store_grant} = Grants.upsert(subject, @store, ["profile.name"], :all, [])
+    assert {:ok, :ok} = Protocols.register(store_grant, registry())
+    assert req(:post, user_path <> "/invoke", @sender_key, %{invocation | "id" => "mixed"}).status ==
+             202
+
+    assert LakehouseIam.Repo.aggregate(LakehouseIam.Protocols.Delivery, :count) == 1
+    assert :ok = Grants.revoke(grant.id)
+    assert :ok = Grants.revoke(store_grant.id)
+    assert %{"protocols" => []} = req(:get, user_path, @sender_key) |> json_response(200)
   end
 
   defp req(method, path, token, body \\ %{}) do

@@ -31,6 +31,16 @@ defmodule LakehouseWeb.ProtocolController do
 
   def register_service(conn, _), do: error(conn, :invalid_registry)
 
+  def register_appstore(conn, %{"session_proof" => proof, "specification" => spec}) do
+    sender = conn.assigns.protocol_sender
+
+    if sender.service,
+      do: result(conn, Protocols.register_appstore(sender.origin, proof, spec), 200),
+      else: error(conn, :forbidden)
+  end
+
+  def register_appstore(conn, _), do: error(conn, :invalid_registry)
+
   def specifications(conn, _) do
     read(conn, fn sender -> %{"protocols" => Protocols.specifications(sender)} end)
   end

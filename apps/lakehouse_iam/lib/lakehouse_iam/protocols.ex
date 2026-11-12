@@ -1,7 +1,8 @@
 defmodule LakehouseIam.Protocols do
   @moduledoc "Private per-user providers, immutable semver contracts and durable multicast."
   import Ecto.Query
-  alias LakehouseIam.{Repo, Apps.Scopes}
+  alias LakehouseIam.Repo
+  alias LakehouseIam.Apps.{Scopes, Tokens}
   alias LakehouseIam.Schema.{AppGrant, Principal}
   alias LakehouseIam.Protocols.{Spec, Registration, Invocation, Delivery, JsonSchema}
 
@@ -40,9 +41,11 @@ defmodule LakehouseIam.Protocols do
                  current.app_origin == grant.app_origin,
                do: Repo.rollback(:forbidden)
 
-        ids = Enum.map(specs, &register_spec!(current, &1))
+        ids = Enum.map(specs, &register_spec!(current, &1, ""))
 
-        from(r in Registration, where: r.grant_id == ^current.id and r.spec_id not in ^ids)
+        from(r in Registration,
+          where: r.grant_id == ^current.id and r.provider_origin == "" and r.spec_id not in ^ids
+        )
         |> Repo.delete_all()
 
         :ok
@@ -52,24 +55,52 @@ defmodule LakehouseIam.Protocols do
 
   def register(_, _), do: {:error, :invalid_registry}
 
-  defp register_spec!(grant, spec) do
+  # AppStore may receive pushes for an app's own signed-in user. The app's grant
+  # owns the registration, so removing it also removes delegated delivery.
+  def register_appstore(provider, proof, %{"protocol" => "appstore"} = spec) do
+    Repo.transaction(fn ->
+      lock!()
+
+      with true <- owners()["appstore"] == provider,
+           {:ok, %{sub: subject, app_origin: origin} = status} <- Tokens.check_session(proof),
+           true <- origin != provider and service_can_push?(origin),
+           %AppGrant{} = grant <-
+             Repo.get_by(AppGrant, principal_id: subject, app_origin: origin),
+           true <- Scopes.covers?(grant.scopes, ["profile.name"]) do
+        register_spec!(grant, spec, provider)
+        status
+      else
+        _ -> Repo.rollback(:forbidden)
+      end
+    end)
+  end
+
+  def register_appstore(_, _, _), do: {:error, :invalid_registry}
+
+  defp service_can_push?(origin) do
+    permissions = get_in(services(), [origin, "permissions"]) || []
+    Scopes.covers?(permissions, ["appstore.push"])
+  end
+
+  defp register_spec!(grant, spec, delegated_provider) do
     unless valid_spec?(spec), do: Repo.rollback(:invalid_specification)
     protocol = spec["protocol"]
     version = spec["version"]
     # A provider must be an operator-trusted backend. User JSON never supplies
     # destinations, delivery credentials, app names or provider identifiers.
-    unless Map.has_key?(services(), grant.app_origin), do: Repo.rollback(:forbidden)
+    provider = if delegated_provider == "", do: grant.app_origin, else: delegated_provider
+    unless Map.has_key?(services(), provider), do: Repo.rollback(:forbidden)
     existing = Repo.get_by(Spec, protocol: protocol, version: version)
 
     record =
       case existing do
         nil ->
-          unless owners()[protocol] == grant.app_origin, do: Repo.rollback(:unknown_protocol)
+          unless owners()[protocol] == provider, do: Repo.rollback(:unknown_protocol)
 
           Repo.insert!(%Spec{
             protocol: protocol,
             version: version,
-            owner: grant.app_origin,
+            owner: provider,
             specification: spec
           })
 
@@ -78,8 +109,10 @@ defmodule LakehouseIam.Protocols do
           record
       end
 
-    unless Repo.get_by(Registration, grant_id: grant.id, spec_id: record.id),
-      do: Repo.insert!(%Registration{grant_id: grant.id, spec_id: record.id})
+    registration = %{grant_id: grant.id, spec_id: record.id, provider_origin: delegated_provider}
+
+    unless Repo.get_by(Registration, registration),
+      do: Repo.insert!(struct!(Registration, registration))
 
     record.id
   end
@@ -120,7 +153,7 @@ defmodule LakehouseIam.Protocols do
     if uuid?(subject) do
       registrations(subject)
       |> Repo.all()
-      |> Enum.filter(fn {_, g, _} -> Map.has_key?(services(), g.app_origin) end)
+      |> Enum.filter(&provider_for(&1, sender))
       |> Enum.map(fn {_, _, s} -> public_spec(s.specification, sender) end)
       |> Enum.reject(&(&1["capabilities"] == []))
       |> Enum.uniq()
@@ -129,6 +162,20 @@ defmodule LakehouseIam.Protocols do
       []
     end
   end
+
+  defp provider_for({%Registration{provider_origin: ""}, grant, _}, _) do
+    if Map.has_key?(services(), grant.app_origin), do: grant.app_origin
+  end
+
+  defp provider_for({registration, grant, spec}, %{origin: origin}) do
+    provider = registration.provider_origin
+
+    if grant.app_origin == origin and service_can_push?(origin) and
+         owners()[spec.protocol] == provider and Map.has_key?(services(), provider),
+       do: provider
+  end
+
+  defp provider_for(_, _), do: nil
 
   defp sort_versions(specs) do
     Enum.sort(specs, fn a, b ->
@@ -218,9 +265,9 @@ defmodule LakehouseIam.Protocols do
 
         registrations(subject)
         |> Repo.all()
-        |> Enum.filter(fn {_, g, s} ->
-          s.id == spec.id and Map.has_key?(services(), g.app_origin)
-        end)
+        |> Enum.filter(fn {_, _, s} = target -> s.id == spec.id and provider_for(target, sender) end)
+        |> Enum.sort_by(fn {registration, _, _} -> registration.provider_origin end)
+        |> Enum.uniq_by(&provider_for(&1, sender))
         |> Enum.each(fn {registration, _, _} ->
           envelope =
             Map.merge(params, %{
@@ -281,17 +328,20 @@ defmodule LakehouseIam.Protocols do
   end
 
   defp deliver(item, request) do
-    provider =
+    target =
       Repo.one(
         from r in Registration,
           join: g in AppGrant,
           on: g.id == r.grant_id,
           join: p in Principal,
           on: p.id == g.principal_id and p.active == true,
+          join: s in Spec,
+          on: s.id == r.spec_id,
           where: r.id == ^item.registration_id,
-          select: g.app_origin
+          select: {r, g, s}
       )
 
+    provider = provider_for(target, %{origin: item.envelope["sender"]})
     service = services()[provider]
 
     result =

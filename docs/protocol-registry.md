@@ -27,6 +27,7 @@ All endpoints require bearer authentication and return no-store responses. JSON 
 
 * `PUT /app/v1/protocols/registry` with the user's app access token: `{"schema_version":1,"protocols":[SPEC]}`.
 * `PUT /protocols/v1/registry` with a trusted backend credential: `{"session_proof":"STATUS_CREDENTIAL","registry":{"schema_version":1,"protocols":[SPEC]}}`. This supports existing-device reconciliation. IAM requires a live status proof bound to that same backend origin, then derives the principal and grant itself. A status credential alone cannot register.
+* `PUT /protocols/v1/registry/appstore` with the configured AppStore owner's backend credential: `{"session_proof":"STATUS_CREDENTIAL","specification":SPEC}`. IAM validates the originating app's live session and its configured `appstore.push` permission. The app's existing grant owns this delegated registration and revoking it removes the route. The route is available to the originating app when it discovers or invokes the same AppStore protocol. The response contains the validated session status for AppStore's local installation binding.
 * `GET /protocols/v1/specifications` lists catalogued versions and structures available to a caller with `protocols.read`.
 * `GET /protocols/v1/users/PRINCIPAL_UUID` lists that user's subscribed versions and structures, with the same read permission. Unknown users return an empty protocol list.
 * `POST /protocols/v1/users/PRINCIPAL_UUID/invoke` validates the exact version, capability, permissions and input before enqueueing:
