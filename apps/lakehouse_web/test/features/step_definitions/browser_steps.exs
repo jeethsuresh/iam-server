@@ -372,6 +372,8 @@ defmodule LakehouseWeb.Bdd.BrowserSteps do
     {:ok, _} =
       LakehouseIam.Apps.Catalog.create(%{
         name: "Demo",
+        description: "Try the Gravitas demo.",
+        logo_url: "/images/services/news.svg",
         home_url: "http://127.0.0.1:#{port}/",
         login_url: "http://127.0.0.1:#{port}/auth/gravitas/start"
       })

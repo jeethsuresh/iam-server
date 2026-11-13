@@ -3,7 +3,7 @@ defmodule LakehouseWeb.Api.ServiceController do
   alias LakehouseIam.Apps.Catalog
   plug LakehouseWeb.Plugs.RequireAdmin when action in [:create, :delete]
 
-  def index(conn, _params), do: json(conn, %{services: Enum.map(Catalog.list(), &serialize/1)})
+  def index(conn, _params), do: json(conn, %{services: Enum.map(Catalog.published(), &serialize/1)})
 
   def create(conn, %{"service" => attrs}) do
     case Catalog.create(attrs) do
@@ -29,5 +29,5 @@ defmodule LakehouseWeb.Api.ServiceController do
   end
 
   defp serialize(service),
-    do: Map.take(service, [:id, :name, :description, :home_url, :login_url, :origin])
+    do: Map.take(service, [:id, :name, :description, :logo_url, :home_url, :login_url, :origin])
 end

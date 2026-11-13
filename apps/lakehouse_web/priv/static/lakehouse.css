@@ -1389,3 +1389,32 @@ a:focus-visible,button:focus-visible,input:focus-visible,textarea:focus-visible 
   .main-nav a { padding:8px 6px; gap:4px; font-size:11px; }
   .main-nav a span { width:12px; font-size:13px; }
 }
+
+.service-logo {
+  display: block;
+  object-fit: contain;
+}
+.service-directory-link {
+  margin: 20px 0;
+}
+.catalog-branding {
+  margin: 0 0 18px;
+}
+.catalog-branding summary {
+  cursor: pointer;
+  color: #47624d;
+  font-size: 13px;
+}
+.catalog-branding form {
+  display: grid;
+  gap: 7px;
+  margin-top: 10px;
+}
+.catalog-branding input, .catalog-branding textarea {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #cbd7cc;
+  border-radius: 6px;
+  font: inherit;
+}
+.catalog-branding button { justify-self: start; }
