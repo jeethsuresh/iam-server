@@ -353,6 +353,8 @@ defmodule LakehouseWeb.Bdd.BrowserSteps do
       context.session
       |> click(Query.link("Service catalog"))
       |> fill_in(Query.text_field("Service name"), with: name)
+      |> fill_in(Query.css("#service-description"), with: "Keep your field notes together.")
+      |> fill_in(Query.css("#service-logo"), with: "/images/services/news.svg")
       |> fill_in(Query.css("#service-home"), with: "https://notes.example.com/")
       |> fill_in(Query.css("#service-login"),
         with: "https://notes.example.com/auth/gravitas/start"
