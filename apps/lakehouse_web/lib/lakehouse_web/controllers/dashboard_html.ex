@@ -2,7 +2,12 @@ defmodule LakehouseWeb.DashboardHTML do
   use LakehouseWeb, :html
   embed_templates "dashboard_html/*"
 
-  def initial(name), do: name |> String.first() |> String.upcase()
+  def display_url(url), do: url |> String.replace_prefix("https://", "") |> String.trim_trailing("/")
+
+  def branding_form(service, service_id, changeset) do
+    selected = if service.id == service_id, do: changeset, else: Ecto.Changeset.change(service)
+    Phoenix.Component.to_form(selected, as: :service)
+  end
   def hostname(url), do: URI.parse(url).host
 
   def errors(form, field) do

@@ -16,13 +16,20 @@ defmodule LakehouseWeb.DashboardTest do
     {:ok, service} =
       Catalog.create(%{
         name: "Notes",
+        description: "Keep your notes together.",
+        logo_url: "https://notes.example/logo.png",
         home_url: "https://notes.example/",
         login_url: "https://notes.example/auth/start"
       })
 
     {:ok, _} = Grants.upsert(alice.id, service.origin, ["profile.name"], :selected)
     assert get(signed_in(alice), "/dashboard") |> html_response(200) =~ "Open service"
-    assert get(signed_in(bob), "/dashboard") |> html_response(200) =~ "Connect service"
+    dashboard = get(signed_in(bob), "/dashboard") |> html_response(200)
+    assert dashboard =~ "Connect service"
+    assert dashboard =~ ~s(src="https://notes.example/logo.png")
+    assert dashboard =~ "Keep your notes together."
+    assert dashboard =~ ~s(class="service-domain">notes.example)
+    assert dashboard =~ "https://apps.gravitas.cool/#apps"
     launch = get(signed_in(alice), "/services/#{service.id}/launch")
     assert redirected_to(launch) == Catalog.launch_url(service)
     refute redirected_to(launch) =~ "token"
@@ -52,6 +59,8 @@ defmodule LakehouseWeb.DashboardTest do
     {:ok, service} =
       Catalog.create(%{
         name: "Notes",
+        description: "Keep your notes together.",
+        logo_url: "https://notes.example/logo.png",
         home_url: "https://notes.example/",
         login_url: "https://notes.example/auth/start"
       })
@@ -59,6 +68,7 @@ defmodule LakehouseWeb.DashboardTest do
     for {method, path, params} <- [
           {:get, "/services/manage", %{}},
           {:post, "/services", %{service: %{name: "Evil"}}},
+          {:post, "/services/#{service.id}/branding", %{service: %{name: "Evil"}}},
           {:post, "/services/#{service.id}/delete", %{}}
         ] do
       conn = Phoenix.ConnTest.dispatch(signed_in(alice), @endpoint, method, path, params)

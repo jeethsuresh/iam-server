@@ -7,6 +7,7 @@ defmodule LakehouseIam.Schema.Service do
   schema "services" do
     field :name, :string
     field :description, :string
+    field :logo_url, :string
     field :home_url, :string
     field :login_url, :string
     field :origin, :string
@@ -15,13 +16,21 @@ defmodule LakehouseIam.Schema.Service do
 
   def changeset(service, attrs) do
     service
-    |> cast(attrs, [:name, :description, :home_url, :login_url])
-    |> validate_required([:name, :home_url, :login_url])
+    |> cast(attrs, [:name, :description, :logo_url, :home_url, :login_url])
+    |> validate_required([:name, :description, :logo_url, :home_url, :login_url])
     |> validate_length(:name, max: 80)
+    |> validate_format(:name, ~r/\p{L}/u, message: "must be a human-readable app name")
+    |> validate_change(:name, fn :name, name ->
+      if Regex.match?(~r{://|\A[a-z0-9-]+(?:\.[a-z0-9-]+)+/?\z}i, name),
+        do: [name: "must be a name, separate from the service URL"],
+        else: []
+    end)
     |> validate_length(:description, max: 240)
     |> validate_length(:home_url, max: 2048)
     |> validate_length(:login_url, max: 2048)
+    |> validate_length(:logo_url, max: 2048)
     |> validate_urls()
+    |> validate_logo()
     |> unique_constraint(:origin)
   end
 
@@ -45,6 +54,20 @@ defmodule LakehouseIam.Schema.Service do
       end
     else
       changeset
+    end
+  end
+
+  defp validate_logo(changeset) do
+    logo = get_field(changeset, :logo_url)
+    home = get_field(changeset, :home_url)
+
+    if is_binary(logo) and
+         (Regex.match?(~r{\A/images/services/[a-z0-9-]+\.(svg|png)\z}, logo) or
+            (valid_url?(logo) and valid_url?(home) and Origin.same_origin?(home, logo) and
+               is_nil(URI.parse(logo).query))) do
+      changeset
+    else
+      add_error(changeset, :logo_url, "must be a bundled image or an HTTPS image URL on the service origin without a query")
     end
   end
 

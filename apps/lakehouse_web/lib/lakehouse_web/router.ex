@@ -84,6 +84,7 @@ defmodule LakehouseWeb.Router do
     get "/dashboard", DashboardController, :index
     get "/services/manage", DashboardController, :catalog
     post "/services", DashboardController, :create
+    post "/services/:id/branding", DashboardController, :update
     post "/services/:id/delete", DashboardController, :delete
     get "/services/:id/launch", DashboardController, :launch
 

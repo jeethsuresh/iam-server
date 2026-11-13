@@ -166,7 +166,7 @@ The bounded transaction fails if the user is missing or inactive and is safe to 
 
 ## Dashboard and service integration
 
-Administrators add services at `/services/manage` or via authenticated `POST /api/v1/services` with a `service` object (`name`, optional `description`, `home_url`, `login_url`). `GET /api/v1/services` lists the shared directory; DELETE removes an entry. Removal does not revoke existing user consent; each user can revoke connections in Settings.
+Administrators add services at `/services/manage` or via authenticated `POST /api/v1/services` with a `service` object (`name`, `description`, `logo_url`, `home_url`, `login_url`). `GET /api/v1/services` lists the shared directory; DELETE removes an entry. Use a display name, a short description, and a public image on the service’s own HTTPS origin or a bundled `/images/services/` asset. Existing entries that still need branding can be completed in the administration page. Removal does not revoke existing user consent; each user can revoke connections in Settings.
 
 A service's `login_url` is its **app-side** sign-in initiation endpoint, for example `https://notes.gravitas.cool/auth/gravitas/start`. Home and login URLs must be HTTPS on the same origin. Loopback HTTP is allowed only with the development callback flag. Only one entry per origin is supported, matching the current origin-based consent model. To change an entry, remove it and add the replacement; grants remain associated with its origin.
 

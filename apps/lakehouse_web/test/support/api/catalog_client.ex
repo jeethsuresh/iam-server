@@ -7,7 +7,13 @@ defmodule LakehouseWeb.Test.Api.CatalogClient do
     |> put_req_header("authorization", "Bearer #{token}")
     |> put_req_header("content-type", "application/json")
     |> post("/api/v1/services", %{
-      service: %{name: "Notes", home_url: "https://notes.example.com/", login_url: url}
+      service: %{
+        name: "Notes",
+        description: "Keep your notes together.",
+        logo_url: "https://notes.example.com/logo.png",
+        home_url: "https://notes.example.com/",
+        login_url: url
+      }
     })
   end
 

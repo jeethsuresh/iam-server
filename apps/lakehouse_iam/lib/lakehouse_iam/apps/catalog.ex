@@ -7,6 +7,13 @@ defmodule LakehouseIam.Apps.Catalog do
 
   def list, do: Repo.all(from s in Service, order_by: [asc: s.name, asc: s.id])
 
+  def published do
+    Repo.all(from s in Service,
+      where: not is_nil(s.logo_url) and not is_nil(s.description),
+      order_by: [asc: s.name, asc: s.id]
+    )
+  end
+
   def get(id) do
     case Ecto.UUID.cast(id) do
       {:ok, id} -> Repo.get(Service, id)
@@ -15,12 +22,13 @@ defmodule LakehouseIam.Apps.Catalog do
   end
 
   def create(attrs), do: %Service{} |> Service.changeset(attrs) |> Repo.insert()
+  def update(service, attrs), do: service |> Service.changeset(attrs) |> Repo.update()
   def delete(service), do: Repo.delete(service)
 
   def dashboard(principal_id) do
     grants = Grants.list_for_principal(principal_id)
     origins = MapSet.new(grants, & &1.app_origin)
-    services = list()
+    services = published()
     {connected, available} = Enum.split_with(services, &MapSet.member?(origins, &1.origin))
     known = MapSet.new(services, & &1.origin)
     uncatalogued = Enum.reject(grants, &MapSet.member?(known, &1.app_origin))

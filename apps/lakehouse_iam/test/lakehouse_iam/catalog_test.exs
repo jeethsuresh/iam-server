@@ -9,6 +9,7 @@ defmodule LakehouseIam.Apps.CatalogTest do
         %{
           name: "Notes",
           description: "A place to think",
+          logo_url: "https://notes.example.com/icon.png",
           home_url: "https://notes.example.com/",
           login_url: "https://notes.example.com/auth/gravitas/start?next=%2Fnotes"
         },
@@ -44,6 +45,26 @@ defmodule LakehouseIam.Apps.CatalogTest do
     end
 
     assert Catalog.get("invalid") == nil
+  end
+
+  test "catalog requires a human-readable name, description and service logo" do
+    for {field, value} <- [
+          {:name, "notes.example.com"},
+          {:description, "  "},
+          {:logo_url, ""},
+          {:logo_url, "https://tracking.example.com/logo.png"},
+          {:logo_url, "https://notes.example.com/logo.png?account=123"}
+        ] do
+      assert {:error, changeset} = Catalog.create(attrs(%{field => value}))
+      assert Keyword.has_key?(changeset.errors, field)
+    end
+
+    assert {:ok, service} = Catalog.create(attrs())
+    assert {:ok, updated} = Catalog.update(service, %{name: "Field Notes", logo_url: "/images/services/news.svg"})
+    assert updated.id == service.id
+    assert updated.origin == service.origin
+    assert updated.login_url == service.login_url
+    assert [^updated] = Catalog.published()
   end
 
   test "launch preserves app parameters without disclosing the signed-in username" do

@@ -76,6 +76,8 @@ defmodule LakehouseWeb.SessionReturnTest do
     {:ok, service} =
       Catalog.create(%{
         name: "Notes",
+        description: "Keep your notes together.",
+        logo_url: "https://notes.example/logo.png",
         home_url: "https://notes.example/",
         login_url: "https://notes.example/auth/start"
       })
