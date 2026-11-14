@@ -57,6 +57,7 @@ defmodule LakehouseWeb.SingleLogoutTest do
     {_, code} = start(login(), user, origin)
     proof = OAuthClient.token(code) |> json_response(200) |> Map.fetch!("session_check_token")
     assert json_response(proof_status(proof), 200)["gravitas_admin"] == false
+    LakehouseIam.Fixtures.ensure_rbac!()
     assert {:ok, _} = LakehouseIam.IAM.assign_role(user.id, "admin")
     assert json_response(proof_status(proof), 200)["gravitas_admin"] == true
 
