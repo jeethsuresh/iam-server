@@ -48,6 +48,25 @@ defmodule LakehouseWeb.SingleLogoutTest do
     build_conn() |> put_req_header("authorization", "Bearer " <> token) |> get("/oauth/session")
   end
 
+  test "only the configured Store receives live Gravitas admin status", %{user: user} do
+    origin = "http://127.0.0.1:4102"
+    prior = Application.get_env(:lakehouse_iam, :protocol_owners, %{})
+    Application.put_env(:lakehouse_iam, :protocol_owners, Map.put(prior, "appstore", origin))
+    on_exit(fn -> Application.put_env(:lakehouse_iam, :protocol_owners, prior) end)
+
+    {_, code} = start(login(), user, origin)
+    proof = OAuthClient.token(code) |> json_response(200) |> Map.fetch!("session_check_token")
+    assert json_response(proof_status(proof), 200)["gravitas_admin"] == false
+    assert {:ok, _} = LakehouseIam.IAM.assign_role(user.id, "admin")
+    assert json_response(proof_status(proof), 200)["gravitas_admin"] == true
+
+    {_, other} = start(login(), user, "http://127.0.0.1:4103")
+    other_proof = OAuthClient.token(other) |> json_response(200) |> Map.fetch!("session_check_token")
+    refute Map.has_key?(json_response(proof_status(other_proof), 200), "gravitas_admin")
+    assert :ok = LakehouseIam.IAM.revoke_role(user.id, "admin")
+    assert json_response(proof_status(proof), 200)["gravitas_admin"] == false
+  end
+
   test "one browser logout revokes all its apps while leaving consent and other devices", %{
     user: user
   } do
