@@ -163,7 +163,7 @@ defmodule LakehouseWeb.OAuthController do
     conn = put_resp_header(conn, "cache-control", "no-store")
 
     case result do
-      {:ok, status} -> json(conn, status)
+      {:ok, status} -> json(conn, store_session_status(status))
       _ -> conn |> put_status(401) |> json(%{active: false, error: "invalid_token"})
     end
   rescue
@@ -172,6 +172,15 @@ defmodule LakehouseWeb.OAuthController do
       |> put_resp_header("cache-control", "no-store")
       |> put_status(503)
       |> json(%{error: "temporarily_unavailable"})
+  end
+
+  defp store_session_status(%{app_origin: origin, sub: subject} = status) do
+    if LakehouseIam.Protocols.owners()["appstore"] == origin do
+      principal = LakehouseIam.Repo.get(LakehouseIam.Schema.Principal, subject)
+      Map.put(status, :gravitas_admin, principal != nil and Accounts.admin?(principal.username))
+    else
+      status
+    end
   end
 
   defp family_id(conn) do
