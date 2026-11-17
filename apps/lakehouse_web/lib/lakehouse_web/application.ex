@@ -8,6 +8,7 @@ defmodule LakehouseWeb.Application do
       LakehouseWeb.Telemetry,
       {Phoenix.PubSub, name: LakehouseWeb.PubSub},
       LakehouseWeb.Presence,
+      LakehouseWeb.NewtonD,
       LakehouseWeb.Endpoint
     ]
 
