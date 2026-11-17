@@ -1,0 +1,18 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: iam
+spec:
+  template:
+    spec:
+      containers:
+        - name: iam
+          env:
+            - name: NEWTOND_UDP_HOST
+              value: newtond.newtond.svc.cluster.local
+            - name: NEWTOND_UDP_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: newtond-sender
+                  key: NEWTOND_UDP_KEY
+                  optional: true

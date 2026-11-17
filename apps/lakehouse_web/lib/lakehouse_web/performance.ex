@@ -25,6 +25,7 @@ defmodule LakehouseWeb.Performance do
       cost = Process.delete(@key) || %{}
       measurements = Map.put(cost, :duration, System.monotonic_time() - started)
       route = conn.private[:phoenix_route] || "unmatched"
+      LakehouseWeb.NewtonD.request_finished(conn, measurements.duration)
 
       :telemetry.execute([:lakehouse, :request, :stop], measurements, %{
         method: conn.method,
