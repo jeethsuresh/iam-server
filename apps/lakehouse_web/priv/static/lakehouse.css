@@ -1418,3 +1418,75 @@ a:focus-visible,button:focus-visible,input:focus-visible,textarea:focus-visible 
   font: inherit;
 }
 .catalog-branding button { justify-self: start; }
+
+/* Connected services put the launch action beside the app identity. */
+.dashboard-page .page-heading { margin-bottom: 28px; }
+.dashboard-page .page-heading h1 {
+  font: 600 clamp(2.25rem, 5vw, 4rem)/1.05 Georgia, serif;
+  letter-spacing: -.045em;
+  margin: 0;
+}
+.service-grid--connected {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 28rem), 1fr));
+  gap: 8px;
+}
+.service-grid--connected .service-card--connected {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  column-gap: 14px;
+  align-items: center;
+  padding: 14px;
+}
+.service-grid--connected .card-top {
+  grid-column: 1;
+  grid-row: 1 / span 3;
+  margin: 0;
+}
+.service-grid--connected h3,
+.service-grid--connected .service-domain,
+.service-grid--connected .service-card--connected p { grid-column: 2; }
+.service-grid--connected .service-card--connected p {
+  font-size: 12px;
+  line-height: 1.4;
+  margin: 4px 0 0;
+}
+.service-card--connected .service-action {
+  grid-column: 3;
+  grid-row: 1 / span 3;
+  gap: 8px;
+  align-items: center;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid #d0dfd2;
+  border-radius: 8px;
+  color: #254c37;
+}
+.account-action {
+  position: relative;
+  isolation: isolate;
+}
+.account-action::before {
+  position: absolute;
+  inset: 0;
+  content: "";
+  z-index: -1;
+  pointer-events: none;
+  border-radius: inherit;
+  background: #6c98751a;
+  transition: transform 180ms cubic-bezier(.22,.78,.25,1.2), background-color 170ms;
+}
+.account-action:hover::before { background: #6c987536; }
+.account-action:active::before {
+  transform: scale(1.035,.89);
+  transition-duration: 80ms;
+  background: #6c98754d;
+}
+.account-action:focus-visible { outline: 2px solid #466b55; outline-offset: 3px; }
+@media(max-width:440px) {
+  .service-grid--connected .service-card--connected { grid-template-columns: 44px minmax(0, 1fr); }
+  .service-card--connected .service-action { grid-column: 2; grid-row: auto; justify-self: start; margin-top: 8px; }
+}
+@media(prefers-reduced-motion:reduce) {
+  .account-action::before { transition: none; }
+  .account-action:active::before { transform: none; }
+}
