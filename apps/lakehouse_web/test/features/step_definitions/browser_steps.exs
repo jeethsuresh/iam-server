@@ -329,7 +329,7 @@ defmodule LakehouseWeb.Bdd.BrowserSteps do
   end
 
   step "I should see my services dashboard", context do
-    assert_has(context.session, Query.css("h1", text: "A little more connected."))
+    assert_has(context.session, Query.css("h1", text: "Your services"))
     assert_has(context.session, Query.css("#connected-heading", text: "Connected services"))
     assert_has(context.session, Query.css("#available-heading", text: "Available services"))
     :ok

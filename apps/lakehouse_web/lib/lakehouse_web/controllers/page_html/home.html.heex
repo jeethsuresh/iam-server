@@ -23,10 +23,10 @@
 
   <%= if @session_id != "" do %>
     <input type="hidden" name="sessionID" value={@session_id} />
-    <p class="flash flash--info">Completing federated sign-in. Enter your password.</p>
+    <p class="flash flash--info">Sign in to continue to the requesting service.</p>
   <% end %>
 
-  <button type="submit">Sign in</button>
+  <button type="submit" class="account-action">Sign in</button>
 </form>
 
 <p>No account? <a href={LakehouseWeb.IamAuth.registration_path(@session_id)}>Register</a></p>
