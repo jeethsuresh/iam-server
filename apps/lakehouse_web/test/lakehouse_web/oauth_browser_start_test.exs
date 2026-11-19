@@ -104,17 +104,40 @@ defmodule LakehouseWeb.OAuthBrowserStartTest do
 
   test "silent sign-out returns login_required to the registered callback", %{params: params} do
     query =
-      get(build_conn(), "/oauth/start", Map.put(params, "prompt", "none")) |> callback(params)
+      build_conn()
+      |> put_req_cookie(LakehouseWeb.BrowserSession.marker_cookie_name(), "1")
+      |> get("/oauth/start", Map.put(params, "prompt", "none"))
+      |> callback(params)
 
     assert query["error"] == "login_required"
     refute query["code"]
   end
 
-  test "silent mode never creates consent", %{user: user, params: params} do
+  test "silent mode cannot reuse another application's grant", %{user: user, params: params} do
+    {:ok, _} = Grants.upsert(user.id, "https://another-app.example", ["profile.name"], :selected)
+
     query =
       get(signed_in(user), "/oauth/start", Map.put(params, "prompt", "none")) |> callback(params)
 
     assert query["error"] == "consent_required"
+    refute query["code"]
+    refute Grants.get(user.id, "http://127.0.0.1:4102")
+  end
+
+  test "cancel returns the original state without granting access", %{user: user, params: params} do
+    started = get(signed_in(user), "/oauth/start", params)
+    sid = URI.decode_query(URI.parse(redirected_to(started)).query)["sessionID"]
+
+    page = get(signed_in(user), "/oauth/consent", %{"sessionID" => sid})
+    assert html_response(page, 200) =~ "Grant access"
+
+    query =
+      post(signed_in(user), "/oauth/consent", %{"sessionID" => sid, "decision" => "deny"})
+      |> callback(params)
+
+    assert query["error"] == "access_denied"
+    refute query["code"]
+    refute Federated.fetch(sid)
     refute Grants.get(user.id, "http://127.0.0.1:4102")
   end
 

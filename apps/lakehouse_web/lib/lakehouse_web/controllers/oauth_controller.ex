@@ -74,22 +74,22 @@ defmodule LakehouseWeb.OAuthController do
             maybe_external_redirect(conn, url)
 
           {:error, :consent_required, _} ->
-            silent_error(conn, session_id, sess, "consent_required")
+            finish_with_error(conn, session_id, sess, "consent_required")
 
           {:error, _, _} ->
             if silent,
-              do: silent_error(conn, session_id, sess, "login_required"),
+              do: finish_with_error(conn, session_id, sess, "login_required"),
               else: redirect(conn, to: IamAuth.login_path(sess.username, session_id))
         end
 
       :error ->
         if silent,
-          do: silent_error(conn, session_id, sess, "login_required"),
+          do: finish_with_error(conn, session_id, sess, "login_required"),
           else: redirect(conn, to: IamAuth.login_path(sess.username, session_id))
     end
   end
 
-  defp silent_error(conn, session_id, sess, error) do
+  defp finish_with_error(conn, session_id, sess, error) do
     url = OAuth.error_redirect(sess, error)
     :ok = Federated.delete(session_id)
     redirect(conn, external: url)
@@ -121,35 +121,45 @@ defmodule LakehouseWeb.OAuthController do
     with {:ok, principal} <- current_principal(conn),
          sess when not is_nil(sess) <- Federated.fetch(session_id),
          true <- sess.username == principal.username do
-      room_mode =
-        if "matrix.full" in sess.scopes or params["all_rooms"] in ["true", "on", "1"],
-          do: :all,
-          else: :selected
-
-      room_ids =
-        case params["room_ids"] do
-          list when is_list(list) -> list
-          id when is_binary(id) and id != "" -> [id]
-          _ -> []
-        end
-
-      case OAuth.issue_code_redirect(sess, principal.id, room_mode, room_ids,
-             session_id: family_id(conn)
-           ) do
-        {:ok, url} ->
-          _ = Federated.delete(session_id)
-          redirect(conn, external: url)
-
-        {:error, _} ->
-          conn
-          |> put_flash(:error, "Could not complete consent.")
-          |> redirect(to: ~p"/oauth/consent?sessionID=#{URI.encode_www_form(session_id)}")
+      if params["decision"] == "deny" do
+        finish_with_error(conn, session_id, sess, "access_denied")
+      else
+        grant_access(conn, params, sess, principal)
       end
     else
       _ ->
         conn
         |> put_flash(:error, "Session expired.")
         |> redirect(to: ~p"/")
+    end
+  end
+
+  defp grant_access(conn, params, sess, principal) do
+    session_id = params["sessionID"]
+
+    room_mode =
+      if "matrix.full" in sess.scopes or params["all_rooms"] in ["true", "on", "1"],
+        do: :all,
+        else: :selected
+
+    room_ids =
+      case params["room_ids"] do
+        list when is_list(list) -> list
+        id when is_binary(id) and id != "" -> [id]
+        _ -> []
+      end
+
+    case OAuth.issue_code_redirect(sess, principal.id, room_mode, room_ids,
+           session_id: family_id(conn)
+         ) do
+      {:ok, url} ->
+        _ = Federated.delete(session_id)
+        redirect(conn, external: url)
+
+      {:error, _} ->
+        conn
+        |> put_flash(:error, "Could not complete consent.")
+        |> redirect(to: ~p"/oauth/consent?sessionID=#{URI.encode_www_form(session_id)}")
     end
   end
 

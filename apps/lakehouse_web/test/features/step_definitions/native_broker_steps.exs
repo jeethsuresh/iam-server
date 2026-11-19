@@ -80,7 +80,7 @@ defmodule LakehouseWeb.Bdd.NativeBrokerSteps do
 
   step "the native broker permission explains access to already approved apps", context do
     assert_has(context.session, Query.css(".oauth-consent li", text: "Let Private Store sign you into apps you have already approved on this device."))
-    assert_has(context.session, Query.button("Allow"))
+    assert_has(context.session, Query.button("Grant access"))
     :ok
   end
 end

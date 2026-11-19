@@ -317,7 +317,7 @@ defmodule LakehouseWeb.Bdd.BrowserSteps do
           s
         end
       end)
-      |> click(Query.button("Allow"))
+      |> click(Query.button("Grant access"))
 
     {:ok, Map.put(context, :session, session)}
   end
@@ -399,7 +399,7 @@ defmodule LakehouseWeb.Bdd.BrowserSteps do
     assert_has(session, Query.css("#connected-services", text: "Demo"))
     session = session |> click(Query.css("#connected-services a[data-service=Demo]"))
     assert_has(session, Query.css("h1", text: "Signed in"))
-    refute_has(session, Query.button("Allow"))
+    refute_has(session, Query.button("Grant access"))
     {:ok, Map.put(context, :session, session)}
   end
 
