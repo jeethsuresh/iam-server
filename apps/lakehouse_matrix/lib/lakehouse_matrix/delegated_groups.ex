@@ -271,7 +271,7 @@ defmodule LakehouseMatrix.DelegatedGroups do
 
             if current == "invite" do
               member!(grant, direct.id, grant.principal_id, "join")
-              audit!(grant, direct.id, "accept", user_id(grant.principal_id))
+              audit_membership!(grant, direct.id, "accept", grant.principal_id)
             end
 
             direct.id
@@ -288,7 +288,7 @@ defmodule LakehouseMatrix.DelegatedGroups do
                 Repo.insert!(%RiverDirect{id: group.id, low_id: low, high_id: high})
                 LakehouseMatrix.ClientStore.link_direct(low, high, Identity.room_id(group.id))
                 member!(grant, group.id, person.id, "invite")
-                audit!(grant, group.id, "invite", user_id(person.id))
+                audit_membership!(grant, group.id, "invite", person.id)
                 group.id
 
               {:error, e} ->
@@ -569,7 +569,7 @@ defmodule LakehouseMatrix.DelegatedGroups do
         # A leaving actor cannot send a timeline audit after leaving. An
         # invitation decline is already audited by its signed membership event.
         leaving = target == actor and membership == "leave"
-        if leaving and current == "join", do: audit!(grant, id, action, user_id(target))
+        if leaving and current == "join", do: audit_membership!(grant, id, action, target)
         event = member!(grant, id, target, membership)
         for child <- channel_ids(id), do: member!(grant, child, target, membership)
 
@@ -580,7 +580,7 @@ defmodule LakehouseMatrix.DelegatedGroups do
           |> Repo.update!()
         end
 
-        unless leaving, do: audit!(grant, id, action, user_id(target))
+        unless leaving, do: audit_membership!(grant, id, action, target)
         %{"event_id" => event["event_id"], "membership" => membership}
       end)
     else
@@ -998,6 +998,12 @@ defmodule LakehouseMatrix.DelegatedGroups do
         user_id(target)
       )
     end
+  end
+
+  defp audit_membership!(g, id, action, target) do
+    # The signed membership event records the change in encrypted rooms.
+    # A separate server-authored timeline event would require plaintext.
+    unless State.get(id, "m.room.encryption"), do: audit!(g, id, action, user_id(target))
   end
 
   defp audit!(g, id, action, target),
