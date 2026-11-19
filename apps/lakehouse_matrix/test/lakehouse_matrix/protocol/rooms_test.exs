@@ -330,6 +330,60 @@ defmodule LakehouseMatrix.Protocol.RoomsTest do
     assert Graph.event(encrypted).pdu["type"] == "m.room.encrypted"
   end
 
+  test "encrypted River invitations stay actionable for delegated and Matrix clients", ctx do
+    alias LakehouseIam.Apps.Grants
+    alias LakehouseMatrix.{DelegatedGroups, Memberships}
+    alias LakehouseMatrix.Schema.RoomEvent
+
+    origin = "https://chat.gravitas.cool"
+    scopes = ~w(chats.read groups.create groups.manage groups.join)
+    {:ok, owner} = Grants.upsert(ctx.alice.id, origin, scopes, :all, [])
+    {:ok, recipient} = Grants.upsert(ctx.bob.id, origin, scopes, :selected, [])
+
+    {:ok, room} =
+      DelegatedGroups.create(owner, %{
+        "name" => "Private River room",
+        "kind" => "group",
+        "txn_id" => "encrypted-invite"
+      })
+
+    membership = fn grant, action ->
+      DelegatedGroups.membership(grant, room.id, %{
+        "action" => action,
+        "user_id" => Identity.user_id(ctx.bob.username)
+      })
+    end
+
+    assert {:ok, %{"membership" => "invite"}} = membership.(owner, "invite")
+
+    audit_events =
+      from e in RoomEvent,
+        where: e.room_id == ^room.id and e.type == "cool.gravitas.delegation.v1"
+
+    audit_count = Repo.aggregate(audit_events, :count)
+    assert audit_count == 2
+
+    assert {:ok, _} =
+             ClientRooms.put_state(ctx.alice.id, room.room_id, "m.room.encryption", "", %{
+               "algorithm" => "m.megolm.v1.aes-sha2"
+             })
+
+    assert {:ok, %{"membership" => "join", "event_id" => joined}} =
+             membership.(recipient, "accept")
+
+    assert Graph.event(joined).pdu["content"]["membership"] == "join"
+    recipient = Grants.get(ctx.bob.id, origin)
+    assert room.id in recipient.room_ids
+    assert Memberships.joined?(room.id, ctx.bob.id)
+    assert {:ok, %{"membership" => "leave"}} = membership.(recipient, "leave")
+    assert {:error, :forbidden} = Matrix.join_room(ctx.bob.id, room.room_id)
+    assert {:ok, %{"membership" => "invite"}} = membership.(owner, "invite")
+    assert {:ok, %{"room_id" => ref}} = Matrix.join_room(ctx.bob.id, room.room_id)
+    assert ref == room.room_id
+    assert Memberships.joined?(room.id, ctx.bob.id)
+    assert Repo.aggregate(audit_events, :count) == audit_count
+  end
+
   test "the legacy browser sender cannot write plaintext into an encrypted native room", ctx do
     assert {:ok, %{"room_id" => ref}} =
              ClientRooms.create(ctx.alice.id, %{
