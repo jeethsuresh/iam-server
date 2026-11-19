@@ -34,7 +34,7 @@ defmodule LakehouseWeb.Bdd.RiverMatrixAccessSteps do
 
     refute_has(context.session, Query.css("input[name=all_rooms]"))
     refute_has(context.session, Query.css("input[name='room_ids[]']"))
-    assert_has(context.session, Query.button("Allow"))
+    assert_has(context.session, Query.button("Grant access"))
     :ok
   end
 end

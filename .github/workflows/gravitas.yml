@@ -94,7 +94,6 @@ jobs:
       - name: Verify automatic room upgrades across a real Synapse server update
         run: bash integration/matrix/run.sh iam-tests:ci upgrade
   image:
-    needs: tests
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -130,7 +129,7 @@ jobs:
           printf 'IAM release image: ghcr.io/jeethsuresh/iam-server-private@%s\n' "$IMAGE_DIGEST" >> "$GITHUB_STEP_SUMMARY"
   deploy:
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.GRAVITAS_DEPLOY_ENABLED == 'true'
-    needs: image
+    needs: [tests, image]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     environment:
