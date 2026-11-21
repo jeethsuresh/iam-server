@@ -11,7 +11,26 @@ concurrency:
   group: gravitas-iam-${{ github.ref }}
   cancel-in-progress: false
 jobs:
-  tests:
+  migration-order:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install verified Kubernetes client
+        run: |
+          curl -fsSLo kubectl https://dl.k8s.io/release/v1.37.0/bin/linux/amd64/kubectl
+          curl -fsSLo kubectl.sha256 https://dl.k8s.io/release/v1.37.0/bin/linux/amd64/kubectl.sha256
+          echo "$(cat kubectl.sha256)  kubectl" | sha256sum --check
+          chmod +x kubectl
+          echo "$PWD" >> "$GITHUB_PATH"
+      - name: Verify migration ordering and failure recovery
+        run: bash scripts/kubernetes/deploy_test.sh
+  test-suites:
+    name: IAM tests (${{ matrix.suite }})
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [unit-and-api, browser, store-and-concurrency]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     services:
@@ -29,16 +48,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-      - name: Install verified Kubernetes client
-        run: |
-          curl -fsSLo kubectl https://dl.k8s.io/release/v1.37.0/bin/linux/amd64/kubectl
-          curl -fsSLo kubectl.sha256 https://dl.k8s.io/release/v1.37.0/bin/linux/amd64/kubectl.sha256
-          echo "$(cat kubectl.sha256)  kubectl" | sha256sum --check
-          chmod +x kubectl
-          echo "$PWD" >> "$GITHUB_PATH"
-      - name: Verify migration ordering and failure recovery
-        run: bash scripts/kubernetes/deploy_test.sh
-      - name: Build isolated browser test environment
+      - name: Build isolated IAM test image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
@@ -46,15 +56,24 @@ jobs:
           load: true
           tags: iam-tests:ci
           cache-from: type=gha,scope=iam-tests
-          cache-to: type=gha,mode=max,scope=iam-tests
-      - name: Run unit, API and real-browser tests
+          cache-to: ${{ matrix.suite == 'unit-and-api' && 'type=gha,mode=max,scope=iam-tests' || '' }}
+      - name: Run unit and API tests
+        if: matrix.suite == 'unit-and-api'
+        run: >-
+          docker run --rm --init --network host
+          -e POSTGRES_HOST=127.0.0.1 -e POSTGRES_PORT=5432
+          -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres
+          iam-tests:ci bash ./test.sh --exclude-browser
+      - name: Run real-browser tests
+        if: matrix.suite == 'browser'
         run: >-
           docker run --rm --init --network host --shm-size=256m
           --ulimit nofile=65536:65536
           -e POSTGRES_HOST=127.0.0.1 -e POSTGRES_PORT=5432
           -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres
-          iam-tests:ci
+          iam-tests:ci bash ./test.sh --browser
       - name: Check out the pinned Store protocol fixture
+        if: matrix.suite == 'store-and-concurrency'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: jeethsuresh/appstore
@@ -62,11 +81,21 @@ jobs:
           path: .appstore-push
           persist-credentials: false
       - name: Build the pinned Private Store notification fixture
+        if: matrix.suite == 'store-and-concurrency'
         run: |
           mkdir -p "$RUNNER_TEMP/matrix-push"
           docker run --rm -v "$PWD/.appstore-push/backend:/src:ro" -v "$RUNNER_TEMP/matrix-push:/out" -w /src golang:1.25-bookworm \
             go test -c -mod=readonly -ldflags '-linkmode external -extldflags "-static"' -o /out/appstore.test ./internal/store
+      - name: Create and migrate the isolated test database
+        if: matrix.suite == 'store-and-concurrency'
+        run: >-
+          docker run --rm --network host
+          -e POSTGRES_HOST=127.0.0.1 -e POSTGRES_PORT=5432
+          -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres
+          iam-tests:ci bash -ec
+          'mix ecto.create -r LakehouseIam.Repo --quiet && mix ecto.migrate -r LakehouseIam.Repo --quiet'
       - name: Verify encrypted Matrix alerts through the real Store stream and acknowledgement
+        if: matrix.suite == 'store-and-concurrency'
         run: >-
           docker run --rm --network host
           -e POSTGRES_HOST=127.0.0.1 -e POSTGRES_PORT=5432
@@ -76,23 +105,55 @@ jobs:
           --entrypoint mix iam-tests:ci test
           apps/lakehouse_matrix/test/lakehouse_matrix/appstore_push_test.exs
       - name: Verify concurrent subgroup registration and membership revisions
+        if: matrix.suite == 'store-and-concurrency'
         run: >-
           docker run --rm --network host
           -e POSTGRES_HOST=127.0.0.1 -e POSTGRES_PORT=5432
           -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres
           --entrypoint mix iam-tests:ci run scripts/test-subgroup-concurrency.exs
       - name: Verify sync snapshots do not block concurrent messages
+        if: matrix.suite == 'store-and-concurrency'
         run: >-
           docker run --rm --network host
           -e POSTGRES_HOST=127.0.0.1 -e POSTGRES_PORT=5432
           -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres
           --entrypoint mix iam-tests:ci run scripts/test-matrix-sync-concurrency.exs
-      - name: Verify native federation and encrypted client recovery against Synapse
-        run: bash integration/matrix/run.sh iam-tests:ci
-      - name: Verify version-9 messaging and attachments against Synapse 1.56
-        run: bash integration/matrix/run.sh iam-tests:ci legacy
-      - name: Verify automatic room upgrades across a real Synapse server update
-        run: bash integration/matrix/run.sh iam-tests:ci upgrade
+  matrix-federation:
+    name: IAM Matrix federation (${{ matrix.peer }})
+    strategy:
+      fail-fast: false
+      matrix:
+        # Current Synapse crypto, Synapse 1.56 compatibility and a real server upgrade.
+        peer: [modern, legacy, upgrade]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build isolated IAM test image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: Dockerfile.tests
+          load: true
+          tags: iam-tests:ci
+          cache-from: type=gha,scope=iam-tests
+      - name: Exercise independent Matrix peers
+        run: bash integration/matrix/run.sh iam-tests:ci ${{ matrix.peer }}
+  tests:
+    if: always()
+    needs: [migration-order, test-suites, matrix-federation]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require every test suite
+        env:
+          MIGRATION_RESULT: ${{ needs.migration-order.result }}
+          SUITE_RESULT: ${{ needs.test-suites.result }}
+          FEDERATION_RESULT: ${{ needs.matrix-federation.result }}
+        run: |
+          printf 'Migration: %s\nIAM suites: %s\nFederation: %s\n' "$MIGRATION_RESULT" "$SUITE_RESULT" "$FEDERATION_RESULT"
+          test "$MIGRATION_RESULT" = success && test "$SUITE_RESULT" = success && test "$FEDERATION_RESULT" = success
   image:
     runs-on: ubuntu-24.04
     timeout-minutes: 30

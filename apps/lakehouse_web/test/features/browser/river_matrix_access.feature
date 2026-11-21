@@ -4,3 +4,8 @@ Feature: River requires full Matrix access
     When I sign in through the browser as "rivermatrixbrowser" with password "password123"
     And I review River's full Matrix login request
     Then River requires access to all Matrix spaces and conversations
+    When I cancel River's access request
+    Then River receives a denial without an authorization code
+    When I review River's full Matrix login request again
+    And I grant River access
+    Then River can exchange the callback code once for full Matrix access
