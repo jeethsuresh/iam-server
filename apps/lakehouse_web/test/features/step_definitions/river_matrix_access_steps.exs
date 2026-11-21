@@ -8,7 +8,7 @@ defmodule LakehouseWeb.Bdd.RiverMatrixAccessSteps do
   alias Wallaby.Query
 
   @caller "http://127.0.0.1:4102"
-  @callback @caller <> "/"
+  @redirect_uri @caller <> "/"
 
   step "I review River's full Matrix login request", context do
     old = Application.get_env(:lakehouse_iam, :relaxed_callback_urls)
@@ -61,7 +61,7 @@ defmodule LakehouseWeb.Bdd.RiverMatrixAccessSteps do
       "grant_type" => "authorization_code",
       "code" => code,
       "code_verifier" => context.verifier,
-      "redirect_uri" => @callback
+      "redirect_uri" => @redirect_uri
     }
 
     assert %{"access_token" => access, "scope" => scope} =
@@ -81,7 +81,7 @@ defmodule LakehouseWeb.Bdd.RiverMatrixAccessSteps do
 
     params = %{
       callerURL: @caller,
-      redirectURL: @callback,
+      redirectURL: @redirect_uri,
       codeChallenge: Pkce.challenge(verifier),
       scope: "profile.name matrix.full chats.list chats.read chats.write",
       state: state
@@ -95,7 +95,7 @@ defmodule LakehouseWeb.Bdd.RiverMatrixAccessSteps do
 
   defp callback_params(context) do
     url = context.session |> current_url() |> URI.parse()
-    assert URI.to_string(%{url | query: nil}) == @callback
+    assert URI.to_string(%{url | query: nil}) == @redirect_uri
     params = URI.decode_query(url.query)
     assert params["state"] == context.state
     params
