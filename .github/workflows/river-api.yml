@@ -3,6 +3,8 @@ on:
   push:
     branches: [codex/river-groups-events]
   pull_request:
+    # Gravitas IAM covers these targets with its parallel test suites.
+    branches-ignore: [main, codex/gravitas-dashboard-kubernetes]
 permissions:
   contents: read
 concurrency:
