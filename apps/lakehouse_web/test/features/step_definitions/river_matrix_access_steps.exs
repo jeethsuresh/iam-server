@@ -1,5 +1,6 @@
 defmodule LakehouseWeb.Bdd.RiverMatrixAccessSteps do
   use Cucumber.StepDefinition
+  import ExUnit.Assertions
   import Wallaby.Browser
   import Phoenix.ConnTest, only: [json_response: 2]
   alias LakehouseIam.Apps.{Pkce, Tokens}
