@@ -12,7 +12,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   migration-order:
-    runs-on: ubuntu-24.04
+    runs-on: gravitas-linux
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -31,7 +31,7 @@ jobs:
       fail-fast: false
       matrix:
         suite: [unit-and-api, browser, store-and-concurrency]
-    runs-on: ubuntu-24.04
+    runs-on: gravitas-linux
     timeout-minutes: 20
     services:
       postgres:
@@ -125,7 +125,7 @@ jobs:
       matrix:
         # Current Synapse crypto, Synapse 1.56 compatibility and a real server upgrade.
         peer: [modern, legacy, upgrade]
-    runs-on: ubuntu-24.04
+    runs-on: gravitas-linux
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -143,7 +143,7 @@ jobs:
   tests:
     if: always()
     needs: [migration-order, test-suites, matrix-federation]
-    runs-on: ubuntu-24.04
+    runs-on: gravitas-linux
     timeout-minutes: 5
     steps:
       - name: Require every test suite
@@ -155,7 +155,7 @@ jobs:
           printf 'Migration: %s\nIAM suites: %s\nFederation: %s\n' "$MIGRATION_RESULT" "$SUITE_RESULT" "$FEDERATION_RESULT"
           test "$MIGRATION_RESULT" = success && test "$SUITE_RESULT" = success && test "$FEDERATION_RESULT" = success
   image:
-    runs-on: ubuntu-24.04
+    runs-on: gravitas-linux
     timeout-minutes: 30
     permissions:
       contents: read
@@ -191,7 +191,7 @@ jobs:
   deploy:
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.GRAVITAS_DEPLOY_ENABLED == 'true'
     needs: [tests, image]
-    runs-on: ubuntu-24.04
+    runs-on: gravitas-linux
     timeout-minutes: 15
     environment:
       name: gravitas

@@ -12,7 +12,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   test:
-    runs-on: ubuntu-24.04
+    runs-on: gravitas-linux
     timeout-minutes: 20
     services:
       postgres:
@@ -48,7 +48,7 @@ jobs:
   image:
     needs: test
     if: github.event_name == 'push'
-    runs-on: ubuntu-24.04
+    runs-on: gravitas-linux
     timeout-minutes: 25
     permissions:
       contents: read
